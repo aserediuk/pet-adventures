@@ -2563,6 +2563,93 @@ function drawRoom(kind, flash) {
 }
 // <<< GFX:light
 
+// >>> GFX:title
+// ---------------------------------------------------------------------
+// 3j. GFX TITLE AND WIN SCENES: a little diorama of Pawsville with a pixel-lettered logo,
+// and shared sky / ground helpers for the intro and the starter screen.
+// ---------------------------------------------------------------------
+// Big chunky letters made from the game's own pixel font: a warm top-to-bottom ramp, a dark outline and a drop shadow.
+const LOGO_CACHE = {};
+function logoSprite(text, sc, ramp) {
+  const key = text + sc + ramp.join();
+  if (LOGO_CACHE[key]) return LOGO_CACHE[key];
+  const w = text.length * 6 * sc + 4, h = 7 * sc + 5, p = new Pix(w, h), body = new Pix(w, h);
+  [...text].forEach((ch, i) => (FONT[ch] || FONT['?']).split(' ').forEach((row, y) => { for (let x = 0; x < 5; x++) if (row[x] === '#') body.rect(2 + (i * 6 + x) * sc, 1 + y * sc, sc, sc, 1); }));
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (body.get(x, y)) {
+    const t = (y - 1) / (7 * sc), top = !body.get(x, y - 1), left = !body.get(x - 1, y);
+    p.set(x, y, top || (left && t < 0.5) ? ramp[0] : ramp[Math.min(ramp.length - 1, 1 + Math.floor(t * (ramp.length - 1)))]);
+  }
+  p.outline(PI.ink[0]);
+  const out = new Pix(w, h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (p.get(x, y)) { out.set(x + 1, y + 2, PI.ink[1]); out.set(x, y + 2, PI.ink[1]); }   // drop shadow
+  out.blit(p, 0, 0);
+  return (LOGO_CACHE[key] = out.toCanvas());
+}
+function drawLogo(text, cx, y, sc, ramp) { const c = logoSprite(text, sc, ramp); ctx.drawImage(c, Math.round(cx - c.width / 2), y); }
+const LOGO_WARM = () => [PI.yellow[0], PI.yellow[1], PI.orange[1], PI.orange[2]], LOGO_CORAL = () => [PI.pink[0], PI.orange[2], PI.red[0], PI.red[1]], LOGO_SKY = () => [PI.snow[0], PI.blue[0], PI.blue[1], PI.blue[2]];
+// A painted strip of ground, as wide as the screen (for the intro, starter and title scenes).
+const STRIP_CACHE = {};
+function groundStrip(ch, hpx, biome = 'pawsville', rows = null) {
+  const key = ch + hpx + biome + (rows ? rows.join('') : '');
+  if (!STRIP_CACHE[key]) {
+    const n = Math.ceil(hpx / TS), map = rows || Array.from({ length: n }, () => ch.repeat(Math.ceil(W / TS)));
+    STRIP_CACHE[key] = paintGround(map, BIOME[biome]).toCanvas();
+  }
+  return STRIP_CACHE[key];
+}
+// Sky with a distant tree line, its horizon placed at `horizon` pixels from the top.
+function drawSceneSky(horizon, t, kind = 'field') {
+  const bd = battleBackdrop(kind, null);
+  if (horizon > HORIZON) { ctx.drawImage(bd, 0, 0, W, 1, 0, 0, W, horizon - HORIZON); ctx.drawImage(bd, 0, 0, W, HORIZON, 0, horizon - HORIZON, W, HORIZON); }
+  else ctx.drawImage(bd, 0, HORIZON - horizon, W, horizon, 0, 0, W, horizon);
+  drawClouds(t, 6, 4);
+}
+// ---- the Pawsville diorama ----
+const DIORAMA = {};
+function dioramaBackdrop(festive) {
+  const key = festive ? 'win' : 'title';
+  if (DIORAMA[key]) return DIORAMA[key];
+  const c = makeCanvas(W, H), g = c.getContext('2d'), B = BIOME.pawsville, HZ = 122;
+  const bd = battleBackdrop(festive ? 'gold' : 'field', null);
+  g.drawImage(bd, 0, 0, W, 1, 0, 0, W, HZ - HORIZON); g.drawImage(bd, 0, 0, W, HORIZON, 0, HZ - HORIZON, W, HORIZON);
+  if (festive) { g.drawImage(battleBackdrop('field', null), 0, 60, W, 44, 0, HZ - 44, W, 44); }   // green hills under a golden sky
+  // ground: grass with a path through town, flower beds and the pond
+  const rows = ['...........................', '....f..........==.....f....', '...............==..........', '===========================', '..f.......f..........,~~~~~', '.....................~~~~~~', '......f..............~~~~~~', '...........................'];
+  const ground = paintGround(rows, B);
+  g.drawImage(ground.toCanvas(), 0, HZ);
+  // a wall of trees behind the houses, then the three buildings, then a few trees in front at the sides
+  const tree = (x, baseY, v) => g.drawImage(treePix('T', v, B).toCanvas(), x - TREE_W / 2, baseY - TREE_H);
+  for (let x = -6; x < W + 20; x += 15) tree(x, HZ + 12 + ((x >> 3) % 2) * 3, (x >> 2) % 3);
+  const house = (roof, x) => { const b = buildingPix([roof.repeat(5), roof.repeat(5), 'HWHWH', 'HHDHH'], buildingStyle(roof, 'pawsville')).toCanvas(); g.fillStyle = 'rgba(21,67,86,0.3)'; g.fillRect(x + 4, HZ + 40, 84, 4); g.drawImage(b, x, HZ + 42 - b.height); };
+  house('R', 26); house('B', 172); house('K', 318);
+  for (const [x, y, v] of [[6, HZ + 52, 0], [150, HZ + 40, 1], [296, HZ + 40, 2], [424, HZ + 52, 1]]) tree(x, y, v);
+  for (const [x, y] of [[124, HZ + 50], [276, HZ + 52], [408, HZ + 96]]) g.drawImage(bushPix((x >> 3) % 3, B).toCanvas(), x, y);
+  if (festive) {   // bunting between the houses
+    const cols = [PI.pink[1], PI.yellow[1], PI.mint[1], PI.blue[1], PI.orange[1], PI.violet[1]];
+    for (let x = 0; x < W; x++) { const y = HZ - 54 + Math.round(Math.sin((x % 144) / 144 * Math.PI) * 10); g.fillStyle = PALETTE[PI.wood[3]]; g.fillRect(x, y, 1, 1);
+      if (x % 12 === 6) { const col = cols[(x / 12 | 0) % cols.length]; for (let k = 0; k < 6; k++) { g.fillStyle = PALETTE[k < 2 ? LIGHTER[col] : col]; g.fillRect(x - 3 + (k >> 1), y + 1 + k, 7 - (k >> 1) * 2, 1); } } }
+  }
+  return (DIORAMA[key] = c);
+}
+// Draw the diorama with its living parts: clouds, water sparkles, the pets, sunbeams and vignette.
+function drawDiorama(t, festive, pets) {
+  ctx.drawImage(dioramaBackdrop(festive), 0, 0);
+  drawClouds(t, 4, 3);
+  for (let ty = 0; ty < 3; ty++) for (let tx = 22; tx < 27; tx++) drawSparkles(tx, ty + 40, tx * TS, 122 + (ty + 4) * TS);
+  (pets || []).forEach((it, k) => {
+    const x = it.x, y = it.y + Math.round(Math.abs(Math.sin(t / 15 + k)) * -6);
+    drawShadow(x + 24, it.y + 46, 30, 7);
+    if (it.pet) drawPet(it.pet, x - 8, y - 16, 2); else ctx.drawImage(PET48[it.sp].front[Math.floor(t / 30 + k) % 2], x, y);
+  });
+  if (festive) for (let k = 0; k < 46; k++) {   // confetti
+    const x = (k * 53 + t * (0.6 + k % 3 * 0.3)) % W, y = (k * 31 + t * (0.5 + k % 4 * 0.35)) % (H - 12);
+    ctx.fillStyle = PALETTE[[PI.pink[1], PI.yellow[1], PI.mint[1], PI.blue[1], PI.orange[1]][k % 5]]; ctx.fillRect(Math.round(x), Math.round(y), 2 + (k % 2), 2);
+  }
+  ctx.fillStyle = 'rgba(255,190,90,0.07)'; ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = 0.6; ctx.drawImage(SUNBEAMS, -((Math.floor(t / 14)) % 96), 0); ctx.globalAlpha = 0.45; ctx.drawImage(VIGNETTE, 0, 0); ctx.globalAlpha = 1;
+}
+// <<< GFX:title
+
 // ---------------------------------------------------------------------
 // 4. AUDIO (Web Audio: synthesized SFX + tiny step sequencer)
 // ---------------------------------------------------------------------
@@ -6149,14 +6236,8 @@ async function shopScript() {
 // 16. TITLE, STARTER SELECT, WIN
 // ---------------------------------------------------------------------
 function drawSky(t) {
-  ctx.fillStyle = '#8fd3ff'; ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = '#ffffff';
-  for (let k = 0; k < 5; k++) {
-    const x = ((k * 97 + t * (0.2 + k * 0.05)) % (W + 60)) - 60, y = 20 + k * 17 % 60;
-    ctx.fillRect(x, y, 40, 8); ctx.fillRect(x + 8, y - 5, 22, 6);
-  }
-  for (let y = 176; y < H; y += 16) for (let x = 0; x < W; x += 16) ctx.drawImage(TILES['.'][0], x, y);
-  for (let x = 0; x < W; x += 16) ctx.drawImage(TILES['T'][0], x, 160);
+  drawSceneSky(160, t);
+  ctx.drawImage(groundStrip('.', 80), 0, 160);
 }
 const CREDIT_LINE = '© 2026 When Pets Attack Studio Productions · Free for noncommercial use';   // see the LICENSE file
 class TitleScreen {
@@ -6169,14 +6250,12 @@ class TitleScreen {
     }
   }
   draw() {
-    drawSky(this.t);
-    const bounce = k => Math.round(Math.abs(Math.sin(this.t / 15 + k)) * -8);
-    TITLE_PETS.forEach((sp, k) => drawPetSprite(sp, 70 + k * 80, 138 + bounce(k), 1));
-    drawTextC('PET', W / 2, 22, '#ff7a59', 4, COL.border);
-    drawTextC('ADVENTURES', W / 2, 62, '#ffd84a', 3, COL.border);
-    drawTextC('A When Pets Attack Studio Production', W / 2, 96, COL.ink);
-    if (this.phase === 'press' && Math.floor(this.t / 30) % 2 === 0) drawTextC('Press ENTER to start', W / 2, 116, COL.ink, 1);
-    drawTextC(CREDIT_LINE, W / 2, 216, COL.white, 1, COL.border);
+    drawDiorama(this.t, false, TITLE_PETS.map((sp, k) => ({ sp, x: 62 + k * 87, y: 158 })));
+    drawLogo('PET', W / 2, 4, 5, LOGO_CORAL());
+    drawLogo('ADVENTURES', W / 2, 44, 3, LOGO_WARM());
+    drawTextC('A When Pets Attack Studio Production', W / 2, 73, COL.white, 1, COL.border);
+    if (this.phase === 'press' && Math.floor(this.t / 30) % 2 === 0) { box(W / 2 - 70, 104, 140, 16); drawTextC('Press ENTER to start', W / 2, 108, COL.ink, 1); }
+    drawTextC(CREDIT_LINE, W / 2, 219, COL.white, 1, COL.border);
   }
   hint() { return 'Enter: start   M: sound   F: fullscreen'; }
   tap() { inputQueue.push('ok'); }
@@ -6197,8 +6276,11 @@ class SplashScreen {
   tap() { inputQueue.push('ok'); }
 }
 function drawPerson(look, dir, f, x, y, s) { ctx.drawImage(PEOPLE[look][dir][f], Math.round(x), Math.round(y - 8 * s), 16 * s, 24 * s); }   // (x, y) is where a 16-pixel-tall sprite used to start
-function introSky(top, bottom) { ctx.fillStyle = top; ctx.fillRect(0, 0, W, 90); ctx.fillStyle = bottom; ctx.fillRect(0, 90, W, 90); }
-function introGround(y, tile) { for (let yy = y; yy < 176; yy += 16) for (let x = 0; x < W; x += 16) ctx.drawImage(TILES[tile][0], x, yy); }
+function introSky(top, bottom) {
+  if (top === '#1d1840') { ctx.fillStyle = PALETTE[PI.ink[1]]; ctx.fillRect(0, 0, W, 180); return; }   // night
+  drawSceneSky(96, frame);
+}
+function introGround(y, tile) { ctx.drawImage(groundStrip(tile, 176 - y), 0, y); }
 function introBuilding(x, y, roof) {
   const key = 'intro' + roof;
   if (!TREE_CACHE[key]) TREE_CACHE[key] = buildingPix([roof.repeat(5), roof.repeat(5), 'HWHWH', 'HHDHH'], buildingStyle(roof, 'pawsville')).toCanvas();
@@ -6210,7 +6292,7 @@ function introBuilding(x, y, roof) {
 function introCage(x, y, sp, t, s) {
   ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
   ctx.drawImage(SPR_CAGE_BACK, 0, 0);
-  ctx.drawImage(PET_SPR[sp], 0, 0, 32, 32, 2, 2 + (Math.floor((t + x) / 30) % 2), 12, 12);
+  ctx.drawImage(PET16[sp], 0, -1 + (Math.floor((t + x) / 30) % 2));
   ctx.drawImage(SPR_CAGE_BARS, 0, 0);
   ctx.restore();
 }
@@ -6230,13 +6312,11 @@ const INTRO = [
   } },
   { music: 'town', text: 'In the cozy town of Pawsville, kids and their pets live happily together.', draw(t) {
     introSky('#8fd3ff', '#bfe8ff');
-    ctx.fillStyle = '#ffe866'; ctx.fillRect(360, 18, 22, 22); ctx.fillStyle = '#fff6a8'; ctx.fillRect(364, 22, 14, 14);
-    for (let k = 0; k < 4; k++) { const x = (k * 120 + t * 0.3) % (W + 50) - 50; ctx.fillStyle = '#fff'; ctx.fillRect(x, 20 + k * 9, 40, 8); ctx.fillRect(x + 8, 15 + k * 9, 22, 6); }
     for (let x = 0; x < W; x += 16) ctx.drawImage(TILES['T'][0], x, 64);
     introGround(80, '.'); for (let x = 0; x < W; x += 16) ctx.drawImage(TILES['='][0], x, 144);
     introBuilding(24, 64, 'R'); introBuilding(328, 64, 'K');
-    ctx.drawImage(PET_SPR.buddy, 130, 100 + bob(t, 0), 48, 48);
-    ctx.drawImage(PET_SPR.mittens, 250, 100 + bob(t, 1.5), 48, 48);
+    ctx.drawImage(PET48.buddy.front[Math.floor(t / 30) % 2], 130, 100 + bob(t, 0));
+    ctx.drawImage(PET48.mittens.front[Math.floor(t / 30) % 2], 250, 100 + bob(t, 1.5));
     drawPerson('player', 'right', Math.floor(t / 10) % 2, 190, 108, 2);
     drawPerson('lily', 'left', 0, 222, 108, 2);
   } },
@@ -6245,10 +6325,10 @@ const INTRO = [
     introGround(96, '.'); for (let x = 0; x < W; x += 16) { ctx.drawImage(TILES[','][0], x, 144); ctx.drawImage(TILES[','][0], x, 160); }
     for (let x = 0; x < W; x += 64) ctx.drawImage(TILES['f'][0], x + 20, 112);
     const kx = (t * 1.4) % (W + 80) - 70;
-    ctx.drawImage(PET_SPR.kiwi, kx, 22 + Math.round(Math.sin(t / 8) * 8), 48, 48);
-    ctx.drawImage(PET_SPR.ziggy, 40, 104, 48, 48);
-    ctx.drawImage(PET_SPR.cookie, 170, 104 + bob(t, 0, 10, 9), 48, 48);
-    ctx.drawImage(PET_SPR.alvin, 300, 106 + bob(t, 2, 4, 15), 48, 48);
+    ctx.drawImage(PET48.kiwi.front[Math.floor(t / 30) % 2], kx, 22 + Math.round(Math.sin(t / 8) * 8));
+    ctx.drawImage(PET48.ziggy.front[Math.floor(t / 30) % 2], 40, 104);
+    ctx.drawImage(PET48.cookie.front[Math.floor(t / 30) % 2], 170, 104 + bob(t, 0, 10, 9));
+    ctx.drawImage(PET48.alvin.front[Math.floor(t / 30) % 2], 300, 106 + bob(t, 2, 4, 15));
   } },
   { music: 'gizmo', text: 'But deep in Whisker Woods, a grumpy scientist named Dr. Gizmo is up to no good...', sfxAt: { 50: 'thunder', 190: 'laugh' }, draw(t) {
     introSky('#1d1840', '#1d1840');
@@ -6279,7 +6359,7 @@ const INTRO = [
     ctx.fillStyle = '#ffb36b'; ctx.fillRect(0, 0, W, 40); ctx.fillStyle = '#ffd29a'; ctx.fillRect(0, 40, W, 40); ctx.fillStyle = '#ffeccc'; ctx.fillRect(0, 80, W, 40);
     introGround(120, '.');
     drawPerson('player', 'down', 0, W / 2 - 32, 64, 4);
-    ['buddy', 'mittens', 'alvin', 'cookie'].forEach((sp, k) => ctx.drawImage(PET_SPR[sp], [40, 110, 290, 360][k], 110 + bob(t, k), 48, 48));
+    ['buddy', 'mittens', 'alvin', 'cookie'].forEach((sp, k) => ctx.drawImage(PET48[sp].front[Math.floor(t / 30 + k) % 2], [40, 110, 290, 360][k], 110 + bob(t, k)));
     if (t > 60) drawTextC('PET ADVENTURES', W / 2, 14, '#ffffff', 2, COL.border);
   } },
 ];
@@ -6601,14 +6681,10 @@ class WinScreen {
     for (const a of inp) if (a === 'ok') { sfx('confirm'); pop(this); this.resolve(); return; }
   }
   draw() {
-    ctx.fillStyle = '#2b2b55'; ctx.fillRect(0, 0, W, H);
-    for (let k = 0; k < 40; k++) {
-      const x = (k * 53 + this.t * (1 + k % 3)) % W, y = (k * 31 + this.t * (0.5 + k % 4 * 0.4)) % H;
-      ctx.fillStyle = ['#ff7a59', '#ffd84a', '#7ccf5a', '#4aa8e8', '#f28fb8'][k % 5]; ctx.fillRect(Math.round(x), Math.round(y), 3, 3);
-    }
-    drawTextC('YOU SAVED', W / 2, 12, COL.white, 2, '#000');
-    drawTextC('THE PETS!', W / 2, 32, '#ffd84a', 3, '#000');
-    G.party.forEach((p, k) => drawPet(p, W / 2 - G.party.length * 20 + k * 40 + 4, 64 + Math.round(Math.sin(this.t / 10 + k) * 3), 1));
+    drawDiorama(this.t, true, null);
+    drawLogo('YOU SAVED', W / 2, 2, 2, LOGO_SKY());
+    drawLogo('THE PETS!', W / 2, 22, 3, LOGO_WARM());
+    G.party.forEach((p, k) => drawPet(p, W / 2 - G.party.length * 27 + k * 54 - 5, 40 + Math.round(Math.sin(this.t / 10 + k) * 3), 2));
     box(86, 104, 260, 96);
     const lines = [
       ['Play time', fmtTime(G.stats.time)],
@@ -6619,7 +6695,7 @@ class WinScreen {
       ['Team leader', petName(G.party[0]) + ' Lv ' + G.party[0].lv],
     ];
     lines.forEach(([a, b], k) => { drawText(a, 98, 112 + k * 13, COL.ink); drawTextR(b, 334, 112 + k * 13, COL.ink); });
-    if (this.t >= 60 && Math.floor(this.t / 30) % 2 === 0) drawTextC('Press ENTER to keep exploring', W / 2, 210, COL.white);
+    if (this.t >= 60 && Math.floor(this.t / 30) % 2 === 0) drawTextC('Press ENTER to keep exploring', W / 2, 210, COL.white, 1, COL.border);
   }
   hint() { return 'Enter: keep exploring'; }
   tap() { inputQueue.push('ok'); }
@@ -7323,7 +7399,10 @@ function runSelfTest() {
   for (const k in MAPS) if (!MOOD[k]) grErr.push(k + ' has no mood');
   if (!SUNBEAMS || SUNBEAMS.height !== H || !VIGNETTE || VIGNETTE.width !== W || !MIST || !LIGHT_POOL || !GLOW) grErr.push('light overlays');
   for (const kind of ['clinic', 'shop']) { const r = roomBackdrop(kind); if (r.width !== W || r.height !== H || r.pix.d.some(c => !c)) grErr.push(kind + ' interior'); }
-  check('Graphics: the ground of all ' + Object.keys(MAPS).length + ' maps paints fully, in palette, with a biome each', !grErr.length, grErr.slice(0, 4).join('; '));
+  for (const fest of [false, true]) { const d = dioramaBackdrop(fest); if (d.width !== W || d.height !== H) grErr.push('diorama'); }
+  { const lg = logoSprite('PET', 5, LOGO_CORAL()); if (lg.width > W || !lg.pix.d.includes(PI.ink[0])) grErr.push('logo'); if (logoSprite('ADVENTURES', 3, LOGO_WARM()).width > W) grErr.push('logo too wide'); }
+  for (const sp of TITLE_PETS) if (!PET48[sp]) grErr.push('title pet ' + sp);
+  check('Graphics: ground, trees, buildings, props, ' + Object.keys(LOOK2).length + ' characters, ' + Object.keys(PET_DEF).length + ' pets, battle scenes, light and title art all build, in palette, for all ' + Object.keys(MAPS).length + ' maps', !grErr.length, grErr.slice(0, 4).join('; '));
   // Tasks: every giver is a helpful (non-trainer) character, every lost item/pet sits on an open, reachable tile.
   const qErr = [], qSaved = G;
   G = { flags: END_FLAGS, quests: {}, party: [], pen: [] };
