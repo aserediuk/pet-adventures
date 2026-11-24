@@ -35,6 +35,7 @@ const ctx = canvas.getContext('2d');
 ctx.imageSmoothingEnabled = false;
 const HASH = location.hash || '';
 const TEST_MODE = HASH === '#test';
+const MUSIC_MODE = HASH === '#music';
 const VIEW = (HASH.match(/^#view=(\w+)/) || [])[1] || null;   // developer preview screens
 
 const COL = {
@@ -173,6 +174,7 @@ const FONT = {
 '$':'..#.. .#### #.#.. .###. ..#.# ####. ..#..',
 '~':'..... ..... .#... #.#.# ...#. ..... .....',
 '▶':'#.... ##... ###.. ####. ###.. ##... #....',
+'♪':'..##. ..#.# ..#.. ..#.. ###.. ###.. .....',
 '▼':'..... ..... ##### .###. ..#.. ..... .....',
 '▲':'..... ..... ..#.. .###. ##### ..... .....',
 '♥':'..... .#.#. ##### ##### .###. ..#.. .....',
@@ -960,20 +962,27 @@ function buildAllSprites() {
 // ---------------------------------------------------------------------
 // 4. AUDIO (Web Audio: synthesized SFX + tiny step sequencer)
 // ---------------------------------------------------------------------
-const Snd = { ac: null, master: null, sfx: null, music: null, muted: false, track: null, step: 0, next: 0, noiseBuf: null };
+const Snd = { ac: null, master: null, sfx: null, musicBus: null, duck: null, muted: false, noiseBuf: null };
 function audioUnlock() {
   try {
     if (!Snd.ac) {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;
       Snd.ac = new AC();
-      Snd.master = Snd.ac.createGain(); Snd.master.gain.value = Snd.muted ? 0 : 1; Snd.master.connect(Snd.ac.destination);
-      Snd.sfx = Snd.ac.createGain(); Snd.sfx.gain.value = 0.32; Snd.sfx.connect(Snd.master);
-      Snd.music = Snd.ac.createGain(); Snd.music.gain.value = 0.1; Snd.music.connect(Snd.master);
+      const ac = Snd.ac;
+      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 9000;   // no harsh highs
+      const comp = ac.createDynamicsCompressor();
+      Snd.master = ac.createGain(); Snd.master.gain.value = Snd.muted ? 0 : 1;
+      Snd.master.connect(lp); lp.connect(comp); comp.connect(ac.destination);
+      Snd.sfx = ac.createGain(); Snd.sfx.gain.value = 0.32; Snd.sfx.connect(Snd.master);
+      Snd.duck = ac.createGain(); Snd.duck.gain.value = 1; Snd.duck.connect(Snd.master);
+      Snd.musicBus = ac.createGain(); Snd.musicBus.gain.value = MUS.musicOn ? 0.18 : 0; Snd.musicBus.connect(Snd.duck);
       const len = Snd.ac.sampleRate * 0.5;
       Snd.noiseBuf = Snd.ac.createBuffer(1, len, Snd.ac.sampleRate);
       const d = Snd.noiseBuf.getChannelData(0);
       for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      startMusicEngine();
+      if (MUS.want) switchSong(MUS.want, Snd.ac.currentTime);
     }
     if (Snd.ac.state === 'suspended') Snd.ac.resume();
   } catch (e) { Snd.ac = null; }
@@ -1039,137 +1048,571 @@ const SFX = {
   teleport() { for (let i = 0; i < 10; i++) tone(400 + i * 120, 0.12, 'sine', 0.18, i * 0.05); noise(0.6, 0.12, 0, 4000); },
   studio()   { tone(110, 0.7, 'sawtooth', 0.12, 0, 55); noise(0.5, 0.25, 0.05, 400); [262, 330, 392, 523, 659].forEach((f, i) => tone(f, 0.18, 'square', 0.18, 0.5 + i * 0.09)); tone(1047, 0.6, 'triangle', 0.25, 0.98); },
 };
-function sfx(name) { try { if (SFX[name]) SFX[name](); } catch (e) { /* audio is optional */ } }
+function duckMusic() {
+  if (!Snd.duck) return;
+  const g = Snd.duck.gain, now = Snd.ac.currentTime;
+  g.cancelScheduledValues(now); g.setValueAtTime(g.value, now);
+  g.linearRampToValueAtTime(0.6, now + 0.01); g.setValueAtTime(0.6, now + 0.15); g.linearRampToValueAtTime(1, now + 0.22);
+}
+function sfx(name) { try { if (SFX[name]) { SFX[name](); duckMusic(); } } catch (e) { /* audio is optional */ } }
 
-// ---- Music: each song = sections of 4 bars (8 eighth-notes per bar).
-// Every section gives: chords, melody ('_' holds, '-' rests), drums (k kick, s snare, h hat, o open hat, b kick+hat),
-// a bass style and an accompaniment style, so every song has melody + chords + bass + drums.
+// =====================================================================
+// MUSIC: a 4-voice chip (PULSE 1 lead, PULSE 2 harmony, TRIANGLE bass, NOISE drums)
+// driven by tracker-style data with built-in polymeter.
+//
+// Step strings: notes like "C4", "F#5", "Bb3"; "." = rest;
+//   "-" suffix = hold (rings until the layer's next note), "+" suffix = quarter-tone up (50 cents sharp),
+//   "/" suffix = short bend up into the note (from 50 cents below), "~" suffix = vibrato, ">" prefix = accent.
+//   Drums use k (kick), s (snare), h (hat). "|" is only a visual bar line and is ignored.
+// Each layer loops at its own loopLength, so a 5-step riff over an 8-step drum loop phases naturally.
+// A song is a list of parts; every part is at most 8 bars and all layers restart together at the start
+// of each part, so every song fully realigns within 8 bars.
+//
+// The shared "Pet Adventures" motif is five notes: up a minor third, down a fourth, up a fifth, down a
+// step (E G D A G in C). Every song quotes it, transposed, re-rhythmed or in another meter.
+// =====================================================================
+const L = (voice, steps, loopLength, opts = {}) => Object.assign({ voice, steps, loopLength }, opts);
+const SONGS = {
+  title: {
+    title: 'Title Theme', bpm: 112, spb: 2, barSteps: 7, meter: '7/8 (2+2+3)',
+    form: 'A B A B',
+    parts: {
+      A: { bars: 4, layers: [
+        L('noise', '>k h s h k h s', 7),
+        L('tri', 'C3 . G2 . A2 . . | F2 . C3 . G2 . .', 14),
+        L('p2', 'C5 E5 G5 C6 G5 E5 G5 | F5 A5 C6 F5 C6 A5 C6', 14),
+        L('p1', 'E5 . G5 . D5 . A5- | . . G5- . . . . | C6 . A5 . G5 . E5 | D5- . . . . . .', 28),
+      ] },
+      B: { bars: 4, layers: [
+        L('noise', '>k h s h k h s', 7),
+        L('tri', 'A2 . E3 . F2 . . | G2 . D3 . G2 . .', 14),
+        L('p2', 'A4 C5 E5 A5 E5 C5 E5 | G4 B4 D5 G5 D5 B4 D5', 14),
+        L('p1', 'A5 . C6 . G5 . E5- | . . D5 . E5 . G5 | A5 . G5 . E5 . D5 | G5- . . . . . .', 28),
+      ] },
+    },
+  },
+  town: {
+    title: 'Pawsville', bpm: 108, spb: 2, barSteps: 8, meter: '4/4, arpeggio in 3 against 4 (F lydian)',
+    form: 'A B A B',
+    parts: {
+      A: { bars: 6, layers: [
+        L('noise', 'k . h . s . h .', 8),
+        L('tri', 'F2 . F2 . C3 . A2 . | G2 . G2 . D3 . B2 .', 16),
+        L('p2', 'A4 C5 E5', 3),
+        L('p1', 'A4 . C5 . G4 . D5- . | . . C5- . . . . . | F5 . E5 . D5 . C5 . | B4 . C5 . D5- . . . | E5 . D5 . C5 . A4 . | G4- . . . . . . .', 48, { duty: 0.5 }),
+      ] },
+      B: { bars: 6, layers: [
+        L('noise', 'k . h . s . h .', 8),
+        L('tri', 'D3 . D3 . A2 . F2 . | C3 . C3 . G2 . E2 .', 16),
+        L('p2', 'F4 A4 C5', 3),
+        L('p1', 'D5 . F5 . E5 . C5 . | D5- . . . A4 . C5 . | C5 . E5 . G5 . E5 . | D5 . C5 . G4- . . . | A4 . C5 . G4 . D5 . | C5- . . . . . . .', 48, { duty: 0.5 }),
+      ] },
+    },
+  },
+  meadow: {
+    title: 'Meadow Path', bpm: 124, spb: 2, barSteps: 6, meter: '6/8 bass, lead in 2s (hemiola), 5-step chime (G mixolydian)',
+    form: 'A B A B',
+    parts: {
+      A: { bars: 8, layers: [
+        L('noise', 'k . h k . h', 6),
+        L('tri', 'G2 . D3 G2 . D3 | F2 . C3 F2 . C3', 12),
+        L('p2', 'D6 B5 G5 A5 B5', 5),
+        L('p1', 'B4 . D5 . A4 . | E5 . D5- . . . | G5 . F5 . D5 . | C5 . D5- . . . | B4 . G4 . A4 . | B4 . C5 . D5 . | F5 . E5 . C5 . | D5- . . . . .', 48),
+      ] },
+      B: { bars: 8, layers: [
+        L('noise', 'k . h k . h', 6),
+        L('tri', 'C3 . G2 C3 . G2 | D3 . A2 D3 . A2', 12),
+        L('p2', 'C6 A5 F5 G5 A5', 5),
+        L('p1', 'E5 . G5 . C6 . | B5 . A5- . . . | F5 . A5 . D6 . | C6 . A5- . . . | G5 . E5 . C5 . | D5 . E5 . F5 . | A5 . G5 . F5 . | G5- . . . . .', 48),
+      ] },
+    },
+  },
+  woods: {
+    title: 'Whisker Woods', bpm: 96, spb: 2, barSteps: 12, cycleBars: 2, meter: '5/8 + 7/8 (12-pulse cycle), D dorian',
+    form: 'A B C D',
+    parts: {
+      A: { bars: 4, layers: [
+        L('noise', '>k . h . . | k . . s . h .', 12),
+        L('tri', 'D2 A2 D3 C3 A2 | D2 F2 G2 A2 C3 A2 G2', 12),
+        L('p2', 'F4 . A4 . . | E4 . . G4 . . . | F4 . C5 . . | E4 . . A4 . . .', 24),
+      ] },
+      B: { bars: 4, layers: [
+        L('noise', '>k . h . . | k . . s . h .', 12),
+        L('tri', 'D2 A2 D3 C3 A2 | D2 F2 G2 A2 C3 A2 E2', 12),
+        L('p2', 'F4 . A4 . . | E4 . . G4 . . . | F4 . C5 . . | E4 . . A4 . . .', 24),
+        L('p1', 'F4 . A4 . E4 | B4- . . A4- . . . | D5 . C5 . A4 | G4 . A4/ . . . . | F4 . G4 . A4 | C5 . B4 . A4- . . | G4 . F4 . E4+ | D4- . . . . . .', 48),
+      ] },
+      C: { bars: 4, layers: [
+        L('noise', '>k . h . . | k . . s . h .', 12),
+        L('tri', 'D2 A2 E3 C3 A2 | D2 F2 G2 A2 C3 A2 E2', 12),
+        L('p2', 'F4 . A4 . . | E4 . . G4 . . . | F4 . C5 . . | E4 . . A4 . . .', 24),
+        L('p1', 'F4 . A4 . E4 | B4- . . A4- . . . | D5 . C5 . A4 | G4 . A4/ . . . . | F4 . G4 . A4 | C5 . B4 . A4- . . | G4 . F4 . E4+ | D4- . . . . . .', 48),
+      ] },
+      D: { bars: 4, layers: [
+        L('noise', '>k . h . h | k . h s . h h', 12),
+        L('tri', 'D2 A2 E3 C3 A2 | D2 F2 G2 B2 C3 A2 E2', 12),
+        L('p2', 'F4 . A4 . . | E4 . . G4 . . . | F4 . C5 . . | E4 . . A4 . . .', 24),
+        L('p1', 'A4 . C5 . G4 | D5- . . C5- . . . | F5 . E5 . C5 | B4 . C5/ . . . . | A4 . B4 . C5 | E5 . D5 . C5- . . | B4 . A4 . G4+ | A4- . . . . . .', 48),
+      ] },
+    },
+  },
+  interior: {
+    title: 'Clinic & Shop', bpm: 84, spb: 2, barSteps: 6, meter: '3/4 music box, 3 against 2',
+    form: 'A A B A',
+    parts: {
+      A: { bars: 8, layers: [
+        L('tri', 'C3 . . . . . | G2 . . . . .', 12),
+        L('p2', 'C5 . . G4 . .', 6, { duty: 0.25 }),
+        L('p1', 'E5 . G5 . D5 . | A5 . G5- . . . | C6 . B5 . G5 . | A5 . E5- . . .', 24, { duty: 0.125 }),
+      ] },
+      B: { bars: 8, layers: [
+        L('tri', 'F2 . . . . . | G2 . . . . .', 12),
+        L('p2', 'F4 . . A4 . . | G4 . . B4 . .', 12, { duty: 0.25 }),
+        L('p1', 'F5 . A5 . E5 . | D5 . C5- . . . | B4 . D5 . G5 . | E5- . . . . .', 24, { duty: 0.125 }),
+      ] },
+    },
+  },
+  battle: {
+    title: 'Wild Battle', bpm: 148, spb: 2, barSteps: 24, cycleBars: 3, meter: '9/8 + 8/8 + 7/8 (24-pulse cycle), A minor',
+    form: 'A A B B',
+    parts: {
+      A: { bars: 2, layers: [
+        L('noise', '>k h h >s h h >k h h | >k h h >s h h >k h | >k h >s h >k h s', 24),
+        L('tri', 'A3 A3 C4 A3 A3 D4 A3 E4 D4 | A3 A3 C4 A3 G3 A3 C4 D4 | E4 D4 C4 A3 G3 A3 B3', 24, { tr: -12 }),
+        L('p1', 'A4 A4 C5 A4 A4 D5 A4 E5 D5 | A4 A4 C5 A4 G4 A4 C5 D5 | E5 D5 C5 A4 G4 A4 B4', 24),
+      ] },
+      B: { bars: 2, layers: [
+        L('noise', '>k h h >s h h >k h h | >k h h >s h h >k h | >k h >s h >k h s', 24),
+        L('tri', 'A3 A3 C4 A3 A3 D4 A3 E4 D4 | A3 A3 C4 A3 G3 A3 C4 D4 | E4 D4 C4 A3 G3 A3 B3', 24, { tr: -12 }),
+        L('p2', 'A4 . . C5 . . A4 . . | G4 . . B4 . . G4 . | E4 . G4 . B4 . .', 24),
+        L('p1', 'C5 . E5 . B4 . F#5- . . | E5- . . . . . A5 . | G5 . E5 . D5 . C5 | D5 . E5 . G5 . A5- . . | G5 . E5 . D5 . C5 . | B4- . . . . . .', 48),
+      ] },
+    },
+  },
+  champion: {
+    title: 'Champion Battle', bpm: 156, spb: 2, barSteps: 8, meter: '4/4 drums, bass riff in 7, lead in 5, realign every 4 bars',
+    form: 'A B C D',
+    parts: {
+      A: { bars: 4, layers: [
+        L('noise', '>k . h . s . h . | k . h . s . h h | k . h . s . h . | k . h k s . s s', 32),
+        L('tri', '>E2 E2 G2 E2 A2 E2 B2', 7),
+        L('p1', '>E5 G5 D5 A5 G5', 5),
+      ] },
+      B: { bars: 4, layers: [
+        L('noise', '>k . h . s . h . | k . h . s . h h | k . h . s . h . | k . h k s . s s', 32),
+        L('tri', '>E2 E2 G2 E2 A2 E2 B2', 7),
+        L('p2', 'B4 . . B4 . . A4 .', 8),
+        L('p1', '>E5 G5 D5 A5 G5', 5),
+      ] },
+      C: { bars: 4, layers: [
+        L('noise', '>k . h . s . h . | k . h . s . h h | k . h . s . h . | k . h k s . s s', 32),
+        L('tri', '>E2 E2 G2 E2 A2 E2 B2', 7),
+        L('p2', 'E5 . D5 . B4 . D5 .', 8),
+        L('p1', '>E5 G5 D5 A5 G5 | E5 G5 D5 B5 A5', 10),
+      ] },
+      D: { bars: 4, layers: [
+        L('noise', '>k . h . s . h . | k . h . s . h h | k . h k s . h . | >k . s s >s s >s >s', 32),
+        L('tri', '>E2 E2 G2 E2 A2 E2 B2', 7),
+        L('p2', 'G4 . . G4 . . F#4 .', 8),
+        L('p1', '>E5 G5 D5 A5 G5 E5 G5 D5 | A5 G5 E5 G5 D5 A5 G5 E5 | B5 . A5 . G5 . A5 . | B5- . . . A5+ A5 G5+ G5', 32),
+      ] },
+    },
+  },
+  victory: {
+    title: 'Victory Jingle', bpm: 180, spb: 2, barSteps: 5, meter: '5/8 flourish (one-shot)', oneShot: true,
+    form: 'A',
+    parts: {
+      A: { bars: 3, layers: [
+        L('noise', 'k h s h k | k h s k s | >k . . . .', 15),
+        L('tri', 'C3 . G2 . C3 | G2 . G2 . B2 | >C3- . . . .', 15),
+        L('p2', '. . . . . | G5 . A5 . B5 | >G5- . . . .', 15),
+        L('p1', 'E5 G5 D5 A5 G5 | C6 E6 G5 C6 D6 | >E6- . . . .', 15),
+      ] },
+    },
+  },
+  win: {
+    title: 'Win Screen Anthem', bpm: 116, spb: 2, barSteps: 8, meter: '4/4, then 7/8, then 4/4',
+    form: 'A B C C',
+    parts: {
+      A: { bars: 4, layers: [
+        L('noise', 'k . h . s . h .', 8),
+        L('tri', 'C3 . C3 . G2 . G2 . | F2 . F2 . G2 . G2 .', 16),
+        L('p2', 'C5 E5 G5 E5 C5 E5 G5 E5 | A4 C5 F5 C5 B4 D5 G5 D5', 16),
+        L('p1', 'E5 . G5 . D5 . A5 . | G5- . . . . . . . | C6 . A5 . G5 . E5 . | D5- . . . . . . .', 32),
+      ] },
+      B: { bars: 4, barSteps: 7, meter: '7/8 (2+2+3)', layers: [
+        L('noise', '>k h s h k h s', 7),
+        L('tri', 'C3 . G2 . C3 . . | F2 . G2 . G2 . .', 14),
+        L('p2', 'C5 E5 G5 C5 E5 G5 E5 | A4 C5 F5 B4 D5 G5 D5', 14),
+        L('p1', 'E5 . G5 . D5 . A5 | G5- . . . . . . | C6 . A5 . G5 . E5 | D5- . . . . . .', 28),
+      ] },
+      C: { bars: 4, layers: [
+        L('noise', '>k . h k s . h h', 8),
+        L('tri', 'C3 C3 G2 G2 A2 A2 E2 E2 | F2 F2 C3 C3 G2 G2 G2 G2', 16),
+        L('p2', 'E5 G5 C6 G5 E5 G5 C6 G5 | F5 A5 C6 A5 D5 G5 B5 G5', 16),
+        L('p1', 'C6 . G5 . E5 . G5 . | A5 . G5 . E5 . D5 . | E5 . G5 . D5 . A5 . | >C6- . . . . . . .', 32),
+      ] },
+    },
+  },
+  lab: {
+    title: 'Gizmo\'s Lab', bpm: 88, spb: 2, barSteps: 8, meter: '4/4 with a 5-step beeper (E minor)',
+    form: 'A B A B',
+    parts: {
+      A: { bars: 4, layers: [
+        L('noise', 'k . . . s . . .', 8),
+        L('tri', 'E2 . . E2 . . F2 .', 8),
+        L('p2', 'B4 . . D#5 .', 5, { duty: 0.125 }),
+        L('p1', 'E5 . G5 . D5 . A5 . | G5- . . . F#5 . D#5 . | E5 . . . B4 . . . | C5- . . . B4- . . .', 32),
+      ] },
+      B: { bars: 4, layers: [
+        L('noise', 'k . . . s . . .', 8),
+        L('tri', 'C3 . . C3 . . B2 .', 8),
+        L('p2', 'G4 . . B4 .', 5, { duty: 0.125 }),
+        L('p1', 'C5 . E5 . B4 . F5 . | E5- . . . D#5 . B4 . | C5 . . . G4 . . . | B4- . . . . . . .', 32),
+      ] },
+    },
+  },
+  desert: {
+    title: 'Sunny Dunes', bpm: 104, spb: 2, barSteps: 7, meter: '7/8 (3+2+2), riff in 4 (E phrygian dominant)',
+    form: 'A A B A',
+    parts: {
+      A: { bars: 4, layers: [
+        L('noise', '>k . h k . s .', 7),
+        L('tri', 'E2 . . E2 . B2 . | F2 . . F2 . C3 .', 14),
+        L('p2', 'E5 G#5 B5 G#5', 4),
+        L('p1', 'E5 . G#5 . D5 . A5- | . . G#5- . . . . | F5 . E5 . D5 . C5 | B4- . . . . . .', 28),
+      ] },
+      B: { bars: 4, layers: [
+        L('noise', '>k . h k . s .', 7),
+        L('tri', 'A2 . . A2 . E3 . | G#2 . . G#2 . E2 .', 14),
+        L('p2', 'C5 E5 A5 E5', 4),
+        L('p1', 'A5 . G#5 . F5 . E5 | D5- . . . . . . | C5 . D5 . E5 . F5 | E5- . . . . . .', 28),
+      ] },
+    },
+  },
+  jungle: {
+    title: 'Parrot Jungle', bpm: 132, spb: 2, barSteps: 8, meter: '4/4 with a 6-step arpeggio',
+    form: 'A B A B',
+    parts: {
+      A: { bars: 6, layers: [
+        L('noise', '>k . h k s . h . | k h . k s . h h', 16),
+        L('tri', 'C3 . C3 G2 . C3 . G2 | F2 . F2 C3 . F2 . G2', 16),
+        L('p2', 'G5 E5 C6 G5 E5 D5', 6),
+        L('p1', 'E5 . G5 . D5 . A5 . | G5 . . . E5 . C5 . | F5 . A5 . C6 . A5 . | G5- . . . . . E5 . | D5 . E5 . G5 . A5 . | C6- . . . . . . .', 48),
+      ] },
+      B: { bars: 6, layers: [
+        L('noise', '>k . h k s . h . | k h . k s . h h', 16),
+        L('tri', 'A2 . A2 E3 . A2 . E2 | F2 . F2 C3 . G2 . G2', 16),
+        L('p2', 'A5 E5 C6 A5 E5 C5', 6),
+        L('p1', 'C6 . A5 . G5 . E5 . | D5 . . . C5 . A4 . | C5 . D5 . E5 . G5 . | A5- . . . G5 . E5 . | F5 . E5 . D5 . G5 . | C5- . . . . . . .', 48),
+      ] },
+    },
+  },
+  gizmo: {
+    title: 'Dr. Gizmo\'s Theme', bpm: 108, spb: 2, barSteps: 5, meter: '5/8 (3+2), 3-step creep (C minor)',
+    form: 'A B A B',
+    parts: {
+      A: { bars: 6, layers: [
+        L('noise', 'k . h s .', 5),
+        L('tri', 'C2 . G2 C2 . | Ab1 . Eb2 Ab1 .', 10),
+        L('p2', 'G4 . Eb4', 3),
+        L('p1', 'Eb5 . G5 . D5 | Ab5- . . . G5 | . . . . . | C5 . Eb5 . F5 | F#5 . G5- . . | . . . . .', 30),
+      ] },
+      B: { bars: 6, layers: [
+        L('noise', 'k . h s .', 5),
+        L('tri', 'F2 . C3 F2 . | G2 . D3 G2 .', 10),
+        L('p2', 'Ab4 . F4', 3),
+        L('p1', 'F5 . Ab5 . C6 | B5- . . . G5 | . . . . . | Ab5 . G5 . F5 | Eb5 . D5- . . | . . . . .', 30),
+      ] },
+    },
+  },
+};
+const MUSIC_ALIAS = { hero: 'title', trainer: 'battle', boss: 'champion' };
+const QUARTER_TONE_SONGS = ['woods', 'champion'];
+const STING = ['E5', 'G5', 'D6'];   // the first three motif notes, used as the battle "encounter sting"
+
+// ---- parsing / compiling (pure, no audio) ----
 const NOTE_BASE = { C: -9, D: -7, E: -5, F: -4, G: -2, A: 0, B: 2 };
-function semiOf(letter, acc) { return NOTE_BASE[letter] + (acc === '#' ? 1 : acc === 'b' ? -1 : 0); }
+const NOTE_RE = /^(>?)([A-G])([#b]?)(\d)(\+?)([-~\/]*)$/;
+const DRUM_RE = /^(>?)([ksh])$/;
 function noteFreq(n) {
   const m = /^([A-G])([#b]?)(\d)$/.exec(n); if (!m) return 0;
-  return 440 * Math.pow(2, (semiOf(m[1], m[2]) + (parseInt(m[3], 10) - 4) * 12) / 12);
+  const semi = NOTE_BASE[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + (parseInt(m[3], 10) - 4) * 12;
+  return 440 * Math.pow(2, semi / 12);
 }
-const CHORD_Q = { '': [0, 4, 7], m: [0, 3, 7], '7': [0, 4, 7, 10], m7: [0, 3, 7, 10], dim: [0, 3, 6] };
-function chordSemis(name) {
-  const m = /^([A-G])([#b]?)(m7|m|7|dim)?$/.exec(name); if (!m) return null;
-  const r = semiOf(m[1], m[2]); return CHORD_Q[m[3] || ''].map(i => r + i);
-}
-function semiFreq(s, oct) { return 440 * Math.pow(2, (s + (oct - 4) * 12) / 12); }
-const BASS_STYLES = {   // [slot, chord tone, octave shift, length]
-  pulse: [[0, 0, 0, 1], [1, 0, 1, 1], [2, 0, 0, 1], [3, 0, 1, 1], [4, 0, 0, 1], [5, 0, 1, 1], [6, 0, 0, 1], [7, 0, 1, 1]],
-  half:  [[0, 0, 0, 4], [4, 2, -1, 4]],
-  walk:  [[0, 0, 0, 2], [2, 1, 0, 2], [4, 2, 0, 2], [6, 1, 0, 2]],
-  march: [[0, 0, 0, 2], [2, 2, -1, 2], [4, 0, 0, 2], [6, 2, -1, 2]],
-};
-const ARP_STYLES = {    // [slot, chord tone (or 'all'), octave shift, length]
-  up:     [[0, 0, 0, 1], [1, 1, 0, 1], [2, 2, 0, 1], [3, 0, 1, 1], [4, 2, 0, 1], [5, 1, 0, 1], [6, 0, 0, 1], [7, 1, 0, 1]],
-  updown: [[0, 0, 0, 1], [1, 1, 0, 1], [2, 2, 0, 1], [3, 1, 0, 1], [4, 0, 0, 1], [5, 1, 0, 1], [6, 2, 0, 1], [7, 1, 0, 1]],
-  stab:   [[1, 'all', 0, 1], [3, 'all', 0, 1], [5, 'all', 0, 1], [7, 'all', 0, 1]],
-  pad:    [[0, 'all', 0, 8]],
-  off:    [],
-};
-const TRACKS = {
-  town: { bpm: 112, order: 'A A B C', s: {
-    A: ['C G Am F', 'E5 _ G5 _ C6 _ G5 _ | D5 _ G5 _ B5 _ A5 G5 | C5 _ E5 _ A5 _ G5 E5 | F5 _ A5 _ G5 _ - -', 'k-h-s-h-', 'walk', 'up'],
-    B: ['F C Dm G', 'A5 _ G5 F5 E5 _ F5 _ | G5 _ E5 _ C5 _ E5 _ | F5 _ E5 D5 A4 _ D5 _ | B4 _ D5 _ G5 _ - -', 'k-h-s-hh', 'march', 'stab'],
-    C: ['Am F G C', 'E5 _ _ _ C5 _ E5 _ | F5 _ _ _ A5 _ F5 _ | G5 _ F5 _ E5 _ D5 _ | C5 _ _ _ - - - -', 'k-h-s-h-', 'half', 'pad'] } },
-  meadow: { bpm: 128, order: 'A B A C', s: {
-    A: ['G D Em C', 'B4 D5 G5 _ D5 _ B4 _ | A4 D5 F#5 _ D5 _ A4 _ | G4 B4 E5 _ B4 _ G4 _ | A4 C5 E5 _ D5 _ C5 B4', 'k-h-s-h-', 'pulse', 'off'],
-    B: ['C G Am D', 'E5 _ E5 G5 E5 _ C5 _ | D5 _ D5 G5 D5 _ B4 _ | C5 _ C5 E5 A5 _ G5 _ | F#5 _ E5 _ D5 _ - -', 'k-hsk-s-', 'walk', 'up'],
-    C: ['Em C G D', 'G5 _ F#5 _ E5 _ B4 _ | C5 _ E5 _ G5 _ A5 _ | B5 _ A5 _ G5 _ D5 _ | A5 _ _ _ F#5 _ - -', 'k-h-s-hs', 'march', 'stab'] } },
-  woods: { bpm: 98, order: 'A A B B', s: {
-    A: ['Am Em F E', 'A4 _ C5 _ E5 _ D5 C5 | B4 _ _ _ G4 _ - - | A4 _ C5 _ F5 _ E5 D5 | E5 _ _ _ G#4 _ - -', 'k---s-h-', 'half', 'updown'],
-    B: ['Dm Am Dm E', 'F5 _ E5 _ D5 _ A4 _ | C5 _ B4 _ A4 _ E4 _ | D5 _ F5 _ A5 _ G5 F5 | E5 _ _ _ _ _ - -', 'k-h-skh-', 'walk', 'up'] } },
-  lab: { bpm: 88, order: 'A B', s: {
-    A: ['Em Em C B', 'E5 - - D#5 E5 - - - | G5 - F#5 - E5 - B4 - | C5 - - B4 C5 - - - | D#5 - F#5 - B5 - - -', 'k---s---', 'pulse', 'off'],
-    B: ['Am Em F B', 'A4 - C5 - E5 - D#5 - | E5 - - - B4 - - - | F5 - E5 - D#5 - D5 - | D#5 _ _ _ B4 - - -', 'k-h-s-hh', 'half', 'updown'] } },
-  battle: { bpm: 152, order: 'A A B C', s: {
-    A: ['Am G F E', 'A4 C5 E5 A5 G5 E5 C5 E5 | B4 D5 G5 B5 A5 G5 D5 G5 | A4 C5 F5 A5 G5 F5 C5 F5 | G#4 B4 E5 G#5 B5 _ E5 -', 'k-h-s-hk', 'pulse', 'off'],
-    B: ['F G Am Am', 'C6 _ A5 _ F5 _ A5 _ | B5 _ G5 _ D5 _ G5 _ | A5 _ E5 _ C5 _ E5 _ | A5 _ B5 _ C6 _ B5 _', 'k-h-s-hs', 'march', 'up'],
-    C: ['Dm E Am E', 'D5 F5 A5 _ F5 D5 A4 _ | E5 G#5 B5 _ G#5 E5 B4 _ | C5 E5 A5 _ E5 C5 A4 _ | B4 _ D5 _ E5 _ - -', 'kkh-s-hs', 'pulse', 'stab'] } },
-  trainer: { bpm: 158, order: 'A B A C', s: {
-    A: ['Dm C Bb A', 'D5 _ A5 _ F5 _ D5 F5 | E5 _ G5 _ C6 _ G5 _ | F5 _ Bb5 _ D6 _ Bb5 _ | C#6 _ A5 _ E5 _ C#5 _', 'k-hsk-hs', 'pulse', 'off'],
-    B: ['Gm Dm Gm A', 'G5 _ Bb5 _ D6 _ Bb5 G5 | A5 _ F5 _ D5 _ F5 A5 | Bb5 _ A5 _ G5 _ D5 _ | E5 _ A5 _ C#6 _ - -', 'k-h-s-hs', 'walk', 'up'],
-    C: ['Bb C Dm Dm', 'D6 _ C6 _ Bb5 _ A5 _ | G5 _ F5 _ E5 _ C5 _ | D5 _ F5 _ A5 _ D6 _ | D6 _ _ _ - - - -', 'kkhskkhs', 'march', 'stab'] } },
-  boss: { bpm: 172, order: 'A A B C', s: {
-    A: ['Em Em C B', 'E5 E5 D#5 E5 B4 - G4 A4 | B4 _ E5 _ G5 _ F#5 E5 | C5 C5 B4 C5 G4 - E4 G4 | B4 _ D#5 _ F#5 _ B5 _', 'kkh-s-hs', 'pulse', 'off'],
-    B: ['Am Em Am B', 'A5 _ G5 _ E5 _ C5 _ | B4 _ E5 _ G5 _ B5 _ | C6 _ B5 _ A5 _ E5 _ | D#5 _ F#5 _ A5 _ B5 _', 'k-hsk-hs', 'march', 'stab'],
-    C: ['C D Em Em', 'E5 G5 C6 _ G5 E5 C5 _ | F#5 A5 D6 _ A5 F#5 D5 _ | G5 B5 E6 _ B5 G5 E5 _ | E6 _ _ _ B4 - E5 -', 'kskskshs', 'pulse', 'up'] } },
-  gizmo: { bpm: 108, order: 'A B', s: {
-    A: ['Cm Cm Ab G', 'C5 - Eb5 - G5 - F#5 - | G5 - - Eb5 C5 - - - | Ab4 - C5 - Eb5 - D5 - | B4 - D5 - G5 _ _ -', 'k---s-k-', 'half', 'off'],
-    B: ['Fm Cm Ab G', 'F5 - Ab5 - C6 - Ab5 - | G5 - Eb5 - C5 - Eb5 - | C6 - Bb5 - Ab5 - G5 - | F5 - D5 - B4 _ _ -', 'k-h-s-hk', 'march', 'stab'] } },
-  hero: { bpm: 120, order: 'A B A C', s: {
-    A: ['F C Dm Bb', 'C5 _ F5 _ A5 _ C6 _ | C6 _ Bb5 A5 G5 _ E5 _ | D5 _ F5 _ A5 _ D6 _ | D6 _ C6 Bb5 A5 _ G5 _', 'k-h-s-h-', 'march', 'up'],
-    B: ['Gm C F F', 'Bb5 _ A5 _ G5 _ D5 _ | E5 _ G5 _ C6 _ Bb5 _ | A5 _ G5 _ F5 _ C5 _ | F5 _ _ _ - - - -', 'k-hsk-s-', 'walk', 'stab'],
-    C: ['Bb C F F', 'F5 _ Bb5 _ D6 _ Bb5 _ | G5 _ C6 _ E6 _ C6 _ | F6 _ C6 _ A5 _ C6 _ | F6 _ _ _ - - - -', 'kkh-s-hs', 'pulse', 'pad'] } },
-  desert: { bpm: 104, order: 'A A B', s: {
-    A: ['E F E F', 'E5 _ F5 _ G#5 _ F5 E5 | F5 _ A5 _ C6 _ A5 F5 | E5 _ G#5 _ B5 _ G#5 E5 | F5 _ E5 _ D5 _ E5 -', 'k--sk-s-', 'half', 'updown'],
-    B: ['Am G F E', 'A5 _ C6 _ B5 A5 G#5 _ | G5 _ B5 _ A5 G5 F5 _ | F5 _ A5 _ G#5 F5 E5 _ | E5 _ _ _ - - - -', 'k-hsk-hs', 'walk', 'stab'] } },
-  jungle: { bpm: 132, order: 'A A B', s: {
-    A: ['C F G C', 'G5 _ E5 G5 A5 G5 E5 _ | A5 _ F5 A5 C6 A5 F5 _ | B5 _ G5 B5 D6 B5 G5 _ | C6 _ G5 E5 C5 _ - -', 'kohskohs', 'pulse', 'off'],
-    B: ['Am F C G', 'E5 E5 A5 _ E5 E5 C5 _ | F5 F5 A5 _ F5 F5 C5 _ | E5 G5 C6 _ G5 E5 C5 _ | D5 _ G5 _ B5 _ D6 _', 'k-sskhs-', 'march', 'stab'] } },
-  win: { bpm: 126, order: 'A B', s: {
-    A: ['C F G C', 'C5 E5 G5 C6 _ _ G5 C6 | A5 _ F5 _ C6 _ A5 _ | B5 _ G5 _ D6 _ B5 _ | C6 _ _ _ G5 _ E5 _', 'k-h-s-hs', 'march', 'up'],
-    B: ['Am F Dm G', 'E6 _ C6 _ A5 _ C6 _ | F6 _ C6 _ A5 _ F5 _ | D6 _ A5 _ F5 _ D5 _ | G5 _ B5 _ D6 _ G6 _', 'kkhsk-hs', 'walk', 'stab'] } },
-};
-const compiledTracks = {};
-function compileTrack(name) {
-  if (compiledTracks[name]) return compiledTracks[name];
-  const tr = TRACKS[name], steps = [];
-  let base = 0;
-  const add = (st, ev) => { (steps[st] = steps[st] || []).push(ev); };
-  for (const secName of tr.order.split(' ')) {
-    const [chordStr, melStr, drums, bassStyle, arpStyle] = tr.s[secName];
-    const chords = chordStr.split(' ');
-    const mel = melStr.replace(/\|/g, ' ').trim().split(/\s+/);
-    for (let i = 0; i < mel.length; i++) {
-      const t = mel[i]; if (t === '_' || t === '-') continue;
-      let d = 1; while (i + d < mel.length && mel[i + d] === '_') d++;
-      add(base + i, { ch: 'lead', f: [noteFreq(t)], d });
+function stepTokens(steps) { return steps.replace(/\|/g, ' ').trim().split(/\s+/); }
+// Returns { ev: [event|null per step], errors: [] }.
+function compileLayer(layer) {
+  const toks = stepTokens(layer.steps), errors = [], ev = new Array(toks.length).fill(null);
+  if (toks.length !== layer.loopLength) errors.push('loopLength ' + layer.loopLength + ' but ' + toks.length + ' steps');
+  toks.forEach((t, i) => {
+    if (t === '.') return;
+    if (layer.voice === 'noise') {
+      const m = DRUM_RE.exec(t);
+      if (!m) { errors.push('bad drum "' + t + '"'); return; }
+      ev[i] = { drum: m[2], acc: !!m[1], dur: 1 };
+      return;
     }
-    chords.forEach((c, b) => {
-      const cs = chordSemis(c), bar = base + b * 8;
-      for (const [slot, ti, oc, d] of BASS_STYLES[bassStyle]) add(bar + slot, { ch: 'bass', f: [semiFreq(cs[ti % cs.length], 2 + oc)], d });
-      for (const [slot, ti, oc, d] of ARP_STYLES[arpStyle]) {
-        const tones = ti === 'all' ? cs : [cs[ti % cs.length]];
-        add(bar + slot, { ch: arpStyle === 'pad' ? 'pad' : 'arp', f: tones.map(s => semiFreq(s, 4 + oc)), d });
+    const m = NOTE_RE.exec(t);
+    if (!m) { errors.push('bad note "' + t + '"'); return; }
+    let f = noteFreq(m[2] + m[3] + m[4]) * Math.pow(2, (layer.tr || 0) / 12);
+    if (m[5]) f *= Math.pow(2, 0.5 / 12);
+    if (!Number.isFinite(f) || f <= 0) { errors.push('NaN note "' + t + '"'); return; }
+    const hold = m[6].includes('-');
+    let dur = 1;
+    if (hold) while (i + dur < toks.length && toks[i + dur] === '.') dur++;
+    ev[i] = { f, acc: !!m[1], dur, hold, quarter: !!m[5], bend: m[6].includes('/'), vib: m[6].includes('~') };
+  });
+  return { ev, errors };
+}
+const compiledSongs = {};
+function compileSong(name) {
+  if (compiledSongs[name]) return compiledSongs[name];
+  const s = SONGS[name];
+  const parts = {};
+  for (const k in s.parts) {
+    const p = s.parts[k], barSteps = p.barSteps || s.barSteps;
+    parts[k] = { len: p.bars * barSteps, bars: p.bars, barSteps, meter: p.meter || s.meter,
+      layers: p.layers.map(l => Object.assign({}, l, { ev: compileLayer(l).ev })) };
+  }
+  return (compiledSongs[name] = { name, title: s.title, bpm: s.bpm, sd: 60 / s.bpm / s.spb, oneShot: !!s.oneShot, form: s.form.split(' '), parts });
+}
+
+// ---- scheduler core (pure: works on a time number, plays through an emit callback) ----
+const MUS = { players: [], cur: null, want: null, timer: null, musicOn: true };
+function newPlayer(name, start) {
+  const song = compileSong(name);
+  return { name, song, formIdx: 0, step: 0, next: start, done: false, stopAt: undefined, gain: null, log: [] };
+}
+function advancePlayer(pl) {
+  const part = pl.song.parts[pl.song.form[pl.formIdx]];
+  if (++pl.step >= part.len) {
+    pl.step = 0;
+    if (++pl.formIdx >= pl.song.form.length) {
+      if (pl.song.oneShot) { pl.done = true; pl.formIdx = pl.song.form.length - 1; }
+      else pl.formIdx = 0;
+    }
+  }
+}
+// Schedule every step whose time falls before now + lookahead. If we fell far behind (e.g. a hidden tab
+// throttled the timer), skip the missed steps silently instead of firing a burst of piled-up notes.
+const LOOKAHEAD = 0.12;
+function pumpPlayer(pl, now, emit) {
+  if (pl.done) return 0;   // a finished one-shot keeps its end time so it can be cleaned up
+  const sd = pl.song.sd;
+  if (pl.next < now - 0.05) {
+    const missed = Math.ceil((now - pl.next) / sd);
+    for (let i = 0; i < missed && !pl.done; i++) advancePlayer(pl);
+    pl.next += missed * sd;
+  }
+  let n = 0;
+  while (!pl.done && pl.next < now + LOOKAHEAD) {
+    if (pl.stopAt === undefined || pl.next < pl.stopAt) {
+      const part = pl.song.parts[pl.song.form[pl.formIdx]];
+      for (const layer of part.layers) {
+        const ev = layer.ev[pl.step % layer.ev.length];
+        if (ev) { emit(layer, ev, pl.next, sd, pl); n++; }
       }
-      for (let k = 0; k < 8; k++) if (drums[k] && drums[k] !== '-') add(bar + k, { ch: 'drum', k: drums[k] });
+      pl.log.push({ t: pl.next, formIdx: pl.formIdx, step: pl.step });
+      if (pl.log.length > 48) pl.log.shift();
+    }
+    advancePlayer(pl);
+    pl.next += sd;
+  }
+  return n;
+}
+// Switch songs. Overworld songs crossfade over 400 ms; cut/sting stop the old song at once.
+function switchSong(name, now, opts = {}) {
+  name = MUSIC_ALIAS[name] || name;
+  if (!SONGS[name]) return null;
+  const cur = MUS.cur;
+  if (cur && cur.name === name && !opts.restart && !cur.done && cur.stopAt === undefined) return cur;
+  const fade = !(opts.cut || opts.sting) && cur && !cur.done;
+  for (const pl of MUS.players) {
+    if (pl.stopAt !== undefined && pl.stopAt <= now) continue;
+    pl.stopAt = fade ? now + 0.4 : now;
+    if (pl.gain) {
+      const g = pl.gain.gain;
+      g.cancelScheduledValues(now);
+      g.setValueAtTime(fade ? g.value : 0, now);
+      if (fade) g.linearRampToValueAtTime(0, now + 0.4);
+    }
+  }
+  const start = now + 0.05 + (opts.sting ? 0.36 : 0);
+  const pl = newPlayer(name, start);
+  pl.fadeIn = fade;
+  MUS.players.push(pl);
+  MUS.cur = pl;
+  return pl;
+}
+function prunePlayers(now) {
+  MUS.players = MUS.players.filter(pl => {
+    const dead = (pl.stopAt !== undefined && now > pl.stopAt + 0.25) || (pl.done && now > pl.next + 1.5);
+    if (dead && pl.gain) { try { pl.gain.disconnect(); } catch (e) { /* already gone */ } }
+    return !dead;
+  });
+  if (MUS.cur && !MUS.players.includes(MUS.cur)) MUS.cur = null;
+}
+function audiblePlayers(now) { return MUS.players.filter(pl => !pl.done && (pl.stopAt === undefined || pl.stopAt > now)); }
+
+// ---- audio output: the four chip voices ----
+const pulseWaves = {};
+function pulseWave(duty) {
+  if (!pulseWaves[duty]) {
+    const n = 64, re = new Float32Array(n), im = new Float32Array(n);
+    for (let k = 1; k < n; k++) { re[k] = Math.sin(2 * Math.PI * k * duty) / (Math.PI * k); im[k] = (1 - Math.cos(2 * Math.PI * k * duty)) / (Math.PI * k); }
+    pulseWaves[duty] = Snd.ac.createPeriodicWave(re, im);
+  }
+  return pulseWaves[duty];
+}
+const VOICE_VOL = { p1: 0.34, p2: 0.2, tri: 0.55 };
+function playChipEvent(layer, ev, t, sd, pl) {
+  const ac = Snd.ac; if (!ac || !pl.gain) return;
+  const dest = pl.gain, acc = ev.acc ? 1.35 : 1;
+  if (layer.voice === 'noise') return playDrum(ev.drum, t, acc, dest);
+  const len = ev.hold ? ev.dur * sd * 0.96 : sd * 0.72;
+  const o = ac.createOscillator(), g = ac.createGain();
+  const v = VOICE_VOL[layer.voice] * acc;
+  if (layer.voice === 'tri') {
+    o.type = 'triangle';
+    g.gain.setValueAtTime(v, t);            // the triangle channel is simply on or off
+    g.gain.setValueAtTime(0, t + len);
+  } else {
+    o.setPeriodicWave(pulseWave(layer.duty || (layer.voice === 'p1' ? 0.25 : 0.125)));
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(v, t + 0.004);
+    g.gain.linearRampToValueAtTime(v * 0.6, t + Math.min(0.08, len * 0.5));
+    g.gain.setValueAtTime(v * 0.6, t + len);
+    g.gain.linearRampToValueAtTime(0, t + len + 0.02);
+  }
+  o.frequency.setValueAtTime(ev.bend ? ev.f * Math.pow(2, -0.5 / 12) : ev.f, t);
+  if (ev.bend) o.frequency.linearRampToValueAtTime(ev.f, t + Math.min(0.09, len * 0.6));
+  if (ev.vib && layer.voice === 'p1') {
+    const lfo = ac.createOscillator(), lg = ac.createGain();
+    lfo.frequency.value = 6; lg.gain.value = ev.f * 0.012;
+    lfo.connect(lg); lg.connect(o.frequency); lfo.start(t + 0.08); lfo.stop(t + len + 0.05);
+  }
+  o.connect(g); g.connect(dest);
+  o.start(t); o.stop(t + len + 0.05);
+}
+function playDrum(kind, t, acc, dest) {
+  const ac = Snd.ac;
+  const burst = (dur, vol, type, freq) => {
+    const s = ac.createBufferSource(); s.buffer = Snd.noiseBuf;
+    const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq;
+    const g = ac.createGain(); g.gain.setValueAtTime(vol * acc, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    s.connect(f); f.connect(g); g.connect(dest); s.start(t); s.stop(t + dur + 0.02);
+  };
+  if (kind === 'k') {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.07);
+    g.gain.setValueAtTime(0.9 * acc, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
+    o.connect(g); g.connect(dest); o.start(t); o.stop(t + 0.15);
+    burst(0.03, 0.35, 'lowpass', 500);
+  } else if (kind === 's') burst(0.11, 0.42, 'highpass', 1200);
+  else burst(0.03, 0.14, 'highpass', 7000);
+}
+function playSting(t) {
+  STING.forEach((n, i) => playChipEvent({ voice: 'p1', duty: 0.25 }, { f: noteFreq(n), acc: i === 2, dur: 1, hold: false }, t + i * 0.1, 0.11, { gain: Snd.musicBus }));
+}
+function musicTick() {
+  const ac = Snd.ac;
+  if (!ac || ac.state !== 'running') return;
+  const now = ac.currentTime;
+  for (const pl of MUS.players) {
+    if (!pl.gain) {
+      pl.gain = ac.createGain();
+      pl.gain.connect(Snd.musicBus);
+      if (pl.fadeIn) { pl.gain.gain.setValueAtTime(0, now); pl.gain.gain.linearRampToValueAtTime(1, now + 0.4); }
+      else pl.gain.gain.setValueAtTime(1, now);
+    }
+    pumpPlayer(pl, now, playChipEvent);
+  }
+  prunePlayers(now);
+}
+function startMusicEngine() { if (!MUS.timer) MUS.timer = setInterval(musicTick, 25); }
+function playMusic(name, opts = {}) {
+  name = MUSIC_ALIAS[name] || name;
+  MUS.want = name;
+  if (!Snd.ac) return;
+  const now = Snd.ac.currentTime;
+  const before = MUS.cur;
+  const pl = switchSong(name, now, opts);
+  if (opts.sting && pl && pl !== before) playSting(now + 0.03);
+}
+function stopMusic() {
+  MUS.want = null;
+  const now = Snd.ac ? Snd.ac.currentTime : 0;
+  for (const pl of MUS.players) { pl.stopAt = now; if (pl.gain) { pl.gain.gain.cancelScheduledValues(now); pl.gain.gain.setValueAtTime(0, now); } }
+  MUS.cur = null;
+}
+function toggleMusic() {
+  MUS.musicOn = !MUS.musicOn;
+  if (Snd.musicBus) Snd.musicBus.gain.value = MUS.musicOn ? 0.18 : 0;
+}
+// After a tab comes back: start cleanly from "now" (no burst of late notes).
+document.addEventListener('visibilitychange', () => {
+  const ac = Snd.ac; if (!ac) return;
+  if (document.hidden) { try { ac.suspend(); } catch (e) { /* ignore */ } return; }
+  Promise.resolve(ac.resume && ac.resume()).catch(() => {}).then(() => {
+    const now = ac.currentTime;
+    for (const pl of MUS.players) if (pl.next < now) pl.next = now + 0.05;
+  });
+});
+
+// ---- #music: the jukebox / music test room ----
+const VOICE_LABEL = { p1: 'PULSE 1', p2: 'PULSE 2', tri: 'TRIANGLE', noise: 'NOISE' };
+class MusicRoomScreen {
+  constructor(resolve) { this.opaque = true; this.i = 0; this.names = Object.keys(SONGS); this.t = 0; this.resolve = resolve || null; }
+  update(inp) {
+    this.t++;
+    for (const a of inp) {
+      if (a === 'up') { this.i = (this.i + this.names.length - 1) % this.names.length; sfx('move'); }
+      else if (a === 'down') { this.i = (this.i + 1) % this.names.length; sfx('move'); }
+      else if (a === 'ok') playMusic(this.names[this.i], { cut: true, restart: true });
+      else if (a === 'back') {
+        sfx('cancel');
+        pop(this);
+        if (this.resolve) { if (world.map) playMusic(world.map.music); this.resolve(); }   // opened from the pause menu
+        else { stopMusic(); push(new TitleScreen()); }                                   // opened with #music
+        return;
+      }
+    }
+  }
+  draw() {
+    ctx.fillStyle = '#14121e'; ctx.fillRect(0, 0, W, H);
+    drawText(this.resolve ? 'JUKEBOX' : 'MUSIC ROOM', 8, 6, '#ffd84a', 2);
+    drawText(MUS.musicOn ? '' : '(music is off - press N)', 150, 10, COL.red);
+    this.names.forEach((n, k) => {
+      const y = 28 + k * 14, sel = k === this.i, playing = MUS.cur && MUS.cur.name === n;
+      if (sel) { ctx.fillStyle = '#3b3b6d'; ctx.fillRect(4, y - 3, 128, 13); }
+      drawText((playing ? '♪' : ' ') + ' ' + SONGS[n].title, 10, y, playing ? '#7dff9a' : sel ? COL.white : COL.dim);
     });
-    base += chords.length * 8;
+    const s = SONGS[this.names[this.i]];
+    box(138, 24, 290, 202, '#1d1b2e');
+    drawText(s.title, 148, 32, COL.white);
+    drawText(s.bpm + ' BPM   ' + (s.oneShot ? 'one-shot' : s.form.split(' ').length + ' parts: ' + s.form), 148, 44, COL.barText);
+    wrapText(s.meter, 270).slice(0, 2).forEach((ln, k) => drawText(ln, 148, 56 + k * 10, '#8fd3ff'));
+    const pl = MUS.cur && MUS.cur.name === this.names[this.i] ? MUS.cur : null;
+    if (!pl) { drawText('Press Enter to play.', 148, 90, COL.dim); return; }
+    const now = Snd.ac ? Snd.ac.currentTime : 0;
+    let pos = null;
+    for (const e of pl.log) if (e.t <= now) pos = e;
+    if (!pos) return;
+    const partName = pl.song.form[pos.formIdx], part = pl.song.parts[partName];
+    drawText('Part ' + partName + '  bar ' + (Math.floor(pos.step / part.barSteps) + 1) + '/' + part.bars + '  step ' + (pos.step + 1) + '/' + part.len, 148, 80, COL.white);
+    part.layers.forEach((layer, k) => {
+      const y = 98 + k * 30, n = layer.ev.length, at = pos.step % n;
+      drawText(VOICE_LABEL[layer.voice] + '  loops every ' + n, 148, y, COL.barText);
+      const show = Math.min(n, 32), first = n > 32 ? Math.floor(at / 32) * 32 : 0;
+      for (let c = 0; c < show && first + c < n; c++) {
+        const ev = layer.ev[first + c], x = 148 + c * 8;
+        ctx.fillStyle = first + c === at ? '#ffd84a' : ev ? (ev.quarter ? '#ff7a59' : '#5a8ad8') : '#2e2c44';
+        ctx.fillRect(x, y + 11, 7, ev && ev.acc ? 10 : 7);
+      }
+    });
   }
-  steps.length = base;
-  return (compiledTracks[name] = { bpm: tr.bpm, steps, len: base });
-}
-function playNoteEvent(ev, when, sd) {
-  const M = Snd.music;
-  if (ev.ch === 'lead') tone(ev.f[0], ev.d * sd * 0.92, 'square', 0.30, when, 0, M);
-  else if (ev.ch === 'arp') ev.f.forEach(f => tone(f, ev.d * sd * 0.8, 'square', 0.08, when, 0, M));
-  else if (ev.ch === 'pad') ev.f.forEach(f => tone(f, ev.d * sd, 'triangle', 0.13, when, 0, M));
-  else if (ev.ch === 'bass') tone(ev.f[0], ev.d * sd * 0.9, 'triangle', 0.6, when, 0, M);
-  else if (ev.ch === 'drum') {
-    if (ev.k === 'k' || ev.k === 'b') tone(140, 0.14, 'sine', 0.9, when, 40, M);
-    if (ev.k === 's') { noise(0.12, 0.45, when, 1800, M); tone(190, 0.06, 'triangle', 0.25, when, 0, M); }
-    if (ev.k === 'h' || ev.k === 'b') noise(0.03, 0.18, when, 8000, M);
-    if (ev.k === 'o') noise(0.14, 0.14, when, 7000, M);
-  }
-}
-function playMusic(name) {
-  if (Snd.track === name || !TRACKS[name]) return;
-  Snd.track = name; Snd.step = 0; Snd.song = compileTrack(name);
-  if (Snd.ac) Snd.next = Snd.ac.currentTime + 0.05;
-}
-function stopMusic() { Snd.track = null; Snd.song = null; }
-function updateMusic() {
-  const ac = Snd.ac; if (!ac || !Snd.song) return;
-  const song = Snd.song, sd = 60 / song.bpm / 2;
-  if (Snd.next < ac.currentTime) Snd.next = ac.currentTime + 0.02;
-  while (Snd.next < ac.currentTime + 0.2) {
-    const evs = song.steps[Snd.step % song.len];
-    if (evs) for (const ev of evs) playNoteEvent(ev, Snd.next - ac.currentTime, sd);
-    Snd.next += sd; Snd.step = (Snd.step + 1) % song.len;
-  }
+  hint() { return 'W/S: choose   Enter: play   ' + hintKeys() + ': ' + (this.resolve ? 'back to game' : 'title') + '   N: music   M: mute'; }
 }
 
 // ---------------------------------------------------------------------
@@ -1583,7 +2026,7 @@ const MAPS = {
         trainer: { team: [['noodle', 7], ['ziggy', 7], ['buddy', 8]] },
         lines: ['Whisker Woods is full of strong pets. Show me you\'re ready!'],
         after: ['You\'re ready. The Pet Champion waits where the path ends. Strange zapping noises come from past her clearing...'] },
-      { id: 'maple', look: 'champion', name: 'Champion Maple', x: 24, y: 1, dir: 'down', champion: true, onWin: 'champion',
+      { id: 'maple', look: 'champion', name: 'Champion Maple', x: 24, y: 1, dir: 'down', champion: true, onWin: 'champion', music: 'champion',
         moveTo: { x: 22, y: 1, dir: 'right' },
         trainer: { team: [['thunder', 10], ['mango', 11], ['rocky', 12]] },
         lines: ['You made it all the way through Whisker Woods!', 'I\'m Maple, the Pet Champion. Something bad is going on, but first I need to know you\'re strong. Let\'s battle!'],
@@ -1982,7 +2425,7 @@ function hasSave() { return !!loadGame(); }
 // ---------------------------------------------------------------------
 const KEYMAP = {
   KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right',
-  Enter: 'ok', NumpadEnter: 'ok', Space: 'ok', KeyE: 'ok', Escape: 'back', KeyQ: 'back', KeyM: 'mute', KeyF: 'full', KeyV: 'emote', KeyH: 'home',
+  Enter: 'ok', NumpadEnter: 'ok', Space: 'ok', KeyE: 'ok', Escape: 'back', KeyQ: 'back', KeyM: 'mute', KeyF: 'full', KeyV: 'emote', KeyH: 'home', KeyN: 'music',
 };
 const DIR_KEYS = ['up', 'down', 'left', 'right'];
 const held = {};
@@ -1999,6 +2442,7 @@ window.addEventListener('keydown', e => {
   if (a === 'mute') { if (!e.repeat) toggleMute(); return; }
   if (a === 'full') { if (!e.repeat) toggleFullscreen(); return; }
   if (a === 'emote') { if (!e.repeat) doEmote(); return; }
+  if (a === 'music') { if (!e.repeat) toggleMusic(); return; }
   if (DIR_KEYS.includes(a) && !held[a]) lastDir = a;
   held[a] = true;
   if (!e.repeat || DIR_KEYS.includes(a)) inputQueue.push(a);
@@ -2400,10 +2844,12 @@ async function enterBuilding(door) {
   } else {
     await fadeTo(1, 10);
     const bg = push(new BuildingScreen(door.kind));
+    playMusic('interior');
     await fadeTo(0, 10);
     if (door.kind === 'clinic') await clinicScript(); else await shopScript();
     await fadeTo(1, 10);
     pop(bg);
+    playMusic(world.map.music);
   }
   // Step back outside, in front of the door.
   G.y = door.y + 1; G.x = door.x; G.dir = 'down';
@@ -2491,8 +2937,8 @@ async function pauseMenu() {
   sfx('menu');
   let start = 0;
   for (;;) {
-    const i = await choose(['Pets', 'Bag', 'Go Home', 'Your Name', 'Save', 'Controls', 'Close'], {
-      x: W - 96, y: 22, minW: 90, cancel: 6, start, title: G.coins + ' coins',
+    const i = await choose(['Pets', 'Bag', 'Go Home', 'Your Name', 'Jukebox', 'Save', 'Controls', 'Close'], {
+      x: W - 96, y: 22, minW: 90, cancel: 7, start, title: G.coins + ' coins',
       info: () => goalText() + '\nPets caught: ' + G.stats.caught + '   Chests: ' + Object.keys(G.chests).length + '/' + ALL_CHESTS.length + '   Time: ' + fmtTime(G.stats.time),
     });
     start = i;
@@ -2503,15 +2949,25 @@ async function pauseMenu() {
       const n = await enterName({ title: 'What should we call you?', initial: G.name, cancel: true });
       if (n) { G.name = n; sfx('emote_star'); await say('Nice to meet you, {name}!'); saveGame(); }
     }
-    else if (i === 4) { const ok = saveGame(); await say(ok ? 'Your adventure was saved!' : 'Saving isn\'t available in this browser, but you can keep playing.'); }
-    else if (i === 5) await showControls();
+    else if (i === 4) await openJukebox();
+    else if (i === 5) { const ok = saveGame(); await say(ok ? 'Your adventure was saved!' : 'Saving isn\'t available in this browser, but you can keep playing.'); }
+    else if (i === 6) await showControls();
     else return;
   }
+}
+// Jukebox from the pause menu: listen to any song, then go back to this area's music.
+function openJukebox() {
+  return new Promise(r => {
+    const s = push(new MusicRoomScreen(r));
+    const playing = MUS.cur ? s.names.indexOf(MUS.cur.name) : -1;
+    if (playing >= 0) s.i = playing;
+  });
 }
 async function showControls() {
   await say('Arrows or WASD: walk and move the cursor.\nEnter, Space or E: talk, open, confirm.\nQ or Esc: back, open this menu.');
   await say('V: emote! Show a heart, star, music note or happy face. In battle your pet celebrates.\nH: go home (it asks first).');
-  await say('M: sound on/off.  F: fullscreen on/off.\nRename and dress up your pets: Menu, Pets, then pick a pet.');
+  await say('M: mute everything.  N: music on/off (sound effects stay on).\nF: fullscreen on/off.');
+  await say('Rename and dress up your pets: Menu, Pets, then pick a pet.\nListen to every song: Menu, Jukebox.');
 }
 // Party grid. mode: {title, filter(p)->string|null (null = allowed)}. Returns index or -1.
 class PartyScreen {
@@ -3439,7 +3895,7 @@ async function onEnemyKO(B) {
     return null;
   }
   G.stats.wins++;
-  stopMusic(); sfx('victory');
+  playMusic('victory', { cut: true });
   if (!isTired(B.player)) B.emote = { t: 0, kind: 'star' };
   if (!B.wild) await bsay('You beat ' + B.o.trainer.name + '!');
   return 'win';
@@ -3533,7 +3989,7 @@ async function battleTurn(B) {
 }
 async function startBattle(o) {
   G.stats.battles++;
-  playMusic(o.music || (o.wild ? 'battle' : 'trainer'));
+  playMusic(o.music || 'battle', { sting: true });
   for (let k = 0; k < 3; k++) { await fadeTo(0.85, 4, '#fff'); await fadeTo(0, 4, '#fff'); }
   await fadeTo(1, 10);
   const B = push(new BattleScreen(o));
@@ -3649,7 +4105,6 @@ function update() {
   const t = topScreen();
   if (t && t.update) t.update(fade.a >= 1 && fade.target >= 1 ? [] : inp);
   if (G && stack.length && !(stack[0] instanceof TitleScreen)) G.stats.time += 1 / 60;
-  updateMusic();
 }
 function drawHintBar() {
   let s = '';
@@ -3863,23 +4318,82 @@ function runSelfTest() {
   if (fresh.moves.length !== 2) bErr.push('Lv5 starter should know 2 moves');
   check('500 random battles: stats, HP, XP, levels and evolution stay valid', !bErr.length, bErr.slice(0, 4).join('; '));
   check('Battles take a sensible number of turns (avg ' + (totalTurns / 500).toFixed(1) + ')', totalTurns / 500 > 1.5 && totalTurns / 500 < 15, 'avg ' + totalTurns / 500);
-  // Music compiles: every section has 4 bars of melody, valid notes, chords and drums.
-  const tErr = [];
-  for (const name in TRACKS) {
-    const tr = TRACKS[name];
-    for (const sn of tr.order.split(' ')) {
-      const sec = tr.s[sn]; if (!sec) { tErr.push(name + ' missing section ' + sn); continue; }
-      const chords = sec[0].split(' '), mel = sec[1].replace(/\|/g, ' ').trim().split(/\s+/);
-      if (mel.length !== chords.length * 8) tErr.push(name + '.' + sn + ' melody has ' + mel.length + ' notes');
-      for (const n of mel) if (n !== '_' && n !== '-' && !noteFreq(n)) tErr.push(name + ' bad note ' + n);
-      for (const c of chords) if (!chordSemis(c)) tErr.push(name + ' bad chord ' + c);
-      if (sec[2].length !== 8) tErr.push(name + '.' + sn + ' drums');
-      if (!BASS_STYLES[sec[3]] || !ARP_STYLES[sec[4]]) tErr.push(name + '.' + sn + ' styles');
+  // ---- Music ----
+  const mErr2 = [], VOICES = ['p1', 'p2', 'tri', 'noise'];
+  const motifOK = notes => { for (let i = 0; i + 4 < notes.length; i++) {
+    const d = [1, 2, 3, 4].map(k => Math.round(12 * Math.log2(notes[i + k] / notes[i + k - 1])));
+    if (d[0] >= 3 && d[0] <= 4 && d[1] <= -4 && d[1] >= -6 && d[2] >= 5 && d[2] <= 7 && d[3] <= -1 && d[3] >= -2) return true; } return false; };
+  for (const name in SONGS) {
+    const s = SONGS[name];
+    let quotes = false;
+    for (const pk of s.form.split(' ')) if (!s.parts[pk]) mErr2.push(name + ' form uses missing part ' + pk);
+    for (const pk in s.parts) {
+      const part = s.parts[pk], barSteps = part.barSteps || s.barSteps;
+      if (!(part.bars >= 1 && part.bars * (s.cycleBars || 1) <= 8)) mErr2.push(name + '.' + pk + ' does not realign within 8 bars');
+      const voices = part.layers.map(l => l.voice);
+      if (voices.some(v => !VOICES.includes(v)) || new Set(voices).size !== voices.length) mErr2.push(name + '.' + pk + ' voices ' + voices);
+      if (!voices.includes('noise') && !voices.includes('tri')) mErr2.push(name + '.' + pk + ' has no steady pulse');
+      for (const l of part.layers) {
+        const c = compileLayer(l);
+        c.errors.forEach(er => mErr2.push(name + '.' + pk + '.' + l.voice + ': ' + er));
+        c.ev.forEach((ev, i) => {
+          if (!ev || ev.drum) return;
+          if (!Number.isFinite(ev.f) || ev.f < 20 || ev.f > 4200) mErr2.push(name + ' bad frequency ' + ev.f);
+          if ((ev.quarter || ev.bend) && !QUARTER_TONE_SONGS.includes(name)) mErr2.push(name + ' has a quarter-tone');
+          if ((ev.quarter || ev.bend) && ev.hold) mErr2.push(name + ' holds a quarter-tone');
+        });
+        if (name === 'woods' && l.voice === 'p1') for (let b = 0; b < c.ev.length; b += 12) {
+          const halves = [c.ev.slice(b, b + 5), c.ev.slice(b + 5, b + 12)];
+          if (halves.some(h => h.filter(ev => ev && (ev.quarter || ev.bend)).length > 1)) mErr2.push('woods: more than 1 quarter-tone in a bar');
+        }
+        if (l.voice !== 'noise' && motifOK(c.ev.filter(Boolean).map(ev => ev.f))) quotes = true;
+      }
     }
-    if (!tErr.length && !(compileTrack(name).len > 0)) tErr.push(name + ' empty');
+    if (!quotes) mErr2.push(name + ' never quotes the motif');
+    const total = s.form.split(' ').reduce((a, k) => a + s.parts[k].bars, 0) * (s.cycleBars || 1);
+    if (!s.oneShot && (total < 16 || total > 32)) mErr2.push(name + ' is ' + total + ' bars long');
   }
-  for (const k in MAPS) if (!TRACKS[MAPS[k].music]) tErr.push(k + ' has no song');
-  check(Object.keys(TRACKS).length + ' songs compile (melody, chords, bass, drums)', !tErr.length, tErr.slice(0, 4).join('; '));
+  for (const k in MAPS) if (!SONGS[MUSIC_ALIAS[MAPS[k].music] || MAPS[k].music]) mErr2.push(k + ' has no song');
+  for (const k of ['title', 'town', 'meadow', 'woods', 'interior', 'battle', 'champion', 'victory', 'win']) if (!SONGS[k]) mErr2.push('missing ' + k);
+  check(Object.keys(SONGS).length + ' songs: every note parses, loops match, motif quoted, realign within 8 bars', !mErr2.length, mErr2.slice(0, 4).join('; '));
+  // Scheduler: 10 simulated minutes on a fake clock, no drift, no late notes, no burst after a hidden tab.
+  const schErr = [], savedMUS = { players: MUS.players, cur: MUS.cur };
+  for (const name of ['woods', 'battle', 'champion', 'title']) {
+    MUS.players = []; MUS.cur = null;
+    const pl = switchSong(name, 0);
+    let now = 0, steps = 0, last = -1, worstBurst = 0;
+    const startT = pl.next, sd = pl.song.sd, perWindow = pl.song.parts[pl.song.form[0]].layers.length * (Math.ceil(LOOKAHEAD / sd) + 2);
+    const emit = (layer, ev, t) => { if (t < last - 1e-9) schErr.push(name + ' out of order'); if (t < now - 1e-6) schErr.push(name + ' late note'); last = t; };
+    for (let tick = 0; tick < 24000; tick++) {      // 24000 x 25 ms = 10 minutes
+      now = tick * 0.025;
+      if (tick === 12000) now += 30;                   // the tab was hidden for 30 s
+      const n = pumpPlayer(pl, now, emit);
+      if (tick === 12000) worstBurst = n;
+    }
+    const expected = startT + Math.round((pl.next - startT) / sd) * sd;
+    if (Math.abs(pl.next - expected) > 1e-6) schErr.push(name + ' drifted ' + (pl.next - expected));
+    if (worstBurst > perWindow) schErr.push(name + ' burst of ' + worstBurst + ' notes after tab switch');
+  }
+  // Track switching never leaves two songs playing.
+  MUS.players = []; MUS.cur = null;
+  switchSong('town', 0); switchSong('town', 0.5);
+  if (MUS.players.length !== 1) schErr.push('same song started twice');
+  switchSong('meadow', 1);
+  if (audiblePlayers(1.2).length !== 2) schErr.push('no crossfade');
+  if (audiblePlayers(1.45).length !== 1) schErr.push('crossfade left two songs');
+  prunePlayers(2); if (MUS.players.length !== 1) schErr.push('old song not removed');
+  switchSong('battle', 3, { sting: true });
+  if (audiblePlayers(3.001).length !== 1 || MUS.cur.name !== 'battle') schErr.push('battle did not cut in');
+  switchSong('victory', 10, { cut: true });
+  const vic = MUS.cur; for (let t = 10; t < 14; t += 0.025) pumpPlayer(vic, t, () => {});
+  if (!vic.done || Math.abs(vic.next - vic.song.parts.A.len * vic.song.sd - 10.05) > 0.05) schErr.push('victory jingle is not a one-shot (done=' + vic.done + ' next=' + vic.next.toFixed(3) + ' len=' + vic.song.parts.A.len + ' sd=' + vic.song.sd.toFixed(4) + ')');
+  switchSong('meadow', 14);
+  if (MUS.cur.step !== 0 || MUS.cur.formIdx !== 0) schErr.push('biome song does not restart');
+  if (audiblePlayers(14.01).length !== 1) schErr.push('two songs after battle');
+  const before = MUS.musicOn; toggleMusic(); const off = MUS.musicOn; toggleMusic();
+  if (off === before || MUS.musicOn !== before) schErr.push('N toggle');
+  MUS.players = savedMUS.players; MUS.cur = savedMUS.cur;
+  check('Music scheduler: 10 min without drift, no burst after tab switch, one song at a time', !schErr.length, schErr.slice(0, 4).join('; '));
   // Difficulty: a Lv 5 starter fighting alone should beat almost every Meadow pet.
   let easyWins = 0;
   for (let i = 0; i < 1000; i++) {
@@ -4015,6 +4529,30 @@ function devView(v) {
     G.party[0].nick = 'WWWWWWWWWW';
     push(new PartyScreen(() => {}, { title: 'Your pets' }));
   }
+  else if (v === 'jukebox') { const s = push(new MusicRoomScreen()); audioUnlock(); s.i = s.names.indexOf('champion'); playMusic('champion', { cut: true }); }
+  else if (v === 'audioprobe') { push(new MusicRoomScreen()); runScript(async () => {   // real Web Audio check (needs autoplay allowed)
+    const out = []; const log = s => { out.push(s); document.getElementById('testout').textContent = out.join('\n'); };
+    audioUnlock(); const ac = Snd.ac;
+    log('context: ' + (ac ? ac.state : 'none'));
+    const real = ms => new Promise(r => setTimeout(r, ms));
+    const t0 = ac.currentTime; await real(600);
+    log('audio clock moves: ' + (ac.currentTime > t0));
+    const order = ['title', 'town', 'meadow', 'woods', 'interior', 'battle', 'champion', 'win', 'lab', 'desert', 'jungle', 'gizmo'];
+    for (const n of order) { playMusic(n, n === 'battle' ? { sting: true } : {}); await real(700);
+      log(n + ': playing=' + (MUS.cur && MUS.cur.name) + ' audible=' + audiblePlayers(ac.currentTime).length + ' scheduled=' + MUS.cur.log.length); }
+    await real(600);
+    log('after crossfades, players kept: ' + MUS.players.length);
+    playMusic('victory', { cut: true }); await real(3500);
+    log('victory done=' + (MUS.players.every(q => q.done || q.stopAt !== undefined)) + ' players=' + MUS.players.length);
+    toggleMusic(); log('N off -> bus gain ' + Snd.musicBus.gain.value); toggleMusic(); log('N on -> bus gain ' + Snd.musicBus.gain.value);
+    toggleMute(); log('M -> master ' + Snd.master.gain.value); toggleMute();
+    playMusic('town'); await real(400);
+    await ac.suspend(); const before = MUS.cur.log.length; await real(1500); await ac.resume();
+    for (const q of MUS.players) if (q.next < ac.currentTime) q.next = ac.currentTime + 0.05;
+    await real(300);
+    log('resume after hidden tab: new steps=' + (MUS.cur.log.length) + ' (no burst)');
+    document.getElementById('testout').textContent = out.join('\n');
+  }); }
   else if (v === 'labtop') { push(overworld); enterMap('lab', 11, 5, 'up'); world.banner = 0; }
   else if (v === 'boss') { world.map = MAPS.lab; G.party[0] = createPet('mango', 14); const gz = MAPS.lab.npcs.find(n => n.id === 'gizmo'); const B = new BattleScreen({ wild: false, trainer: gz, enemies: gz.trainer.team.map(([s, l]) => createPet(s, l)) }); B.eIn = 1; B.setPlayer(G.party[0]); B.pIn = 1; push(B); push(new MessageScreen(gz.lines[1], () => {}, 'Dr. Gizmo')); }
   else if (v === 'starter') push(new StarterScreen());
@@ -4099,6 +4637,16 @@ async function runSmoke() {
     await mash(idle, 40);
     ok('Saying Yes teleports you home', G.map === 'pawsville' && G.x === HOME.x && G.y === HOME.y);
     G.party[0].nick = undefined; G.party[0].acc = null;
+    // Jukebox in the pause menu.
+    await key('KeyQ'); await wait(5);
+    for (let k = 0; k < 4; k++) await key('ArrowDown');
+    await key('Enter'); await wait(5);
+    ok('The pause menu opens the Jukebox', topScreen() instanceof MusicRoomScreen && !!topScreen().resolve);
+    await key('ArrowDown'); await key('Enter'); await wait(3);
+    await key('Escape'); await wait(5);
+    ok('Esc leaves the Jukebox and returns to the pause menu', topScreen() instanceof ChoiceScreen);
+    await key('Escape'); await mash(idle, 20);
+    ok('...and the game continues', idle());
     // New areas: walk east out of town to the farm, then back.
     enterMap('pawsville', 30, 7, 'right'); await wait(5);
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyD' })); await wait(20);
@@ -4246,6 +4794,7 @@ async function runSmoke() {
 function boot() {
   buildAllSprites();
   if (TEST_MODE) runSelfTest();
+  else if (MUSIC_MODE) push(new MusicRoomScreen());
   else if (VIEW) devView(VIEW);
   else push(new SplashScreen());
   if (VIEW === 'smoke') {   // headless browsers barely run animation frames: step the game with a timer instead

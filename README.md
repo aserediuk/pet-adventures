@@ -16,7 +16,8 @@ Press **Space** to begin. A short intro from *When Pets Attack Studio Production
 | Q / Esc | Back, open the menu (in fullscreen use Q, since the browser keeps Esc) |
 | V | Emote! Heart, star, music note or happy face (in battle your pet celebrates) |
 | H | Go home to your house (asks first) |
-| M | Sound on/off |
+| M | Mute everything |
+| N | Music on/off (sound effects stay on) |
 | F | Fullscreen on/off |
 
 **The story:** pets are going missing from Pawsville, and someone in a white lab coat was seen sneaking into Whisker Woods. Choose your first pet, a puppy (Buddy) or a kitten (Mittens), then explore. Befriend wild pets with Treats and find the 8 treasure chests. Beat the Pet Champion to learn the truth, then get into Dr. Gizmo's lab and stop him from experimenting on the pets.
@@ -53,6 +54,10 @@ Press **Space** to begin. A short intro from *When Pets Attack Studio Production
 Offer the wrong snack and the pet usually turns up its nose. In battle, the Bag marks the wild pet's favorites with a red ♥.
 
 Types come in loops (1.5× damage forward, 0.67× backward): **Dog > Cat > Hamster > Gerbil > Dog**, **Cat > Parrot > Lizard > Cat**, **Cat > Mouse**, **Ferret > Mouse > Pony > Pig > Hedgehog > Ferret** and **Duck > Frog > Fish > Turtle > Rabbit > Duck**. A pet's Summary shows what it's strong and weak against.
+
+## Music
+
+The soundtrack is "math-rock chiptune": four chip voices (two pulse waves, a triangle bass and noise drums), odd meters, polyrhythms, and a shared five-note theme quoted in every song. Listen to any song from the pause menu's **Jukebox**, or open `pet-adventures.html#music` for the Music Room: W/S to choose, Enter to play. It shows each layer's step pattern, so you can see the polyrhythms.
 
 ## Tests
 
