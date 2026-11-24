@@ -82,15 +82,16 @@ const TEST_MODE = HASH === '#test';
 const MUSIC_MODE = HASH === '#music';
 const VIEW = (HASH.match(/^#view=(\w+)/) || [])[1] || null;   // developer preview screens
 
+// UI colours (all from the master palette in section 3b: cream paper, wood-brown borders, navy bars).
 const COL = {
-  ink: '#2b2b45', paper: '#fffbe9', paper2: '#f1e9cf', border: '#3b3b6d', accent: '#ff7a59',
-  dim: '#9a96b0', white: '#ffffff', gold: '#e8a317', bar: '#1d1b2e', barText: '#f4f1ff',
-  hpG: '#3cc85a', hpY: '#f2c230', hpR: '#e8483c', xp: '#4aa8e8', red: '#d83a3a', green: '#2f9e4f',
-  sel: '#ffe9a8', shadow: '#00000040'
+  ink: '#3a2630', paper: '#fffbe9', paper2: '#f6e6bc', border: '#5e3132', accent: '#f08232',
+  dim: '#a88faa', white: '#ffffff', gold: '#ffae48', bar: '#232a4a', barText: '#fffbe9',
+  hpG: '#5cad4d', hpY: '#ffd94a', hpR: '#e8493f', xp: '#4bcbe2', red: '#ac2c3c', green: '#389055',
+  sel: '#fff29a', shadow: 'rgba(21,67,86,0.35)'
 };
-const TYPE_COL = { Dog: '#e0873a', Cat: '#9b6ad8', Hamster: '#d39a14', Gerbil: '#3fae66', Lizard: '#1f9e98', Parrot: '#3a86e0',
-  Rabbit: '#b07ad0', Mouse: '#74748c', Ferret: '#9a5a32', Hedgehog: '#6a4a3a', Turtle: '#4a8a4a', Fish: '#e86a2a',
-  Frog: '#7ab02a', Pony: '#b07a2a', Duck: '#c09a00', Pig: '#e8608a', Normal: '#8f8f9f' };
+const TYPE_COL = { Dog: '#bf703a', Cat: '#8f5cd6', Hamster: '#f08232', Gerbil: '#389055', Lizard: '#3aa896', Parrot: '#4274cc',
+  Rabbit: '#f0689a', Mouse: '#a88faa', Ferret: '#8f5e44', Hedgehog: '#633a38', Turtle: '#5cad4d', Fish: '#e8493f',
+  Frog: '#1b5a60', Pony: '#8f4c32', Duck: '#6aa6ee', Pig: '#b83a7c', Normal: '#6f5a80' };
 
 let scale = 1;
 // Touch mode turns on automatically on iPad/iPhone (or the first time a finger touches the screen).
@@ -3872,29 +3873,89 @@ function updateFade() {
 // ---------------------------------------------------------------------
 const DLG = { x: 4, y: 176, w: 424, h: 52 };
 const HINT_Y = 230;
+// Panels: a rounded cream panel with a wood-brown border and a soft drop shadow, drawn as a 9-slice.
+let PANEL_SPR = null;
+function panelSprite() {
+  if (PANEL_SPR) return PANEL_SPR;
+  const p = new Pix(12, 12), dark = PI.wood[3], lite = PI.wood[1], mid = PI.wood[2];
+  for (let i = 0; i < 12; i++) for (let j = 0; j < 12; j++) {
+    const edge = Math.min(i, j, 11 - i, 11 - j), corner = (i < 2 || i > 9) && (j < 2 || j > 9);
+    if (corner && (i === 0 || i === 11) && (j === 0 || j === 11)) continue;        // rounded: the very corner pixel stays empty
+    if (edge === 0 || (corner && edge <= 1 && !((i === 1 || i === 10) && (j === 1 || j === 10)))) p.set(i, j, dark);
+    else if (edge === 1) p.set(i, j, (i === 1 || j === 1) && i < 10 && j < 10 ? lite : mid);  // lit top-left, shaded bottom-right
+  }
+  for (const [i, j] of [[1, 1], [10, 1], [1, 10], [10, 10]]) p.set(i, j, dark);
+  return (PANEL_SPR = p.toCanvas());
+}
 function box(x, y, w, h, fill = COL.paper) {
-  ctx.fillStyle = COL.border; ctx.fillRect(x, y + 1, w, h - 2); ctx.fillRect(x + 1, y, w - 2, h);
+  x = Math.round(x); y = Math.round(y); w = Math.round(w); h = Math.round(h);
+  ctx.fillStyle = COL.shadow; ctx.fillRect(x + 2, y + h, w - 1, 2); ctx.fillRect(x + w, y + 2, 2, h - 2);   // drop shadow, down-right
   ctx.fillStyle = fill; ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
-  ctx.fillStyle = COL.paper2; ctx.fillRect(x + 2, y + h - 4, w - 4, 2);
+  if (fill === COL.paper && h > 12) { ctx.fillStyle = COL.paper2; ctx.fillRect(x + 2, y + h - 4, w - 4, 2); }
+  const s = panelSprite(), c = 3, m = 6;
+  ctx.drawImage(s, 0, 0, c, c, x, y, c, c); ctx.drawImage(s, 12 - c, 0, c, c, x + w - c, y, c, c);
+  ctx.drawImage(s, 0, 12 - c, c, c, x, y + h - c, c, c); ctx.drawImage(s, 12 - c, 12 - c, c, c, x + w - c, y + h - c, c, c);
+  ctx.drawImage(s, c, 0, m, c, x + c, y, w - 2 * c, c); ctx.drawImage(s, c, 12 - c, m, c, x + c, y + h - c, w - 2 * c, c);
+  ctx.drawImage(s, 0, c, c, m, x, y + c, c, h - 2 * c); ctx.drawImage(s, 12 - c, c, c, m, x + w - c, y + c, c, h - 2 * c);
 }
 function drawCursor(x, y) { drawText('▶', x + (Math.floor(frame / 16) % 2), y, COL.accent); }
 function hpColor(f) { return f > 0.5 ? COL.hpG : f > 0.2 ? COL.hpY : COL.hpR; }
+// HP and XP bars: a rounded navy frame, a lilac track, and a fill with a shine line along its top.
+const BAR_SHINE = { '#5cad4d': '#8ac84e', '#ffd94a': '#fff29a', '#e8493f': '#ffb3a8', '#4bcbe2': '#97e9f3' };
+function barFrame(x, y, w, h, f, col) {
+  ctx.fillStyle = COL.bar; ctx.fillRect(x + 1, y, w - 2, h); ctx.fillRect(x, y + 1, w, h - 2);
+  ctx.fillStyle = '#6f5a80'; ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+  const fw = Math.round((w - 2) * f);
+  if (fw > 0) {
+    ctx.fillStyle = col; ctx.fillRect(x + 1, y + 1, fw, h - 2);
+    ctx.fillStyle = BAR_SHINE[col] || col; ctx.fillRect(x + 1, y + 1, fw, 1);
+  }
+}
 function hpBar(x, y, w, cur, max) {
   const f = max > 0 ? clamp(cur / max, 0, 1) : 0;
-  ctx.fillStyle = COL.bar; ctx.fillRect(x, y, w, 6);
-  ctx.fillStyle = '#5a566e'; ctx.fillRect(x + 1, y + 1, w - 2, 4);
-  ctx.fillStyle = hpColor(f); ctx.fillRect(x + 1, y + 1, Math.round((w - 2) * f), 4);
+  barFrame(x, y, w, 6, f, hpColor(f));
 }
 function xpBar(x, y, w, p) {
   const f = p.lv >= MAX_LV ? 1 : clamp(p.xp / toNext(p.lv), 0, 1);
-  ctx.fillStyle = COL.bar; ctx.fillRect(x, y, w, 4);
-  ctx.fillStyle = '#5a566e'; ctx.fillRect(x + 1, y + 1, w - 2, 2);
-  ctx.fillStyle = COL.xp; ctx.fillRect(x + 1, y + 1, Math.round((w - 2) * f), 2);
+  barFrame(x, y, w, 4, f, COL.xp);
 }
-function typeTag(type, x, y) {
-  const w = textW(type) + 6;
-  ctx.fillStyle = TYPE_COL[type] || '#888'; ctx.fillRect(x, y, w, 10);
-  drawText(type, x + 3, y + 1, COL.white);
+// Type tags: a rounded pill in the type's colour with a little icon (paw, whiskers, seed, burrow...).
+const TYPE_ICON = {
+  Dog:      ['.#.#.#.', '.#.#.#.', '.......', '..###..', '.#####.', '.#####.', '..###..'],
+  Cat:      ['#.....#', '##...##', '#######', '#.#.#.#', '#######', '.#####.', '..###..'],
+  Hamster:  ['...#...', '..##...', '.####..', '.#####.', '.#####.', '..###..', '.......'],
+  Gerbil:   ['.......', '..###..', '.#####.', '##...##', '##...##', '##...##', '#######'],
+  Lizard:   ['.####..', '#....#.', '#.##.#.', '#.#..#.', '#.####.', '#......', '.#####.'],
+  Parrot:   ['....##.', '...###.', '..###..', '.###...', '.##.#..', '#..#...', '#......'],
+  Rabbit:   ['.#...#.', '.#...#.', '.#...#.', '.#####.', '#######', '#.###.#', '.#####.'],
+  Mouse:    ['##...##', '##...##', '.#####.', '.#.#.#.', '.#####.', '..###..', '...#...'],
+  Ferret:   ['.#...#.', '#######', '#.###.#', '#######', '.#####.', '..###..', '...#...'],
+  Hedgehog: ['.#.#.#.', '#######', '#######', '.######', '..#####', '.######', '.......'],
+  Turtle:   ['..###..', '.#.#.#.', '###.###', '.#.#.#.', '#######', '#.....#', '.......'],
+  Fish:     ['.......', '#..##..', '##.###.', '######.', '##.###.', '#..##..', '.......'],
+  Frog:     ['##...##', '##...##', '#######', '#######', '#.....#', '.#####.', '.......'],
+  Pony:     ['.#####.', '##...##', '##...##', '##...##', '##...##', '##...##', '.#...#.'],
+  Duck:     ['..##...', '.####..', '.##.###', '.####..', '######.', '######.', '.####..'],
+  Pig:      ['.#####.', '#######', '#.#.#.#', '#.#.#.#', '#######', '.#####.', '.......'],
+  Normal:   ['...#...', '...#...', '#######', '.#####.', '..###..', '.##.##.', '.#...#.'],
+};
+const TYPE_ICON_SPR = {};
+function typeIcon(type) {
+  if (!TYPE_ICON_SPR[type]) {
+    const c = makeCanvas(7, 7), g = c.getContext('2d'); g.fillStyle = '#ffffff';
+    (TYPE_ICON[type] || TYPE_ICON.Normal).forEach((r, y) => { for (let x = 0; x < 7; x++) if (r[x] === '#') g.fillRect(x, y, 1, 1); });
+    TYPE_ICON_SPR[type] = c;
+  }
+  return TYPE_ICON_SPR[type];
+}
+function typeTagW(type, icon = true) { return textW(type) + (icon ? 15 : 6); }
+function typeTag(type, x, y, icon = true) {   // icon = false: a compact tag for tight move lists
+  const w = typeTagW(type, icon), col = TYPE_COL[type] || TYPE_COL.Normal;
+  ctx.fillStyle = col; ctx.fillRect(x + 1, y, w - 2, 10); ctx.fillRect(x, y + 1, w, 8);
+  ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.fillRect(x + 1, y + 1, w - 2, 1);    // shine along the top
+  ctx.fillStyle = 'rgba(35,42,74,0.3)'; ctx.fillRect(x + 1, y + 9, w - 2, 1);        // shade along the bottom
+  if (icon) ctx.drawImage(typeIcon(type), x + 2, y + 1);
+  drawText(type, x + (icon ? 11 : 3), y + 1, COL.white);
   return w;
 }
 function fmtTime(sec) {
@@ -4546,7 +4607,7 @@ class SummaryScreen {
     p.moves.forEach((m, k) => {
       const mx = 18 + (k % 2) * 204, my = 184 + Math.floor(k / 2) * 18;
       drawText(MOVES[m].name, mx, my, COL.ink);
-      typeTag(MOVES[m].type, mx + 100, my - 1);
+      typeTag(MOVES[m].type, mx + 100, my - 1, false);
       drawText('Pow ' + MOVES[m].power, mx + 156, my, COL.dim);
     });
   }
@@ -5201,7 +5262,7 @@ class StarterScreen {
       const by = sel ? Math.round(Math.abs(Math.sin(this.t / 10)) * -4) : 0;
       drawPetSprite(sp, x + 14, y + 8 + by, 2);
       drawTextC(SPECIES[sp].name, x + 46, y + 78, COL.ink);
-      const tw = textW(SPECIES[sp].type) + 6;
+      const tw = typeTagW(SPECIES[sp].type);
       typeTag(SPECIES[sp].type, Math.round(x + 46 - tw / 2), y + 92);
       if (sel) drawText('▼', x + 43, y - 8 + (Math.floor(this.t / 16) % 2), COL.accent);
     });
@@ -5344,7 +5405,6 @@ class BattleScreen {
       drawText(label, 18, 18, COL.ink);
       drawTextR('Lv ' + this.enemy.lv, 180, 18, COL.ink);
       typeTag(petType(this.enemy), 18, 30);
-      drawText('HP', 74, 31, COL.ink);
       hpBar(88, 32, 92, this.dispE, maxHp(this.enemy));
       if (!this.wild) {
         const n = this.o.enemies.length;
@@ -5358,7 +5418,6 @@ class BattleScreen {
       drawText(petName(p), 252, 118, COL.ink);
       drawTextR('Lv ' + p.lv, 416, 118, COL.ink);
       typeTag(petType(p), 252, 130);
-      drawText('HP', 308, 131, COL.ink);
       hpBar(322, 132, 94, this.dispP, maxHp(p));
       drawTextR(Math.ceil(this.dispP) + '/' + maxHp(p), 416, 142, COL.ink);
       drawText('XP', 252, 154, COL.dim);
@@ -5411,7 +5470,7 @@ class MoveMenu {
       const x = DLG.x + 8 + (k % 2) * 210, y = DLG.y + 10 + Math.floor(k / 2) * 18;
       if (k === this.i) { ctx.fillStyle = COL.sel; ctx.fillRect(x - 2, y - 3, 204, 14); drawCursor(x, y); }
       drawText(mv.name, x + 12, y, COL.ink);
-      typeTag(mv.type, x + 100, y - 1);
+      typeTag(mv.type, x + 100, y - 1, false);
       drawText('Pow ' + mv.power, x + 154, y, COL.dim);
       const mult = typeMult(mv.type, foe);
       if (mult > 1) drawText('▲', x + 194, y, COL.green); else if (mult < 1) drawText('▼', x + 194, y, COL.dim);
@@ -6224,7 +6283,7 @@ function runSelfTest() {
   if (textW('Wild ' + longName) + 18 > 180 - textW('Lv 20') - 6) uErr.push('enemy name box');
   if (252 + textW(longName) > 416 - textW('Lv 20') - 4) uErr.push('player name box');
   for (const k in MOVES) { if (textW(MOVES[k].name) > 86) uErr.push('move name ' + MOVES[k].name); }
-  for (const t of TYPES.concat(['Normal'])) if (textW(t) + 6 > 54) uErr.push('type tag ' + t);
+  for (const t of TYPES.concat(['Normal'])) { if (typeTagW(t) > 64 || typeTagW(t, false) > 54) uErr.push('type tag ' + t); if (!TYPE_ICON[t] || TYPE_ICON[t].length !== 7 || TYPE_ICON[t].some(r => r.length !== 7)) uErr.push('type icon ' + t); }
   for (const t of TYPES) { if (textW(strongText(t) + '.  ' + weakText(t) + '.') > DLG.w - 20) uErr.push('type line ' + t); if (176 + textW(strongText(t)) > 424 || 176 + textW(weakText(t)) > 424) uErr.push('summary ' + t); }
   for (const k in SPECIES) for (const t of favoriteTreats({ sp: k })) if (290 + textW(t) > 424) uErr.push('loves line ' + k);
   if (ITEM_ORDER.length + 1 > 12) uErr.push('bag list too long');
