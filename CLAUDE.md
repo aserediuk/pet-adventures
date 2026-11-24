@@ -78,6 +78,10 @@ A top-down, turn-based pet-collecting RPG for kids. The whole game is **one self
 - **Pets:** `SPECIES[id] = { name, type, fam, base: {hp, atk, def, spd}, evo, evoLv }`. Adult forms have about 1.3× the baby's stats. Learnsets give 6 moves at Lv 1, 1, 7, 9 (a move against the pet's weakness), 13 and 17. A pet object is `{ sp, lv, xp, hp, moves, pending, nick?, acc? }`.
 - **Treats:** `TREAT_LIKES[type]` lists the treats each type likes (real-life diets). A wrong treat is usually refused (`WRONG_TREAT_REFUSE`).
 
+## Tasks (section 7c)
+
+`QUESTS` lists 12 tasks, one per helpful character (`giver`). Kinds: `item` (a sparkle on `map` at `x,y`), `pet` (a lost pet sprite there) and `show` (have one of `show` in the party or Pet Pen). State lives in `G.quests[id]`: `new` → `active` → (`found`) → `done`. Lost items and pets only exist on the map while the task is active (`questObjAt` blocks the tile and `interact` picks them up). Givers show a yellow ? (task offered) or green ! (ready to hand in). The self-test checks every object tile is open and reachable and never blocks a path.
+
 ## Game design numbers
 
 - **Types:** 16 types in loops.

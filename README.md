@@ -22,6 +22,8 @@ Press **Space** to begin. A short intro from *When Pets Attack Studio Production
 | N | Music on/off (sound effects stay on) |
 | F | Fullscreen on/off |
 
+**Tasks:** characters with a yellow **?** over their head need help: find a lost item, bring home a lost pet, or befriend a certain kind of pet to show them. Accept with Yes, check progress under **Tasks** in the menu, and come back (green **!**) for a reward.
+
 **Helpful characters** in every area give tips: what to do next (who to beat, where, and how strong your team should be) and how to battle better. You can leave any battle with Run; trainers stay unbeaten so you can come back stronger.
 
 **The road:** Pawsville → Meadow Path → Pebble Canyon → Whisker Woods → Misty Marsh → Frosty Peak → Gizmo's Lab. Gatekeepers block the canyon pass, the marsh bridge and the mountain pass until you beat them, and Champion Maple only battles trainers with all 4 **Trail Ribbons** (won from the guardians of Sunny Farm, Splash Lake, Sunny Dunes and Parrot Jungle).

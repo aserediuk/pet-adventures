@@ -1896,6 +1896,7 @@ document.addEventListener('visibilitychange', () => {
 
 // ---- #music: the jukebox / music test room ----
 // (tap a song in the list to play it)
+const MR_TOP = 26, MR_ROW = 13;   // song list rows: 15 songs end well above the hint bar
 const VOICE_LABEL = { p1: 'LEAD', p2: 'ARP', tri: 'BASS', noise: 'DRUMS', pad: 'PAD' };
 class MusicRoomScreen {
   constructor(resolve) { this.opaque = true; this.i = 0; this.names = Object.keys(SONGS); this.t = 0; this.resolve = resolve || null; }
@@ -1924,8 +1925,8 @@ class MusicRoomScreen {
     drawText(this.resolve ? 'JUKEBOX' : 'MUSIC ROOM', 8, 6, '#ffd84a', 2);
     drawText(MUS.musicOn ? '' : '(music is off - press N)', 150, 10, COL.red);
     this.names.forEach((n, k) => {
-      const y = 28 + k * 14, sel = k === this.i, playing = MUS.cur && MUS.cur.name === n;
-      if (sel) { ctx.fillStyle = '#3b3b6d'; ctx.fillRect(4, y - 3, 128, 13); }
+      const y = MR_TOP + k * MR_ROW, sel = k === this.i, playing = MUS.cur && MUS.cur.name === n;
+      if (sel) { ctx.fillStyle = '#3b3b6d'; ctx.fillRect(4, y - 2, 128, MR_ROW); }
       drawText((playing ? '♪' : ' ') + ' ' + SONGS[n].title, 10, y, playing ? '#7dff9a' : sel ? COL.white : COL.dim);
     });
     const s = SONGS[this.names[this.i]];
@@ -1954,7 +1955,7 @@ class MusicRoomScreen {
     });
   }
   tap(x, y) {
-    const k = Math.floor((y - 25) / 14);
+    const k = Math.floor((y - MR_TOP + 2) / MR_ROW);
     if (x < 136 && k >= 0 && k < this.names.length) { this.i = k; playMusic(this.names[k], { cut: true, restart: true }); }
   }
   hint() { return 'W/S: song   Enter: play   A/D: sound style   ' + hintKeys() + ': ' + (this.resolve ? 'back' : 'title') + '   N: music'; }
@@ -2823,7 +2824,7 @@ function chestAt(map, x, y) { return map.chests.find(c => c.x === x && c.y === y
 function isWalkable(map, x, y) {
   const info = TILE_INFO[tileAt(map, x, y)];
   if (!info || !info.walk) return false;
-  if (npcAt(map, x, y) || chestAt(map, x, y)) return false;
+  if (npcAt(map, x, y) || chestAt(map, x, y) || questObjAt(map, x, y)) return false;
   return true;
 }
 function nearWater(map, x, y) {
@@ -2875,6 +2876,130 @@ const STORY = {
   giftJoined: 'Kiwi joined your team!',
   healPad: 'The healing pad glows. Your pets feel great!',
 };
+// ---------------------------------------------------------------------
+// 7c. TASKS: helpful characters ask for help. Three kinds:
+//   item  - they lost something; a sparkle appears on that map once you accept
+//   pet   - their pet wandered off; it appears on that map once you accept
+//   show  - they want to see a kind of pet; befriend one (party or Pet Pen) and come back
+// ---------------------------------------------------------------------
+const QUESTS = [
+  { id: 'glasses', giver: 'waddle', kind: 'item', title: 'Mr. Waddle\'s glasses', map: 'lake', x: 3, y: 19,
+    ask: ['Oh dear, oh dear. I lost my reading glasses at the beach at Splash Lake!', 'They must be somewhere on the sand. The lake is west of town.'],
+    hint: 'My glasses are somewhere on the sandy beach at Splash Lake, west of town.',
+    pickup: 'You found Mr. Waddle\'s reading glasses in the sand!',
+    thanks: 'My glasses! Now I can finally read my book about hamsters. Thank you!', reward: { coins: 60, bandage: 2 } },
+  { id: 'pudding', giver: 'granny', kind: 'pet', pet: 'mittens', petName: 'Pudding', title: 'Granny Rose\'s kitten', map: 'meadow', x: 40, y: 26,
+    ask: ['Oh, {name}... my kitten Pudding chased a butterfly out of town and didn\'t come back.', 'She likes sunny spots. Maybe in the far corner of Meadow Path?'],
+    hint: 'Pudding likes sunny spots. Try the far corner of Meadow Path, near the east side.',
+    pickup: 'It\'s Pudding! She purrs and hops into your arms. Time to take her home.',
+    thanks: 'Pudding! You naughty kitten! Thank you so much, dear. Here, take these.', reward: { coins: 80, fish: 3 } },
+  { id: 'peanut', giver: 'rosa', kind: 'pet', pet: 'truffle', petName: 'Peanut', title: 'Farmer Rosa\'s piglet', map: 'woods', x: 6, y: 22,
+    ask: ['My little piglet Peanut squeezed under the fence and ran off!', 'Someone saw a pink blur heading into Whisker Woods. Can you bring Peanut home?'],
+    hint: 'Peanut ran into Whisker Woods. Look on the west side of the woods.',
+    pickup: 'It\'s Peanut the piglet, rolling in the leaves! Peanut oinks and trots after you.',
+    thanks: 'Peanut! Back in the pen you go. Thank you, partner!', reward: { coins: 100, apple: 3 } },
+  { id: 'hook', giver: 'finn', kind: 'item', title: 'Finn\'s lucky hook', map: 'marsh', x: 37, y: 2, ask: [
+      'I lost my lucky fishing hook on a trip to Misty Marsh. I haven\'t caught a thing since!', 'I think it\'s in the far north-east corner of the marsh, past the bridge.'],
+    hint: 'My lucky hook is in the far north-east corner of Misty Marsh, past Warden Fen\'s bridge.',
+    pickup: 'You found Fisher Finn\'s lucky hook in the reeds!',
+    thanks: 'My lucky hook! The fish don\'t stand a chance now. Here, you earned this!', reward: { coins: 150, big: 2 } },
+  { id: 'compass', giver: 'juno', kind: 'item', title: 'Juno\'s compass', map: 'dunes', x: 34, y: 9, ask: [
+      'I dropped my compass somewhere near the oasis. Funny, an explorer without a compass!'],
+    hint: 'My compass is on the sand just east of the oasis in Sunny Dunes.',
+    pickup: 'You found Explorer Juno\'s compass, half buried in the sand!',
+    thanks: 'My compass! Now I\'ll never get lost again. Probably. Thanks!', reward: { coins: 100, seeds: 3 } },
+  { id: 'basket', giver: 'pat', kind: 'item', title: 'Pat\'s picnic basket', map: 'meadow', x: 41, y: 8, ask: [
+      'A sneaky bunny grabbed my picnic basket and hopped away with it!', 'It went north, across the stream. Could you get it back?'],
+    hint: 'The bunny dropped my basket north of the stream in Meadow Path, near the east edge.',
+    pickup: 'You found Picnic Pat\'s picnic basket! Only one sandwich is missing.',
+    thanks: 'My basket! Have some snacks for your pets, too.', reward: { coins: 50, carrot: 3, apple: 3 } },
+  { id: 'bottle', giver: 'hazel', kind: 'item', title: 'Hazel\'s water bottle', map: 'canyon', x: 37, y: 2, ask: [
+      'I left my water bottle at the top of the canyon, on the far east side. I\'m so thirsty!'],
+    hint: 'My water bottle is at the north-east end of Pebble Canyon, past Climber Rex.',
+    pickup: 'You found Hiker Hazel\'s water bottle. It\'s still full!',
+    thanks: 'Water! Ahh, much better. Thank you!', reward: { coins: 100, bandage: 2 } },
+  { id: 'snowball', giver: 'sam', kind: 'pet', pet: 'buddy', petName: 'Snowball', title: 'Sam\'s lost puppy', map: 'peak', x: 37, y: 6, ask: [
+      'My puppy Snowball ran off to play in the snow and I can\'t find him!', 'He loves to dig near the trees on the east side of the mountain.'],
+    hint: 'Snowball loves digging near the east side of Frosty Peak, below the summit trees.',
+    pickup: 'It\'s Snowball the puppy, covered in snow! He wags his tail and follows you.',
+    thanks: 'Snowball! You silly pup. Thank you so much!', reward: { coins: 300, big: 2 } },
+  { id: 'mouse', giver: 'milo', kind: 'show', show: ['nibbles', 'squeakers'], title: 'Show Milo a mouse',
+    ask: ['I\'ve never seen a mouse up close! Could you befriend one and show me?', 'Mice live in Meadow Path and love Seeds.'],
+    hint: 'Befriend a mouse (Nibbles or Squeakers) and show it to Milo. Mice love Seeds.',
+    thanks: 'Whoa, a real mouse! Look at those big ears! Thanks for showing me!', reward: { coins: 60, seeds: 2 } },
+  { id: 'hedgehog', giver: 'wren', kind: 'show', show: ['prickle', 'thistle'], title: 'Show Wren a hedgehog',
+    ask: ['I\'ve been trying to spot a hedgehog for weeks. If you befriend one, please show me!'],
+    hint: 'Befriend a hedgehog (Prickle or Thistle) and show it to Birdwatcher Wren. Hedgehogs love Bugs.',
+    thanks: 'A hedgehog! Look at its tiny nose. This is the best day of my birdwatching life!', reward: { coins: 120, bugs: 2 } },
+  { id: 'turtle', giver: 'bea', kind: 'show', show: ['shelly', 'tank'], title: 'Show Bea a turtle',
+    ask: ['I\'m writing a book about marsh turtles. Could you befriend one and show me?'],
+    hint: 'Befriend a turtle (Shelly or Tank) and show it to Botanist Bea. Turtles love Lettuce.',
+    thanks: 'A turtle! I\'ll draw it for chapter one. Thank you!', reward: { coins: 150, lettuce: 3 } },
+  { id: 'macaw', giver: 'ivy', kind: 'show', show: ['mango'], title: 'Show Ivy a Mango',
+    ask: ['I\'ve heard of a beautiful grown-up parrot called Mango. If you ever have one, show me!'],
+    hint: 'Show Explorer Ivy a Mango (a grown-up Kiwi). Raise a Kiwi to Lv 10, or find a rare wild Mango in the jungle.',
+    thanks: 'A real Mango! What amazing colors. Thank you, {name}!', reward: { coins: 200, big: 2 } },
+];
+const QUEST_BY_GIVER = {};
+for (const q of QUESTS) QUEST_BY_GIVER[q.giver] = q;
+function questState(q) { return (G && G.quests && G.quests[q.id]) || 'new'; }
+function setQuest(q, st) { G.quests = G.quests || {}; G.quests[q.id] = st; }
+function hasShowPet(q) { return G.party.concat(G.pen).some(p => q.show.includes(p.sp)); }
+function questReady(q) { const st = questState(q); return st === 'found' || (st === 'active' && q.kind === 'show' && hasShowPet(q)); }
+function rewardText(r) {
+  const parts = [];
+  if (r.coins) parts.push(r.coins + ' coins');
+  for (const k in r) if (k !== 'coins') parts.push(r[k] + ' ' + (r[k] > 1 ? ITEMS[k].pl : ITEMS[k].name));
+  return parts.length > 1 ? parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1] : parts[0];
+}
+// Lost items and pets only appear on the map while their task is active.
+function questObjAt(map, x, y) {
+  if (!G || !G.quests) return null;
+  return QUESTS.find(q => q.kind !== 'show' && MAPS[q.map] === map && q.x === x && q.y === y && questState(q) === 'active') || null;
+}
+// Talking to a character with a task. Returns true if the task was talked about (so no tip this time).
+async function questTalk(q, npc) {
+  const st = questState(q);
+  if (st === 'done') return false;
+  if (st === 'new') {
+    for (const l of q.ask) await say(l, npc.name);
+    if (await yesNo('Will you help ' + npc.name + '?')) {
+      setQuest(q, 'active'); sfx('confirm');
+      await say('Thank you! (Task added: ' + q.title + '. See Tasks in the menu.)', npc.name);
+    } else await say('Oh, okay. Come back if you change your mind!', npc.name);
+    return true;
+  }
+  if (questReady(q)) {
+    if (q.kind === 'show') { const pet = G.party.concat(G.pen).find(p => q.show.includes(p.sp)); await say('You show ' + npc.name + ' your ' + SPECIES[pet.sp].name + '.'); }
+    await say(q.thanks, npc.name);
+    G.coins += q.reward.coins || 0;
+    for (const k in q.reward) if (k !== 'coins') G.bag[k] = (G.bag[k] || 0) + q.reward[k];
+    setQuest(q, 'done'); sfx('levelUp');
+    await say('Task complete! You got ' + rewardText(q.reward) + '.');
+    saveGame();
+    return true;
+  }
+  await say(q.hint, npc.name);
+  return true;
+}
+async function pickUpQuestObj(q) {
+  sfx('chest');
+  setQuest(q, 'found');
+  await say(q.pickup);
+  const giver = Object.values(MAPS).flatMap(m => m.npcs).find(n => n.id === q.giver);
+  await say('Go back and see ' + giver.name + '!');
+  saveGame();
+}
+async function showTasks() {
+  const known = QUESTS.filter(q => questState(q) !== 'new');
+  if (!known.length) { await say('You don\'t have any tasks yet. Talk to people around the world: look for a yellow ? over their heads!'); return; }
+  const done = known.filter(q => questState(q) === 'done').length;
+  const label = q => questState(q) === 'done' ? 'Done' : questReady(q) ? 'Ready!' : '';
+  await choose(known.map(q => ({ label: q.title, right: label(q) })).concat([{ label: 'Back' }]), {
+    x: 8, y: 22, minW: 230, cancel: known.length, title: 'Tasks (' + done + '/' + QUESTS.length + ' done)',
+    info: k => k >= known.length ? 'Close the task list.' : (questState(known[k]) === 'done' ? 'You finished this task. Thank you!' : questReady(known[k]) ? 'Go back and talk to them to finish the task!' : fillName(known[k].hint)),
+  });
+}
 function goalText() {
   if (!G) return '';
   if (G.flags.gizmo) return 'Goal: You saved the pets! Visit the Farm, Lake, Dunes and Jungle to find every pet.';
@@ -2901,7 +3026,7 @@ function newGame(starterSp, name) {
     v: 1, name: cleanName(name) || 'Hero', map: 'pawsville', x: sp.x, y: sp.y, dir: sp.dir,
     party: [createPet(starterSp, 5)], pen: [],
     bag: starterBag(starterSp), coins: 100,
-    chests: {}, flags: {}, stats: { caught: 0, wins: 0, battles: 0, time: 0, steps: 0 },
+    chests: {}, flags: {}, quests: {}, stats: { caught: 0, wins: 0, battles: 0, time: 0, steps: 0 },
   };
 }
 function storage() { try { return window.localStorage || null; } catch (e) { return null; } }
@@ -2936,6 +3061,7 @@ function loadGame() {
     if (!MAPS[d.map]) { d.map = 'pawsville'; }
     const m = MAPS[d.map];
     d.chests = d.chests || {}; d.flags = d.flags || {};
+    d.quests = (d.quests && typeof d.quests === 'object') ? d.quests : {};
     const prevG = G; G = d;   // NPC positions depend on this save's story flags
     const blocked = !Number.isFinite(d.x) || !Number.isFinite(d.y) || !isWalkable(m, d.x, d.y) || exitAt(m, d.x, d.y) || doorAt(m, d.x, d.y);
     G = prevG;
@@ -3402,6 +3528,8 @@ function interact() {
   const fx = G.x + dx, fy = G.y + dy;
   const npc = npcAt(world.map, fx, fy);
   if (npc) { runScript(() => talkTo(npc)); return; }
+  const qo = questObjAt(world.map, fx, fy);
+  if (qo) { runScript(() => pickUpQuestObj(qo)); return; }
   const chest = chestAt(world.map, fx, fy);
   if (chest) { runScript(() => openChest(chest)); return; }
 }
@@ -3437,6 +3565,8 @@ async function talkTo(npc) {
     G.flags['met_' + npc.id] = true;
     if (G.flags.gizmo) G.flags['final_' + npc.id] = true;
   }
+  const quest = QUEST_BY_GIVER[npc.id];
+  if (quest && await questTalk(quest, npc)) return;
   await say(nextTip(), npc.name);
 }
 async function stepAside(npc) {
@@ -3609,7 +3739,14 @@ function drawWorld() {
     const d = world.npcDir[n.id] || q.dir;
     ctx.drawImage(PEOPLE[n.look][d][0], q.x * TS - cx, q.y * TS - cy - 2);
     if (n.trainer && !G.flags[n.id] && Math.floor(frame / 30) % 2 === 0) drawText('!', q.x * TS - cx + 6, q.y * TS - cy - 12, COL.red);
+    const task = QUEST_BY_GIVER[n.id];
+    if (task && (questState(task) === 'new' || questReady(task))) drawText(questReady(task) ? '!' : '?', q.x * TS - cx + 6, q.y * TS - cy - 12 - (Math.floor(frame / 20) % 2), questReady(task) ? '#3cc85a' : '#ffd84a', 1, COL.border);
   } }); }
+  for (const q of QUESTS) if (q.kind !== 'show' && MAPS[q.map] === m && questState(q) === 'active') things.push({ y: q.y, draw: () => {
+    const X = q.x * TS - cx, Y = q.y * TS - cy, bob = Math.floor(frame / 15) % 2;
+    if (q.kind === 'pet') { ctx.drawImage(PET_SPR[q.pet], 0, 0, 32, 32, X, Y - 2 + bob, 16, 16); drawText('?', X + 6, Y - 12, '#ffd84a', 1, COL.border); }
+    else { ctx.drawImage(EMOTE_SPR.star, X + 4, Y + 4 + bob); if (frame % 40 < 20) { ctx.fillStyle = '#fff'; ctx.fillRect(X + 2, Y + 3, 2, 2); ctx.fillRect(X + 12, Y + 10, 2, 2); } }
+  } });
   const pp = playerPixel();
   const pf = world.moving && world.mt < 0.55 ? 1 : 0;
   things.push({ y: pp.y / TS + 0.01, draw: () => {
@@ -3645,21 +3782,22 @@ async function pauseMenu() {
   sfx('menu');
   let start = 0;
   for (;;) {
-    const i = await choose(['Pets', 'Bag', 'Go Home', 'Your Name', 'Jukebox', 'Save', 'Controls', 'Close'], {
-      x: W - 96, y: 22, minW: 90, cancel: 7, start, title: G.coins + ' coins',
-      info: () => goalText() + '\nRibbons: ' + ribbonCount() + '/4   Pets caught: ' + G.stats.caught + '   Chests: ' + Object.keys(G.chests).length + '/' + ALL_CHESTS.length + '   Time: ' + fmtTime(G.stats.time),
+    const i = await choose(['Pets', 'Bag', 'Tasks', 'Go Home', 'Your Name', 'Jukebox', 'Save', 'Controls', 'Close'], {
+      x: W - 96, y: 22, minW: 90, cancel: 8, start, title: G.coins + ' coins',
+      info: () => goalText() + '\nRibbons: ' + ribbonCount() + '/4   Tasks: ' + QUESTS.filter(q => questState(q) === 'done').length + '/' + QUESTS.length + '   Pets: ' + G.stats.caught + '   Chests: ' + Object.keys(G.chests).length + '/' + ALL_CHESTS.length + '   Time: ' + fmtTime(G.stats.time),
     });
     start = i;
     if (i === 0) await petsMenu();
     else if (i === 1) await bagMenu(false);
-    else if (i === 2) { if (await goHome()) return; }
-    else if (i === 3) {
+    else if (i === 2) await showTasks();
+    else if (i === 3) { if (await goHome()) return; }
+    else if (i === 4) {
       const n = await enterName({ title: 'What should we call you?', initial: G.name, cancel: true });
       if (n) { G.name = n; sfx('emote_star'); await say('Nice to meet you, {name}!'); saveGame(); }
     }
-    else if (i === 4) await openJukebox();
-    else if (i === 5) { const ok = saveGame(); await say(ok ? 'Your adventure was saved!' : 'Saving isn\'t available in this browser, but you can keep playing.'); }
-    else if (i === 6) await showControls();
+    else if (i === 5) await openJukebox();
+    else if (i === 6) { const ok = saveGame(); await say(ok ? 'Your adventure was saved!' : 'Saving isn\'t available in this browser, but you can keep playing.'); }
+    else if (i === 7) await showControls();
     else return;
   }
 }
@@ -4443,10 +4581,10 @@ class WinScreen {
     box(86, 104, 260, 96);
     const lines = [
       ['Play time', fmtTime(G.stats.time)],
-      ['Battles won', String(G.stats.wins)],
       ['Pets befriended', String(G.stats.caught)],
-      ['Chests found', Object.keys(G.chests).length + ' / ' + ALL_CHESTS.length],
+      ['Chests', Object.keys(G.chests).length + ' / ' + ALL_CHESTS.length],
       ['Hero', G.name],
+      ['Tasks done', QUESTS.filter(q => questState(q) === 'done').length + ' / ' + QUESTS.length],
       ['Team leader', petName(G.party[0]) + ' Lv ' + G.party[0].lv],
     ];
     lines.forEach(([a, b], k) => { drawText(a, 98, 112 + k * 13, COL.ink); drawTextR(b, 334, 112 + k * 13, COL.ink); });
@@ -5083,6 +5221,28 @@ function runSelfTest() {
   G = savedG;
   const exitPairs = [];
   for (const k in MAPS) for (const e of MAPS[k].exits) exitPairs.push(MAPS[e.to].exits.some(b => b.to === k));
+  // Tasks: every giver is a helpful (non-trainer) character, every lost item/pet sits on an open, reachable tile.
+  const qErr = [], qSaved = G;
+  G = { flags: END_FLAGS, quests: {}, party: [], pen: [] };
+  for (const q of QUESTS) {
+    const giver = Object.values(MAPS).flatMap(m => m.npcs).find(n => n.id === q.giver);
+    if (!giver || giver.trainer) qErr.push(q.id + ': giver must be a helpful character');
+    for (const k in q.reward) if (k !== 'coins' && !ITEMS[k]) qErr.push(q.id + ' reward ' + k);
+    if (q.kind === 'show') { if (!q.show.every(sp => SPECIES[sp])) qErr.push(q.id + ' unknown pet'); continue; }
+    if (q.kind === 'pet' && !SPECIES[q.pet]) qErr.push(q.id + ' unknown pet');
+    const m = MAPS[q.map];
+    if (!m) { qErr.push(q.id + ' unknown map'); continue; }
+    if (!isWalkable(m, q.x, q.y) || exitAt(m, q.x, q.y) || doorAt(m, q.x, q.y)) qErr.push(q.id + ' is not on an open tile');
+    const seen = flood(m);
+    if (!Object.values(DIRS).some(d => seen.has((q.x + d[0]) + ',' + (q.y + d[1])))) qErr.push(q.id + ' cannot be reached');
+    G.quests[q.id] = 'active';
+    const s2 = flood(m);
+    for (const e of m.exits) if (!s2.has(e.x + ',' + e.y)) qErr.push(q.id + ' blocks the way to ' + e.to);
+    G.quests[q.id] = undefined;
+  }
+  if (new Set(QUESTS.map(q => q.giver)).size !== QUESTS.length) qErr.push('one task per character');
+  G = qSaved;
+  check(QUESTS.length + ' tasks: lost items and pets are reachable and never block a path', !qErr.length, qErr.slice(0, 4).join('; '));
   check('Every map exit has a way back', exitPairs.every(Boolean), 'one-way exit found');
   // Biomes: every baby pet lives somewhere in the wild, and every encounter tile/reed patch has pets.
   const found = new Set(), bErr2 = [];
@@ -5324,6 +5484,7 @@ function runSelfTest() {
   for (const k in ITEMS) if (textW(ITEMS[k].name) > 110) uErr.push('item ' + k);
   const texts = [];
   for (const k in STORY) texts.push(...[].concat(STORY[k]));
+  for (const q of QUESTS) texts.push(...q.ask, q.hint, q.thanks, q.pickup || '', 'Task complete! You got ' + rewardText(q.reward) + '.', 'Thank you! (Task added: ' + q.title + '. See Tasks in the menu.)', 'Will you help Birdwatcher Wren?');
   { const savedG2 = G; G = newGame('buddy'); G.party[0].lv = 1;
     for (const t of BATTLE_TIPS) texts.push('Battle tip: ' + t);
     const steps = [[], ['rex'], ['rex', 'fen'], ['rex', 'fen', 'bo'], ['rex', 'fen', 'bo', 'dale', 'coral', 'sandy', 'kai'], ['rex', 'fen', 'bo', 'dale', 'coral', 'sandy', 'kai', 'maple'], ['rex', 'fen', 'bo', 'dale', 'coral', 'sandy', 'kai', 'maple', 'gizmo']];
@@ -5359,6 +5520,8 @@ function runSelfTest() {
   for (const h of hints) { if (textW(h) > W - 8) uErr.push('hint too long: ' + h); if (textW(touchHint(h)) > W - 8) uErr.push('touch hint too long: ' + h); }
   for (const row of NAME_KEYS) if (row.length !== 10) uErr.push('keyboard row');
   if (NK.x0 + NK.w * 10 > W || NK.y0 + NK.h * 4 > HINT_Y) uErr.push('on-screen keyboard does not fit');
+  if (MR_TOP + (Object.keys(SONGS).length - 1) * MR_ROW + FH + 2 > HINT_Y) uErr.push('jukebox song list runs into the hint bar');
+  for (const k in SONGS) if (10 + textW('\u266A ' + SONGS[k].title) > 134) uErr.push('jukebox title too wide: ' + SONGS[k].title);
   G = null;
   check('All UI text fits its box at 432x240 (longest dialog: ' + maxPages + ' pages)', !uErr.length, uErr.slice(0, 4).join('; '));
 
@@ -5477,6 +5640,8 @@ function devView(v) {
     log('live audio nodes peaked at ' + NODES.peak + ', notes skipped to stay under the cap: ' + NODES.skipped);
     document.getElementById('testout').textContent = out.join('\n');
   }); }
+  else if (v === 'tasks') { push(overworld); enterMap('pawsville', 12, 11, 'up'); world.banner = 0; G.quests = { pudding: 'active', glasses: 'found', mouse: 'done' }; runScript(showTasks); }
+  else if (v === 'taskmap') { push(overworld); G.quests = { pudding: 'active' }; enterMap('meadow', 37, 25, 'right'); world.banner = 0; }
   else if (v === 'labtop') { push(overworld); enterMap('lab', 11, 5, 'up'); world.banner = 0; }
   else if (v === 'boss') { world.map = MAPS.lab; G.party[0] = createPet('mango', 14); const gz = MAPS.lab.npcs.find(n => n.id === 'gizmo'); const B = new BattleScreen({ wild: false, trainer: gz, enemies: gz.trainer.team.map(([s, l]) => createPet(s, l)) }); B.eIn = 1; B.setPlayer(G.party[0]); B.pIn = 1; push(B); push(new MessageScreen(gz.lines[1], () => {}, 'Dr. Gizmo')); }
   else if (v === 'starter') push(new StarterScreen());
@@ -5576,7 +5741,7 @@ async function runSmoke() {
       ok('B opens the menu', topScreen() instanceof ChoiceScreen);
       const menu = topScreen(), cr = canvas.getBoundingClientRect();
       const toClient = (gx, gy) => [cr.left + gx * cr.width / W, cr.top + gy * cr.height / H];
-      const [px, py] = toClient(menu.x + 20, menu.y + 7 + 6 * menu.rowH + 3);   // tap "Controls"
+      const [px, py] = toClient(menu.x + 20, menu.y + 7 + 7 * menu.rowH + 3);   // tap "Controls"
       tpd(canvas, px, py, 13); tpd(canvas, px, py, 13, 'pointerup'); await wait(5);
       ok('Tapping a menu choice picks it', topScreen() instanceof MessageScreen && topScreen().pages[0].join(' ').includes('D-pad'));
       const [ax, ay] = centerOf(document.getElementById('btnA'));
@@ -5614,20 +5779,41 @@ async function runSmoke() {
       await key('ArrowRight'); await key('ArrowDown'); await key('Enter');   // Run
       await mash(idle, 60);
       ok('You can leave a trainer battle with Run, and the trainer stays unbeaten', idle() && !G.flags.rex && G.map === 'canyon');
-      const granny = MAPS.pawsville.npcs.find(n => n.id === 'granny');
-      delete G.flags.met_granny; enterMap('pawsville', 12, 8, 'down');
+      const granny = MAPS.pawsville.npcs.find(n => n.id === 'lily');   // a helpful character without a task
+      delete G.flags.met_lily; enterMap('pawsville', 20, 8, 'down');
       runScript(() => talkTo(granny)); await wait(5);
       const said = [];
       for (let i = 0; i < 40 && !idle(); i++) { const t = topScreen(); if (t instanceof MessageScreen) said.push(t.pages.flat().join(' ')); await key('Enter'); await wait(4); }
-      ok('A helpful character tells their story, then gives a tip', said.some(s => s.includes('type')) && said.some(s => s.startsWith('Tip:') || s.startsWith('Battle tip:')));
+      ok('A helpful character tells their story, then gives a tip', said.some(s => s.includes('Sunny')) && said.some(s => s.startsWith('Tip:') || s.startsWith('Battle tip:')));
       runScript(() => talkTo(granny)); await wait(5);
       const again = topScreen() instanceof MessageScreen ? topScreen().pages.flat().join(' ') : '';
       ok('Talking again goes straight to a new tip (' + again.slice(0, 30) + '...)', again.startsWith('Tip:') || again.startsWith('Battle tip:'));
       await mash(idle, 20);
       G.flags.rex = false; G.party = savedParty; enterMap('pawsville', HOME.x, HOME.y, 'down'); await wait(5); }
+    // Tasks: a lost item (accept, find, hand in) and a show-me-a-pet task.
+    { const waddle = MAPS.pawsville.npcs.find(n => n.id === 'waddle'), glasses = QUESTS.find(q => q.id === 'glasses');
+      const keepCoins = G.coins, keepBag = Object.assign({}, G.bag);
+      enterMap('pawsville', 8, 15, 'down'); runScript(() => talkTo(waddle));
+      for (let i = 0; i < 20 && !(topScreen() instanceof ChoiceScreen); i++) { await key('Enter'); await wait(4); }
+      await key('Enter');   // Yes, I'll help
+      await mash(idle, 20);
+      ok('Mr. Waddle asks for help and the task becomes active', questState(glasses) === 'active');
+      enterMap('lake', 3, 18, 'down'); await wait(5);
+      ok('His glasses now sparkle on the beach (and block that tile)', !!questObjAt(MAPS.lake, 3, 19) && !isWalkable(MAPS.lake, 3, 19));
+      await key('Enter'); await mash(idle, 20);
+      ok('Pressing A on the sparkle picks them up', questState(glasses) === 'found' && !questObjAt(MAPS.lake, 3, 19));
+      const coins0 = G.coins, band0 = G.bag.bandage;
+      enterMap('pawsville', 8, 15, 'down'); runScript(() => talkTo(waddle)); await mash(idle, 30);
+      ok('Handing them in completes the task with a reward', questState(glasses) === 'done' && G.coins === coins0 + 60 && G.bag.bandage === band0 + 2);
+      const milo = MAPS.pawsville.npcs.find(n => n.id === 'milo'), mouseQ = QUESTS.find(q => q.id === 'mouse');
+      G.quests.mouse = 'active'; const savedParty = G.party; G.party = savedParty.concat([createPet('nibbles', 3)]);
+      enterMap('pawsville', 17, 4, 'right'); runScript(() => talkTo(milo)); await mash(idle, 30);
+      ok('Showing Milo a mouse completes his task', questState(mouseQ) === 'done');
+      G.party = savedParty; G.coins = keepCoins; G.bag = keepBag; G.quests = {};
+      enterMap('pawsville', HOME.x, HOME.y, 'down'); await wait(5); }
     // Jukebox in the pause menu.
     await key('KeyQ'); await wait(5);
-    for (let k = 0; k < 4; k++) await key('ArrowDown');
+    for (let k = 0; k < 5; k++) await key('ArrowDown');
     await key('Enter'); await wait(5);
     ok('The pause menu opens the Jukebox', topScreen() instanceof MusicRoomScreen && !!topScreen().resolve);
     await key('ArrowDown'); await key('Enter'); await wait(3);
