@@ -1,5 +1,7 @@
 # Pet Adventures
 
+**[▶ PLAY NOW](https://aserediuk.github.io/pet-adventures/pet-adventures.html)**: plays right in your browser, on a computer, iPad or iPhone.
+
 A top-down, turn-based pet-collecting adventure for kids, in one self-contained HTML file.
 It needs no install, libraries, or internet connection.
 
@@ -9,7 +11,7 @@ Its soundtrack is the showpiece: a complete music engine, written from scratch i
 
 **On a PC or Mac:** double-click `pet-adventures.html`. It opens in your browser (Chrome, Edge or Safari) and plays with the keyboard. Nothing to install, and it works offline.
 
-**On iPad or iPhone:** open the game's web address in Safari. Touch controls appear automatically: a D-pad on the left, **A** (talk, confirm, hold for faster text) and **B** (back, menu) on the right, plus small Emote, Home, Music and Sound buttons. You can also tap menu choices, battle buttons and dialog boxes, and names are typed on an on-screen keyboard. Landscape gives the biggest screen. On iPhone, use Share, then **Add to Home Screen**, to play full screen. An iPhone or iPad needs the game served from a web address; opening the file from the Files app won't work.
+**On iPad or iPhone:** open [the game's web address](https://aserediuk.github.io/pet-adventures/pet-adventures.html) in Safari. Touch controls appear automatically: a D-pad on the left, **A** (talk, confirm, hold for faster text) and **B** (back, menu) on the right, plus small Emote, Home, Music and Sound buttons. You can also tap menu choices, battle buttons and dialog boxes, and names are typed on an on-screen keyboard. Landscape gives the biggest screen. On iPhone, use Share, then **Add to Home Screen**, to play full screen. An iPhone or iPad needs the game served from a web address; opening the file from the Files app won't work.
 
 Press **Space** to begin. A short intro from *When Pets Attack Studio Productions* introduces the story and the evil Dr. Gizmo: **Space** skips it, **Enter** goes to the next scene.
 

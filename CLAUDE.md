@@ -254,4 +254,4 @@ F="file://$PWD/pet-adventures.html"
 - GitHub: `aserediuk/pet-adventures` (private), branch `main`, tags `v0.1`–`v0.3`. Commits use the user's real name and email. End commit messages with the `Co-Authored-By` line the current session specifies.
 - Only commit or push when the user asks.
 - **License:** PolyForm Noncommercial 1.0.0 (`LICENSE`), © 2026 When Pets Attack Studio Productions. The game file has a header comment and the title screen shows `CREDIT_LINE`.
-- iOS needs the game served from a URL. A private repo can't use GitHub Pages without making the repo public or a paid plan.
+- **Live build:** GitHub Pages serves `main` at https://aserediuk.github.io/pet-adventures/pet-adventures.html (the README's PLAY NOW link). iOS needs the game served from a URL like this; a pushed commit is what players get.
