@@ -7,6 +7,10 @@ It needs no install, libraries, or internet connection.
 
 Its soundtrack is the showpiece: a complete music engine, written from scratch inside that same file, that synthesizes every note live in the browser. There are no audio files at all. See [The music engine](#the-music-engine).
 
+## Look
+
+The whole world is drawn in code, with no image files: a lush pixel diorama of mottled grass, soft dirt paths, layered forests, sparkling water and cosy buildings, lit by warm afternoon sun. Every map has its own mood, from fireflies in Whisker Woods to snowfall on Frosty Peak. All 33 pets have front and back battle sprites.
+
 ## Play
 
 **On a PC or Mac:** double-click `pet-adventures.html`. It opens in your browser (Chrome, Edge or Safari) and plays with the keyboard. Nothing to install, and it works offline.

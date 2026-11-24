@@ -79,6 +79,24 @@ A top-down, turn-based pet-collecting RPG for kids. The whole game is **one self
 - **Pets:** `SPECIES[id] = { name, type, fam, base: {hp, atk, def, spd}, evo, evoLv }`. Adult forms have about 1.3× the baby's stats. Learnsets give 6 moves at Lv 1, 1, 7, 9 (a move against the pet's weakness), 13 and 17. A pet object is `{ sp, lv, xp, hp, moves, pending, nick?, acc? }`.
 - **Treats:** `TREAT_LIKES[type]` lists the treats each type likes (real-life diets). A wrong treat is usually refused (`WRONG_TREAT_REFUSE`).
 
+## Graphics system (sections 3b–3j, marked `// >>> GFX:name` … `// <<< GFX:name`)
+
+All art is generated in code at startup. `tests/graphics-report.md` has the scorecard, performance numbers and known gaps.
+
+- **Palette (`RAMPS`, `PI`, `PALETTE`):** 56 colours in hue-shifted ramps, light to dark. `DARKER[]`/`LIGHTER[]` step any colour along its ramp. Never add plain grays or black; the self-test rejects them. Use `PI.<ramp>[i]` in generators, never hex strings.
+- **`Pix`:** a palette-indexed pixel map. `ell()` draws a blob lit from the upper left with clustered texture; `poly`, `line`, `rect`, `blit`; `outline()` for characters and pets; `selfEdge()` for environment art (no dark outlines). `toCanvas()` keeps `.pix` on the canvas.
+- **Noise:** `hash2`, `vnoise`, `speckle` are deterministic, so nothing flickers.
+- **Ground (`paintGround`, `groundOf`):** each map's ground is painted once per pixel and cached. Terrain is looked up through a noise wobble, which makes the organic borders. `TERRAIN` maps tile characters to terrain; `BIOME[mapKey]` sets the grass tones and details. Map data, tile ids and walkability are never changed by graphics code.
+- **Tall things (`worldObjects`):** trees, boulders, cacti and fences are baked into one strip per map row (`STRIP_RE`); buildings are separate pictures. `drawWorld` sorts strips, buildings and characters by row. A character just north of a tree or roof is drawn again from the waist up, so it stays visible.
+- **Characters (`LOOK2`, `personPix`):** 16×24, frames 0 stand, 1 step A, 2 mid, 3 step B, 4 idle. Draw with `drawChar` (feet on the tile's bottom).
+- **Pets (`PET_DEF`, `PET_FAMILY`, `petPix`):** one description per pet renders at 48 (front and back, 2 frames), 32 and 16 px. `drawPetSprite(sp, x, y, s)`: `s = 1` is the 32 px menu sprite, `s = 2` the 48 px battle sprite inside the old 64 px box, `s = 4` that sprite doubled. Lizards, ponies and fish are side views. New pets need a `PET_DEF` entry; the self-test checks every species has one.
+- **Battle (`battleBackdrop`, `SCENE`):** one painted backdrop per biome. Particles (`fxSpawn`) use their own random generator (`fxRand`), so effects never shift gameplay dice rolls.
+- **Light (`MOOD`, `drawMood`):** pre-rendered sunbeams, vignette, mist and glows, drawn as whole overlays. No per-pixel work happens during play.
+- **Scenes:** `drawDiorama` (title and win), `roomBackdrop` (Clinic and Shop), `menuBackdrop`, `evolveRays`.
+- **Previews:** `#view=palette`, `people`, `people2`, `petsheet&0`–`3`, `petzoom&a,b,c,d`, `battlein&<map>&<your pet>&<other pet>[&hit|super|caught]`, `perf&<map>`.
+- **Editing the graphics code:** while it was built, each chunk lived in its own file and was injected between its markers. Edit in place now, keeping the markers.
+- **Still to do:** the old string-array art (tiles, people, pets) is unused on screen but still in the file; treat icons, emotes and accessories were not redrawn.
+
 ## Machine evolution
 
 Some grown-up pets have `machineEvo` (a species marked `machineOnly`) instead of `evo`. So far that's Nugget → Super Hamster (`superham`). Battles never trigger it. The player faces Dr. Gizmo's Mega-Zapper (`Z` tiles in the lab) and presses A (`useMachine`). It's locked until `G.flags.gizmo`, and Gizmo's `final` lines explain it. `evolveScene(p, to, intro)` handles both kinds of evolution. The Super Hamster sprite is built from Nugget's art: a mask and cape sides are painted onto the half rows, and a cape canvas (`pet_superham_cape`) is drawn behind the body. The difficulty-curve self-test leaves `machineOnly` pets out of a "usual" team.
@@ -234,6 +252,7 @@ F="file://$PWD/pet-adventures.html"
 
 - **Screenshots:** `--screenshot=out.png --window-size=1366,640 --virtual-time-budget=400` on `#view=<name>`. Previews include `title`, `starter`, `map_<id>`, `battle`, `moves`, `bag`, `party`, `summary`, `pen`, `shop`, `clinic`, `win`, `evolve`, `pets`, `newpets`, `intro0`–`intro5`, `name`, `nick`, `dressup`, `outfits`, `emote`, `labtop` and `boss`. Add `&touch` to force the touch layout, and use a phone-sized `--window-size` such as 844,390.
 - **Golden check:** `python3 tools/check_golden.py` (Theme 2's notes must match `tests/golden/theme2-events.json`).
+- **Graphics:** `python3 tools/cdp_probe.py "$F#view=perf&woods" 14` reports frame times; screenshots of the main screens are in `tests/screenshots/graphics`.
 - **Real audio:** headless virtual time freezes the audio clock, so use `"$F#view=themeprobe" 232` (Theme 1 in all three styles, section jump, theme switching), or `python3 tools/cdp_probe.py "$F#view=audioprobe" 22` (switching, crossfades, N/M, node peak), `"$F#view=clicktest&tri" 25` (offline render, measuring sudden sample jumps), or `"$F#view=jukebox" 4 shot.png`.
 - **Music Room:** `pet-adventures.html#music` is the Music Room jukebox; the in-game one is Menu → Jukebox.
 - **New features need new checks** in `runSelfTest()` (pure logic) or `runSmoke()` (flows). In smoke tests:

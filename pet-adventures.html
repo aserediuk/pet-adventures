@@ -1365,7 +1365,7 @@ function paintGround(rows, B) {
         put(x, y, G[0]); put(x, y - 1, G[0]); put(x + 2, y, G[1]); put(x + 2, y - 1, G[0]); put(x + 2, y - 2, G[0]); put(x + 4, y, G[0]); put(x + 4, y - 1, G[1]);
         for (let i = 0; i < 5; i++) put(x + i, y + 1, G[3]);
       }
-      const many = ch === 'f' ? 5 : r(30) < B.flowers * 3 ? 1 + Math.floor(r(31) * 2) : 0;                  // flower beds, and stray wildflowers
+      const many = ch === 'f' ? 0 : r(30) < B.flowers * 3 ? 1 + Math.floor(r(31) * 2) : 0;                  // stray wildflowers (flower beds sway, so they are drawn as an overlay)
       for (let k = 0; k < many; k++) {
         const x = ox + 2 + Math.floor(r(40 + k) * 12), y = oy + 3 + Math.floor(r(50 + k) * 10), col = flowerCols[Math.floor(r(60 + (ch === 'f' ? k >> 1 : k)) * flowerCols.length)];
         if (tAt(x, y) !== T_GRASS) continue;
@@ -2647,6 +2647,48 @@ function drawDiorama(t, festive, pets) {
   }
   ctx.fillStyle = 'rgba(255,190,90,0.07)'; ctx.fillRect(0, 0, W, H);
   ctx.globalAlpha = 0.6; ctx.drawImage(SUNBEAMS, -((Math.floor(t / 14)) % 96), 0); ctx.globalAlpha = 0.45; ctx.drawImage(VIGNETTE, 0, 0); ctx.globalAlpha = 1;
+}
+// ---- menu backdrop: soft diagonal stripes with little paw prints (party, Pet Pen, pet summary, dress-up) ----
+const MENU_BG = {};
+function menuBackdrop(tone = 'mint') {
+  if (MENU_BG[tone]) return MENU_BG[tone];
+  const p = new Pix(W, H), C = { mint: [PI.mint[0], PI.snow[1], PI.mint[1]], cream: [PI.cream[0], PI.cream[1], PI.cream[2]], rose: [PI.pink[0], PI.cream[0], PI.pink[1]], sky: [PI.blue[0], PI.snow[1], PI.blue[1]] }[tone];
+  const paw = ['.#.#.', '.#.#.', '.....', '.###.', '#####', '.###.'];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) p.set(x, y, ((x + y) >> 4) % 2 ? C[0] : C[1]);
+  for (let gy = 0; gy < H; gy += 32) for (let gx = (gy / 32 % 2) * 24; gx < W; gx += 48) paw.forEach((r, j) => { for (let i = 0; i < 5; i++) if (r[i] === '#') p.set(gx + 10 + i, gy + 12 + j, C[2]); });
+  return (MENU_BG[tone] = p.toCanvas());
+}
+// ---- evolution: rays of light turning behind the pet (three pre-rendered frames) ----
+const RAYS = [];
+function evolveRays(i) {
+  if (!RAYS[i]) {
+    const p = new Pix(W, H), cx = W / 2, cy = 96;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const dx = x - cx, dy = (y - cy) * 1.25, d = Math.sqrt(dx * dx + dy * dy), a = Math.atan2(dy, dx), ray = Math.sin(a * 9 + i * 0.7) > 0.25, th = BAYER[(y & 3) * 4 + (x & 3)] / 16;
+      let c = PI.ink[1];
+      if (ray && d < 250) c = d < 70 + th * 40 ? PI.blue[1] : d < 150 + th * 50 ? PI.blue[2] : PI.blue[3];
+      else if (d < 190) c = d < 60 + th * 40 ? PI.blue[2] : PI.blue[3];
+      if (d < 34 + th * 16) c = d < 20 + th * 10 ? PI.snow[0] : PI.yellow[0];
+      p.set(x, y, c);
+    }
+    RAYS[i] = p.toCanvas();
+  }
+  return RAYS[i];
+}
+// ---- flower beds sway: a small overlay per flower-bed tile, two frames ----
+const FLOWER_SPR = {};
+function flowerBed(variant) {
+  if (FLOWER_SPR[variant]) return FLOWER_SPR[variant];
+  const cols = FLOWER_COLS();
+  return (FLOWER_SPR[variant] = [0, 1].map(lean => {
+    const p = new Pix(16, 16);
+    for (let k = 0; k < 5; k++) {
+      const x = 2 + Math.floor(hash2(k, variant, 81) * 11), y = 4 + Math.floor(hash2(k, variant, 82) * 9), col = cols[Math.floor(hash2(k >> 1, variant, 83) * cols.length)], hx = x + (lean && k % 2 === 0 ? 1 : 0);
+      p.set(x, y + 3, PI.grass[4]); p.set(x, y + 2, PI.grass[3]); p.set(hx, y + 1, DARKER[col]);
+      p.set(hx - 1, y, col); p.set(hx + 1, y, col); p.set(hx, y - 1, col); p.set(hx, y, col === PI.yellow[1] ? PI.orange[2] : PI.yellow[1]);
+    }
+    return p.toCanvas();
+  }));
 }
 // <<< GFX:title
 
@@ -5815,6 +5857,7 @@ function drawWorld() {
       const ch = m.rows[ty][tx], X = tx * TS - cx, Y = ty * TS - cy;
       if (ch === 'C') drawCage(tx, ty, X, Y);
       else if (ch === '~') drawSparkles(tx, ty, X, Y);
+      else if (ch === 'f') ctx.drawImage(flowerBed((tx * 5 + ty * 3) % 4)[Math.floor((frame + tx * 11 + ty * 7) / 34) % 2], X, Y);
       else if (TALL_KIND[ch]) ctx.drawImage(tallBlades(tallKindAt(m, ch), (tx * 7 + ty * 13) % 3)[[0, 1, 0, 2][(Math.floor(frame / 24) + tx * 3 + ty * 5) % 4]], X, Y);
       else if (!GROUND_ONLY[ch]) { const frames = TILES[ch] || TILES['.']; ctx.drawImage(frames[frames.length > 1 ? wf : 0], X, Y); }
     }
@@ -5961,9 +6004,7 @@ class PartyScreen {
     }
   }
   draw() {
-    ctx.fillStyle = '#cfe8ff'; ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = '#b8dafc';
-    for (let y = 0; y < H; y += 16) for (let x = (y / 16) % 2 * 16; x < W; x += 32) ctx.fillRect(x, y, 16, 16);
+    ctx.drawImage(menuBackdrop('sky'), 0, 0);
     box(4, 4, W - 8, 18, COL.sel);
     drawText(this.o.title || 'Your pets', 12, 9, COL.ink);
     for (let k = 0; k < PARTY_MAX; k++) {
@@ -5997,8 +6038,8 @@ class SummaryScreen {
   update(inp) { for (const a of inp) if (a === 'ok' || a === 'back') { sfx('cancel'); pop(this); this.resolve(); return; } }
   draw() {
     const p = this.p, s = petStats(p);
-    ctx.fillStyle = '#fff4d6'; ctx.fillRect(0, 0, W, H);
-    box(8, 8, 150, 150, '#dff2ff');
+    ctx.drawImage(menuBackdrop('cream'), 0, 0);
+    box(8, 8, 150, 150, '#e3eefc');
     drawPet(p, 19, 22, 4);
     box(166, 8, 258, 70);
     drawText(petName(p) + '   Lv ' + p.lv, 176, 16, COL.ink);
@@ -6175,7 +6216,7 @@ class PenScreen {
     this.row = Math.min(this.row, this.rows(this.col) - 1);
   }
   draw() {
-    ctx.fillStyle = '#ffe4ef'; ctx.fillRect(0, 0, W, H);
+    ctx.drawImage(menuBackdrop('mint'), 0, 0);
     box(4, 4, W - 8, 18, COL.sel); drawText('Pet Pen  -  pick a pet, then pick a spot on the other side', 12, 9, COL.ink);
     const cols = [{ x: 6, title: 'Your party (' + G.party.length + '/' + PARTY_MAX + ')' }, { x: 220, title: 'Pen (' + G.pen.length + ')' }];
     cols.forEach((c, ci) => {
@@ -6561,11 +6602,9 @@ class CustomizeScreen {
     }
   }
   draw() {
-    ctx.fillStyle = '#fde8f2'; ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = '#f8d4e6';
-    for (let y = 0; y < H; y += 16) for (let x = (y / 16) % 2 * 16; x < W; x += 32) ctx.fillRect(x, y, 16, 16);
+    ctx.drawImage(menuBackdrop('rose'), 0, 0);
     box(4, 4, W - 8, 18, COL.sel); drawText('Dress up ' + petName(this.p) + '!', 12, 9, COL.ink);
-    box(14, 30, 156, 150, '#dff2ff');
+    box(14, 30, 156, 150, '#e3eefc');
     drawPet(this.p, 28, 44 + Math.round(Math.abs(Math.sin(this.t / 14)) * -4), 4, { acc: this.acc() });
     box(180, 30, 238, 150);
     const rows = [['Accessory', ACC_NAMES[ACC_ORDER[this.kind]]], ['Color', ACC_COLORS[this.color][0]]];
@@ -7124,23 +7163,26 @@ async function learnPrompt(p, m) {
     return;
   }
 }
+// Evolution: rays of light turn behind the pet, it glows and flickers between its two shapes as a white silhouette,
+// then the new form is revealed in a burst of stars.
 class EvolveScreen {
-  constructor(from, to) { this.from = from; this.to = to; this.t = 0; this.done = false; this.opaque = true; }
-  update() { this.t++; }
+  constructor(from, to) { this.from = from; this.to = to; this.t = 0; this._done = false; this.opaque = true; this.fx = []; this.flash = 0; }
+  get done() { return this._done; }
+  set done(v) { if (v && !this._done) { this.flash = 14; fxSpawn(this, W / 2, 96, 40, { cols: ['#ffffff', '#fff29a', '#ffd94a', '#97e9f3', '#f0689a'], kind: 'star', speed: 4, life: 40, g: 0.03 }); } this._done = v; }
+  update() { this.t++; if (this.flash > 0) this.flash--; fxUpdate(this); if (this._done && this.t % 9 === 0) fxSpawn(this, W / 2, 96, 2, { cols: ['#ffffff', '#fff29a'], kind: 'star', speed: 1.6, life: 26, g: -0.01, spread: 70 }); }
   draw() {
-    ctx.fillStyle = '#1d1b3e'; ctx.fillRect(0, 0, W, H);
-    for (let k = 0; k < 24; k++) {
-      const a = k / 24 * Math.PI * 2 + this.t * 0.01, r = 60 + (this.t * 2 + k * 13) % 80;
-      ctx.fillStyle = k % 2 ? '#ffd84a' : '#8fd3ff';
-      ctx.fillRect(Math.round(W / 2 + Math.cos(a) * r), Math.round(90 + Math.sin(a) * r * 0.6), 2, 2);
-    }
+    ctx.drawImage(evolveRays(Math.floor(this.t / 7) % 3), 0, 0);
+    const pulse = 0.5 + Math.sin(this.t / 6) * 0.25;
+    ctx.globalAlpha = this._done ? 0.9 : pulse; ctx.drawImage(GLOW, W / 2 - 64, 96 - 64, 128, 128); ctx.globalAlpha = 1;
     const x = W / 2 - 32, y = 58;
-    if (this.done) drawPetSprite(this.to, x, y, 2);
+    if (this._done) drawPetSprite(this.to, x, y, 2);
     else {
       const period = Math.max(3, 30 - Math.floor(this.t / 6));
       const showNew = Math.floor(this.t / period) % 2 === 1;
-      drawPetSprite(showNew ? this.to : this.from, x, y, 2, this.t > 20 ? { silhouette: '#ffffff' } : {});
+      drawPetSprite(showNew ? this.to : this.from, x, y, 2, this.t > 20 ? { silhouette: '#ffffff', still: true } : { still: true });
     }
+    fxDraw(this);
+    if (this.flash > 0) { ctx.fillStyle = 'rgba(255,255,255,' + (this.flash / 14 * 0.85).toFixed(2) + ')'; ctx.fillRect(0, 0, W, H - 10); }
   }
   hint() { return ''; }
 }
@@ -7890,6 +7932,22 @@ function devView(v) {
       const b = sg.parts[k].layers.find(l => l.sig && l.voice === 'p2'), lead = sg.parts[k].layers.find(l => l.voice === 'p1' && l.ev.some(e => e && e.q));
       return k + (b ? (lead ? ' doubled' : ' bell at bar ' + (Math.floor(b.ev.findIndex(Boolean) / sg.parts[k].barSteps) + 1)) : ' none'); }).join(', '); });
     document.getElementById('testout').textContent = 'SIGNATURE\n' + lines.join('\n');
+  }
+  else if (v === 'perf') {   // #view=perf[&map] : how long a frame takes with every effect on (run in real time, e.g. with tools/cdp_probe.py)
+    const mk = location.hash.split('&')[1] || 'woods', m = MAPS[mk], bootMs = Math.round(performance.now());   // time from opening the page until all art is built
+    const t0 = performance.now(); paintGround(m.rows, biomeOf(m)); const paintMs = performance.now() - t0;
+    push(overworld); enterMap(mk, m.spawn ? m.spawn.x : 24, m.spawn ? m.spawn.y : 16, 'down'); world.banner = 0;
+    const spots = [[24, 16], [10, 8], [38, 24], [24, 28]].filter(([x, y]) => m.rows[y] && m.rows[y][x] !== undefined);
+    setTimeout(() => {
+      const times = [];
+      for (let i = 0; i < 600; i++) {
+        if (i % 150 === 0) { const [x, y] = spots[(i / 150) % spots.length]; G.x = x; G.y = y; updateCamera(true); }
+        const a = performance.now(); update(); render(); ctx.getImageData(0, 0, 1, 1); times.push(performance.now() - a);
+      }
+      times.sort((a, b) => a - b);
+      const avg = times.reduce((a, b) => a + b, 0) / times.length;
+      document.getElementById('testout').textContent = 'PERF ' + JSON.stringify({ map: mk, frames: times.length, avgMs: +avg.toFixed(2), p95Ms: +times[Math.floor(times.length * 0.95)].toFixed(2), maxMs: +times[times.length - 1].toFixed(2), paintGroundMs: +paintMs.toFixed(0), bootMs });
+    }, 800);
   }
   else if (v === 'battlein') {   // #view=battlein&<map>&<your pet>&<other pet>[&hit|super|caught] : a battle in any biome
     const [, mk, mine, foe, fxk] = location.hash.split('&');
