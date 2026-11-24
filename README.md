@@ -70,9 +70,9 @@ Press **Space** to begin. A short intro from *When Pets Attack Studio Production
 | Carrot | rabbits, ponies, pigs |
 | Apple | parrots, ponies, pigs |
 | Lettuce | rabbits, turtles, ducks |
-| Fish Flakes | fish |
-
 Offer the wrong snack and the pet usually turns up its nose. In battle, the Bag marks the wild pet's favorites with a red ♥.
+
+**Fish are different:** they take no treats. Buy the **Fishing Rod** at the Pet Shop for 350 coins, then use it from your Bag in a battle with a wild fish. You only need one, and it never runs out.
 
 Types come in loops (1.5× damage forward, 0.67× backward): **Dog > Cat > Hamster > Gerbil > Dog**, **Cat > Parrot > Lizard > Cat**, **Cat > Mouse**, **Ferret > Mouse > Pony > Pig > Hedgehog > Ferret** and **Duck > Frog > Fish > Turtle > Rabbit > Duck**. A pet's Summary shows what it's strong and weak against.
 

@@ -14,7 +14,7 @@ Branch `v0.4-graphics`. Every graphic in `pet-adventures.html` is now generated 
 | Crisp pixels | All 38 screenshots have uniform 2×2 or 3×3 pixel blocks |
 | Frame time, Whisker Woods, all effects on | 0.6 ms average, 0.9 ms at the 95th percentile, 2.8 ms worst of 600 frames |
 | Startup (all art built) | About 200 ms |
-| Painting a map's ground on entry | 72–114 ms, once per map, then cached (the detail pass roughly doubled this) |
+| Painting a map's ground on entry | About 190–230 ms for the biggest maps since the maps grew by 50% (72–114 ms before), once per map, then cached |
 
 Frame times were measured in headless Chrome on this Mac with `#view=perf` (update + render + a forced flush per frame). I could not run Safari or a real MacBook Air from here, so those are not measured.
 

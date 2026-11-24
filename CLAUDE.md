@@ -58,7 +58,7 @@ A top-down, turn-based pet-collecting RPG for kids. The whole game is **one self
 
 ## Data formats
 
-- **Maps:** `rows` of tile characters, which must be rectangular and at most 48×32. Tile legend:
+- **Maps:** `rows` of tile characters, which must be rectangular. Maps are **written at their original size and stretched to 1.5× at startup** (`growMaps`, section 7d; the user asked for areas 50% bigger). Written size is at most 48×32, which becomes 72×48. `growMaps` doubles evenly spaced rows and columns, never one that runs through a building, an exit or a gatekeeper's post, and moves every position in `MAPS` and `QUESTS`. Positions inside the map data are in written coordinates; code elsewhere that names a written position must convert it with `gx(map, x)` / `gy(map, y)`. The lab is not stretched (`NO_GROW`). Old saves are moved to the same spot (`G.big`). Reed beds count as "by the water" within 2 tiles (`nearWater`). Tile legend:
 
   | Characters | Meaning |
   | --- | --- |
@@ -78,6 +78,7 @@ A top-down, turn-based pet-collecting RPG for kids. The whole game is **one self
   - Non-trainers say their lines the first time, then always give a tip (`progressTip`, `BATTLE_TIPS`).
 - **Pets:** `SPECIES[id] = { name, type, fam, base: {hp, atk, def, spd}, evo, evoLv }`. Adult forms have about 1.3× the baby's stats. Learnsets give 6 moves at Lv 1, 1, 7, 9 (a move against the pet's weakness), 13 and 17. A pet object is `{ sp, lv, xp, hp, moves, pending, nick?, acc? }`.
 - **Treats:** `TREAT_LIKES[type]` lists the treats each type likes (real-life diets). A wrong treat is usually refused (`WRONG_TREAT_REFUSE`).
+- **Fishing Rod:** fish take no treats (`TREAT_LIKES.Fish` is empty, `needsRod`). `ITEMS.rod` costs 350 coins at the Pet Shop, is bought once (`G.bag.rod` is 0 or 1) and is never used up. In a wild battle with a fish, Bag → Fishing Rod runs `castRod` with `rodChance` (the same odds as a favourite treat). Offering a fish a treat is refused without using the treat or the turn. Old saves get 20 coins back per Fish Flakes.
 
 ## Graphics system (sections 3b–3j, marked `// >>> GFX:name` … `// <<< GFX:name`)
 
@@ -86,7 +87,7 @@ All art is generated in code at startup. `tests/graphics-report.md` has the scor
 - **Palette (`RAMPS`, `PI`, `PALETTE`):** 56 colours in hue-shifted ramps, light to dark. `DARKER[]`/`LIGHTER[]` step any colour along its ramp. Never add plain grays or black; the self-test rejects them. Use `PI.<ramp>[i]` in generators, never hex strings.
 - **`Pix`:** a palette-indexed pixel map. `ell()` draws a blob lit from the upper left with clustered texture; `poly`, `line`, `rect`, `blit`; `outline()` for characters and pets; `selfEdge()` for environment art (no dark outlines). `toCanvas()` keeps `.pix` on the canvas.
 - **Noise:** `hash2`, `vnoise`, `speckle` are deterministic, so nothing flickers.
-- **Ground (`paintGround`, `groundOf`):** each map's ground is painted once per pixel and cached (about 70–115 ms per map). Terrain is looked up through a noise wobble, which makes the organic borders; a distance map `D` drives rims, shallows and foam; a fringe pass hangs grass blades over paths and banks; then per-tile details are stamped. Tall grass (`tallBlades`) is a 20×22 picture drawn at `-TALL_OX, -TALL_OY`, so it overhangs its tile. `TERRAIN` maps tile characters to terrain; `BIOME[mapKey]` sets the grass tones and details. Map data, tile ids and walkability are never changed by graphics code.
+- **Ground (`paintGround`, `groundOf`):** each map's ground is painted once per pixel and cached (about 190–230 ms for the biggest maps, on first entry). Terrain is looked up through a noise wobble, which makes the organic borders; a distance map `D` drives rims, shallows and foam; a fringe pass hangs grass blades over paths and banks; then per-tile details are stamped. Tall grass (`tallBlades`) is a 20×22 picture drawn at `-TALL_OX, -TALL_OY`, so it overhangs its tile. `TERRAIN` maps tile characters to terrain; `BIOME[mapKey]` sets the grass tones and details. Map data, tile ids and walkability are never changed by graphics code.
 - **Tall things (`worldObjects`):** trees (`treePix(kind, variant, B, tone)`, 36×52, `TREE_VARIANTS` shapes; tone 1 is the darker tree inside a forest), boulders, cacti and fences are baked into one strip per map row (`STRIP_RE`); buildings are separate pictures. `drawWorld` sorts strips, buildings and characters by row. A character just north of a tree or roof is drawn again from the waist up, so it stays visible.
 - **Characters (`LOOK2`, `personPix`):** 16×24, frames 0 stand, 1 step A, 2 mid, 3 step B, 4 idle. Draw with `drawChar` (feet on the tile's bottom).
 - **Pets (`petPolish`, `PET_BIG`, `PET_SPR`, `PET16`):** the user rejected generated pets as too cute and not animal-like (the hamster looked like a bear), tried three samples and chose "the original, shaded". So pet shapes come only from the original hand-drawn 32×32 string-array sprites in section 3 (`PET_OLD`). `petPolish` doubles each with Scale2x for battles (64×64), maps it onto the master palette (`petColour`) and adds upper-left shading; menus use the 32 px drawing with lighter shading; the overworld uses a 16 px reduction (`petTiny`). Your own pet in battle is the mirrored front, as in the original game. `drawPetSprite(sp, x, y, s)`: `s = 1` is 32 px, `s = 2` is 64 px, `s = 4` is 128 px. To change a pet's look, edit its string-array art; never redraw pets procedurally without asking.
@@ -121,7 +122,7 @@ Some grown-up pets have `machineEvo` (a species marked `machineOnly`) instead of
   Damage is ×1.5 forward and ×0.67 backward. Normal moves are always ×1.
 - **Stats:**
   - HP = ⌊base·L/20⌋ + L + 10. Other stats = ⌊base·L/25⌋ + 5. The level cap is 20.
-  - XP to the next level = 10·L².
+  - XP to the next level = 12·L² (`toNext`; raised 20% from 10·L² at the user's request). The difficulty-curve self-test assumes fixed team levels, so it does not notice slower levelling.
 - **Rewards:** XP per win = (5·L² + 10) × 1.5 (trainers only) × `XP_BONUS` 1.25. Benched pets get half.
 - **Damage:** ⌊((2L/5+2)·Pow·Atk/Def)/50 + 2⌋ × type multiplier × random 0.85–1. Enemies hit at `ENEMY_DAMAGE` (0.85).
 - **Catching:**

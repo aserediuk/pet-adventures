@@ -2590,8 +2590,8 @@ function drawMood(m, cx, cy) {
   if (M.tint) { ctx.fillStyle = M.tint; ctx.fillRect(0, 0, W, H); }
   if (M.beams) { ctx.globalAlpha = M.beams; ctx.drawImage(SUNBEAMS, -((Math.floor(t / 14)) % 96), 0); ctx.globalAlpha = 1; }
   if (M.mist) for (let k = 0; k < 4; k++) ctx.drawImage(MIST, Math.round(((k * 151 + t * (0.1 + k * 0.03)) % (W + 200)) - 180), 30 + k * 48 + Math.round(Math.sin(t / 120 + k) * 4));
-  if (M.fireflies) for (let k = 0; k < M.fireflies * 3; k++) {            // each one keeps to its own patch of the map
-    const hx = hash2(k, 1, 41) * 900, hy = hash2(k, 2, 42) * 700, x = Math.round(hx + Math.sin(t / 50 + k * 1.7) * 14 - cx), y = Math.round(hy + Math.cos(t / 37 + k) * 9 - cy), on = Math.sin(t / 24 + k * 2.3);
+  if (M.fireflies) for (let k = 0; k < M.fireflies * 5; k++) {            // each one keeps to its own patch of the map
+    const hx = hash2(k, 1, 41) * 1200, hy = hash2(k, 2, 42) * 800, x = Math.round(hx + Math.sin(t / 50 + k * 1.7) * 14 - cx), y = Math.round(hy + Math.cos(t / 37 + k) * 9 - cy), on = Math.sin(t / 24 + k * 2.3);
     if (x < -2 || y < -2 || x > W || y > H - 10 || on < -0.2) continue;
     ctx.fillStyle = 'rgba(255,242,154,0.35)'; ctx.fillRect(x - 1, y, 3, 1); ctx.fillRect(x, y - 1, 1, 3);
     ctx.fillStyle = on > 0.5 ? '#ffffff' : '#fff29a'; ctx.fillRect(x, y, 1, 1);
@@ -4242,20 +4242,22 @@ const ITEMS = {
   carrot:  { name: 'Carrot',      pl: 'Carrots',     price: 20, treat: true, flavor: 'A crunchy carrot.' },
   apple:   { name: 'Apple',       pl: 'Apples',      price: 20, treat: true, flavor: 'A juicy apple.' },
   lettuce: { name: 'Lettuce',     pl: 'Lettuce',     price: 20, treat: true, flavor: 'Fresh leafy greens.' },
-  flakes:  { name: 'Fish Flakes', pl: 'Fish Flakes', price: 20, treat: true, flavor: 'Fish food flakes.' },
+  rod:     { name: 'Fishing Rod', pl: 'Fishing Rods', price: 350, rod: true, desc: 'Catches wild fish. It never runs out.' },
   bandage: { name: 'Bandage',     pl: 'Bandages',    price: 30, heal: 20, desc: 'Heals a pet by 20 HP.' },
   big:     { name: 'Big Bandage', pl: 'Big Bandages', price: 80, heal: 9999, desc: 'Heals a pet all the way.' },
 };
-const ITEM_ORDER = ['bone', 'fish', 'seeds', 'bugs', 'carrot', 'apple', 'lettuce', 'flakes', 'bandage', 'big'];
+const ITEM_ORDER = ['bone', 'fish', 'seeds', 'bugs', 'carrot', 'apple', 'lettuce', 'rod', 'bandage', 'big'];
 const TREAT_KEYS = ITEM_ORDER.filter(k => ITEMS[k].treat);
-// What each kind of pet really likes to eat. Wild pets usually refuse anything else.
+// What each kind of pet really likes to eat. Wild pets usually refuse anything else. Fish take no treats at all: they are caught with the Fishing Rod.
 const TREAT_LIKES = {
   Dog: ['bone'], Cat: ['fish'], Hamster: ['seeds'], Gerbil: ['seeds'], Lizard: ['bugs'], Parrot: ['apple', 'seeds'],
   Rabbit: ['carrot', 'lettuce'], Mouse: ['seeds'], Ferret: ['bone'], Hedgehog: ['bugs'], Turtle: ['lettuce', 'bugs'],
-  Fish: ['flakes'], Frog: ['bugs'], Pony: ['carrot', 'apple'], Duck: ['lettuce', 'seeds'], Pig: ['apple', 'carrot'],
+  Fish: [], Frog: ['bugs'], Pony: ['carrot', 'apple'], Duck: ['lettuce', 'seeds'], Pig: ['apple', 'carrot'],
 };
 const TYPE_PLURAL = { Dog: 'dogs', Cat: 'cats', Hamster: 'hamsters', Gerbil: 'gerbils', Lizard: 'lizards', Parrot: 'parrots', Rabbit: 'rabbits',
   Mouse: 'mice', Ferret: 'ferrets', Hedgehog: 'hedgehogs', Turtle: 'turtles', Fish: 'fish', Frog: 'frogs', Pony: 'ponies', Duck: 'ducks', Pig: 'pigs' };
+function needsRod(p) { return petType(p) === 'Fish'; }
+function rodChance(p) { return Math.min(0.95, catchChance(p) * 1.2); }   // as good as a favourite treat
 function likesTreat(p, key) { return (TREAT_LIKES[petType(p)] || []).includes(key); }
 function favoriteTreats(p) { return (TREAT_LIKES[petType(p)] || []).map(k => ITEMS[k].name); }
 for (const k of TREAT_KEYS) {
@@ -4283,7 +4285,7 @@ const NAME_MAX = 10;
 function cleanName(s) { return String(s || '').replace(/[^A-Za-z0-9 '.\-]/g, '').replace(/\s+/g, ' ').trim().slice(0, NAME_MAX); }
 function petType(p) { return SPECIES[p.sp].type; }
 function learnsetOf(sp) { return LEARNSETS[SPECIES[sp].fam]; }
-function toNext(lv) { return 10 * lv * lv; }
+function toNext(lv) { return 12 * lv * lv; }   // 20% more than the first versions' 10 * lv * lv
 // Kid-friendly difficulty: enemies hit softer, pets learn faster.
 const ENEMY_DAMAGE = 0.85, XP_BONUS = 1.25;
 function xpReward(enemyLv, trainer) { return Math.floor((5 * enemyLv * enemyLv + 10) * (trainer ? 1.5 : 1) * XP_BONUS); }
@@ -4673,14 +4675,15 @@ MAPS.lake = {
   npcs: [
     { id: 'finn', look: 'fisher', name: 'Fisher Finn', x: 27, y: 10, dir: 'left', lines: [
       'Ahoy, {name}! Splash Lake is home to turtles, goldfish, frogs and ducks. They hide in the reeds by the water.',
-      'Goldfish love Fish Flakes. Turtles munch Lettuce and Bugs, and ducks like Lettuce or Seeds.',
+      'Goldfish only come to a Fishing Rod. The Pet Shop sells one for 350 coins.',
+      'Turtles munch Lettuce and Bugs, and ducks like Lettuce or Seeds.',
       'See that little island? I bet there\'s treasure on it. Try the bridge on the south shore!'] },
     { id: 'coral', look: 'fisher', name: 'Captain Coral', x: 25, y: 18, dir: 'left', ribbon: 'Lake Ribbon', onWin: 'ribbon',
       trainer: { team: [['shelly', 10], ['goldie', 11], ['quackers', 11]] },
       lines: ['Ahoy! I guard Splash Lake. Beat my water pets to earn the Lake Ribbon!'],
       after: ['That Lake Ribbon shines like the water. Well sailed!'] },
   ],
-  chests: [{ id: 'lake1', x: 14, y: 10, item: 'flakes', qty: 3 }],
+  chests: [{ id: 'lake1', x: 14, y: 10, item: 'lettuce', qty: 3 }],
   wild: null,
   pond: [
     { sp: 'shelly', min: 3, max: 6, w: 6 }, { sp: 'bubbles', min: 3, max: 6, w: 6 }, { sp: 'ribbit', min: 3, max: 6, w: 6 }, { sp: 'puddles', min: 3, max: 6, w: 6 },
@@ -4989,7 +4992,7 @@ function isWalkable(map, x, y) {
 }
 function nearWater(map, x, y) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
-  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (tileAt(map, x + dx, y + dy) === '~') return true;
+  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (tileAt(map, x + dx, y + dy) === '~') return true;   // two tiles: reed beds are wider since the maps grew
   return false;
 }
 function wildTable(map, x, y) {
@@ -5100,6 +5103,56 @@ const QUESTS = [
     hint: 'Show Explorer Ivy a Mango (a grown-up Kiwi). Raise a Kiwi to Lv 10, or find a rare wild Mango in the jungle.',
     thanks: 'A real Mango! What amazing colors. Thank you, {name}!', reward: { coins: 200, big: 2 } },
 ];
+
+// ---------------------------------------------------------------------
+// 7d. BIGGER MAPS: every outdoor map is stretched to 1.5 times its written size, once, at startup.
+// The maps above are written at their original size. Here every second row and column (spread evenly) is doubled,
+// and every position in the map data (exits, doors, people, chests, labels, tasks) is moved to match.
+// Rows and columns that run through a building, an exit, or a gatekeeper's post are never doubled, so doors stay
+// single, openings keep their width and nobody can slip past a gatekeeper. The lab (an indoor map) keeps its size.
+// Code outside the map data that names a written position must convert it with gx(map, x) and gy(map, y).
+// ---------------------------------------------------------------------
+const MAP_SCALE = 1.5, MAP_GROW = {}, NO_GROW = { lab: 1 };
+function growAxis(n, blocked) {
+  const want = Math.round(n * (MAP_SCALE - 1)), dup = new Array(n).fill(false);
+  for (let k = 0; k < want; k++) {
+    const ideal = (k + 0.5) * n / want;
+    let best = -1, bc = Infinity;
+    for (let i = 1; i < n - 1; i++) if (!dup[i] && !blocked[i]) { const c = Math.abs(i + 0.5 - ideal); if (c < bc) { bc = c; best = i; } }
+    if (best < 0) break;
+    dup[best] = true;
+  }
+  const at = []; let p = 0;
+  for (let i = 0; i <= n; i++) { at.push(p); p += dup[i] ? 2 : 1; }
+  return { dup, at };   // at[i] = where written column i now starts; at[n] = the new size
+}
+function gx(map, x) { const g = MAP_GROW[map]; if (!g) return x; const i = clamp(Math.floor(x), 0, g.x.at.length - 2); return g.x.at[i] + (x - i); }
+function gy(map, y) { const g = MAP_GROW[map]; if (!g) return y; const i = clamp(Math.floor(y), 0, g.y.at.length - 2); return g.y.at[i] + (y - i); }
+function growMaps() {
+  for (const k in MAPS) {
+    if (NO_GROW[k]) continue;
+    const m = MAPS[k], w = m.rows[0].length, h = m.rows.length, bx = new Array(w).fill(false), by = new Array(h).fill(false);
+    m.rows.forEach((r, y) => { for (let x = 0; x < w; x++) if ('RBKHWD'.includes(r[x])) { bx[x] = true; by[y] = true; } });
+    for (const e of m.exits) {
+      if (e.y === 0 || e.y + e.h >= h) for (let i = 0; i < e.w; i++) bx[e.x + i] = true;
+      if (e.x === 0 || e.x + e.w >= w) for (let i = 0; i < e.h; i++) by[e.y + i] = true;
+    }
+    for (const n of m.npcs) if (n.moveTo) { bx[n.x] = by[n.y] = bx[n.moveTo.x] = by[n.moveTo.y] = true; }
+    MAP_GROW[k] = { x: growAxis(w, bx), y: growAxis(h, by), w, h };
+  }
+  for (const k in MAPS) {
+    const g = MAP_GROW[k], m = MAPS[k], X = x => gx(k, x), Y = y => gy(k, y);   // for the lab these change nothing, but its exits still lead to grown maps
+    for (const e of m.exits) { const x1 = X(e.x + e.w), y1 = Y(e.y + e.h); e.x = X(e.x); e.y = Y(e.y); e.w = x1 - e.x; e.h = y1 - e.y; e.tx = gx(e.to, e.tx); e.ty = gy(e.to, e.ty); }
+    for (const list of [m.doors, m.npcs, m.chests, [m.spawn]]) for (const o of list) { o.x = X(o.x); o.y = Y(o.y); if (o.moveTo) { o.moveTo.x = X(o.moveTo.x); o.moveTo.y = Y(o.moveTo.y); } }
+    for (const l of m.labels) { l.tx = X(l.tx); l.ty = Y(l.ty); }
+    if (!g) continue;
+    const rows = [];
+    m.rows.forEach((r, y) => { let s = ''; for (let x = 0; x < g.w; x++) s += g.x.dup[x] ? r[x] + r[x] : r[x]; rows.push(s); if (g.y.dup[y]) rows.push(s); });
+    m.rows = rows;
+  }
+  for (const q of QUESTS) if (q.x !== undefined) { const x = q.x, y = q.y; q.x = gx(q.map, x); q.y = gy(q.map, y); }
+}
+growMaps();
 const QUEST_BY_GIVER = {};
 for (const q of QUESTS) QUEST_BY_GIVER[q.giver] = q;
 function questState(q) { return (G && G.quests && G.quests[q.id]) || 'new'; }
@@ -5175,7 +5228,7 @@ function goalText() {
 const SAVE_KEY = 'petAdventures.save.v1';
 let G = null;   // the current game (this object is what gets saved)
 function starterBag(sp) {
-  const bag = { bandage: 2, big: 0 };
+  const bag = { bandage: 2, big: 0, rod: 0 };
   for (const k of TREAT_KEYS) bag[k] = 1;
   bag[TREAT_LIKES[SPECIES[sp].type][0]] += 2;   // extra snacks your first pet's kind loves
   return bag;
@@ -5183,7 +5236,7 @@ function starterBag(sp) {
 function newGame(starterSp, name) {
   const sp = MAPS.pawsville.spawn;
   return {
-    v: 1, name: cleanName(name) || 'Hero', map: 'pawsville', x: sp.x, y: sp.y, dir: sp.dir,
+    v: 1, big: 1, name: cleanName(name) || 'Hero', map: 'pawsville', x: sp.x, y: sp.y, dir: sp.dir,
     party: [createPet(starterSp, 5)], pen: [],
     bag: starterBag(starterSp), coins: 100,
     chests: {}, flags: {}, quests: {}, stats: { caught: 0, wins: 0, battles: 0, time: 0, steps: 0 },
@@ -5224,6 +5277,8 @@ function loadGame() {
     d.chests = d.chests || {}; d.flags = d.flags || {};
     d.quests = (d.quests && typeof d.quests === 'object') ? d.quests : {};
     if (!MainThemes[d.musicTheme]) delete d.musicTheme;
+    if (!d.big && Number.isFinite(d.x) && Number.isFinite(d.y)) { d.x = gx(d.map, d.x); d.y = gy(d.map, d.y); }   // saves from before the maps grew: move the player to the same spot
+    d.big = 1;
     const prevG = G; G = d;   // NPC positions depend on this save's story flags
     const blocked = !Number.isFinite(d.x) || !Number.isFinite(d.y) || !isWalkable(m, d.x, d.y) || exitAt(m, d.x, d.y) || doorAt(m, d.x, d.y);
     G = prevG;
@@ -5234,6 +5289,9 @@ function loadGame() {
     const oldTreats = (d.bag && d.bag.treat) || 0;      // saves from before treats had kinds
     d.bag = Object.assign({}, ...ITEM_ORDER.map(k => ({ [k]: 0 })), d.bag || {});
     delete d.bag.treat;
+    if (d.bag.flakes) d.coins = (Math.floor(d.coins) || 0) + Math.floor(d.bag.flakes) * 20;   // Fish Flakes are gone: old saves get their coins back
+    delete d.bag.flakes;
+    d.bag.rod = d.bag.rod ? 1 : 0;
     for (let i = 0; i < oldTreats; i++) d.bag[TREAT_KEYS[i % TREAT_KEYS.length]]++;
     for (const k of ITEM_ORDER) d.bag[k] = Math.max(0, Math.floor(d.bag[k]) || 0);
     d.coins = Math.max(0, Math.floor(d.coins) || 0);
@@ -5636,7 +5694,7 @@ const world = {
   map: null, mapId: '', moving: false, mt: 0, fx: 0, fy: 0, tx: 0, ty: 0, wasMoving: false,
   turnDelay: 0, camX: 0, camY: 0, banner: 0, sinceBattle: 99, bumpCd: 0, npcDir: {}, chestAnim: null, ambT: 300,
 };
-const HOME = { x: 5, y: 6 };   // the path tile in front of your house
+const HOME = { x: gx('pawsville', 5), y: gy('pawsville', 6) };   // the path tile in front of your house
 async function goHome() {
   if (world.mapId === 'pawsville' && G.x === HOME.x && G.y === HOME.y) { await say('You\'re already standing in front of your house!'); return false; }
   if (!(await yesNo('Go back home to your house in Pawsville?'))) return false;
@@ -6203,7 +6261,7 @@ async function petsMenu() {
 }
 function bagOptions(battle) {
   const wild = battle && battle.wild ? battle.enemy : null;
-  return ITEM_ORDER.map(k => ({ label: (wild && ITEMS[k].treat && likesTreat(wild, k) ? '\u2665 ' : '  ') + ITEMS[k].name, right: '\u00D7' + G.bag[k] }));
+  return ITEM_ORDER.map(k => ({ label: (wild && (ITEMS[k].rod ? needsRod(wild) : ITEMS[k].treat && likesTreat(wild, k)) ? '\u2665 ' : '  ') + ITEMS[k].name, right: ITEMS[k].rod ? (G.bag[k] ? 'Yes' : 'No') : '\u00D7' + G.bag[k] }));
 }
 // Returns true if an item was used (in battle this uses the turn).
 async function bagMenu(inBattle, battle) {
@@ -6212,14 +6270,23 @@ async function bagMenu(inBattle, battle) {
     const wild = inBattle && battle.wild ? battle.enemy : null;
     const i = await choose(bagOptions(battle).concat([{ label: '  Back' }]), {
       cancel: n, start: bagMenu.last || 0, x: W - 160, y: 22, minW: 150, title: 'Bag',
-      info: k => k >= n ? 'Close the bag.' : (wild && ITEMS[ITEM_ORDER[k]].treat
+      info: k => k >= n ? 'Close the bag.' : (wild && needsRod(wild) && !ITEMS[ITEM_ORDER[k]].heal ? (ITEMS[ITEM_ORDER[k]].rod ? '\u2665 Just the thing for a wild ' + petName(wild) + '! ' + ITEMS.rod.desc : 'Fish don\'t take treats. A wild ' + petName(wild) + ' needs a Fishing Rod.')
+        : wild && ITEMS[ITEM_ORDER[k]].treat
         ? (likesTreat(wild, ITEM_ORDER[k]) ? '\u2665 The wild ' + petName(wild) + ' loves this! ' : 'The wild ' + petName(wild) + ' likes ' + favoriteTreats(wild).join(' or ') + '. ') + ITEMS[ITEM_ORDER[k]].desc
         : ITEMS[ITEM_ORDER[k]].desc),
     });
     if (i === n) return false;
     bagMenu.last = i;
     const key = ITEM_ORDER[i];
+    if (ITEMS[key].rod) {
+      if (G.bag[key] <= 0) { await say('You don\'t have a Fishing Rod. The Pet Shop sells one for ' + ITEMS.rod.price + ' coins.'); continue; }
+      if (!inBattle) { await say('The Fishing Rod catches wild fish. Use it in a battle with one!'); continue; }
+      if (!battle.wild) { await say('You can\'t fish for another trainer\'s pet!'); continue; }
+      if (!needsRod(battle.enemy)) { await say('The Fishing Rod only works on fish. Offer ' + petName(battle.enemy) + ' a treat instead!'); continue; }
+      return { rod: true };
+    }
     if (G.bag[key] <= 0) { await say('You don\'t have any ' + ITEMS[key].pl + '.'); continue; }
+    if (ITEMS[key].treat && inBattle && battle.wild && needsRod(battle.enemy)) { await say('Fish don\'t take treats! You need a Fishing Rod to catch ' + petName(battle.enemy) + '.' + (G.bag.rod ? '' : ' The Pet Shop sells one.')); continue; }
     if (ITEMS[key].treat) {
       if (!inBattle) { await say('Treats are for making friends with wild pets. Offer one in a wild battle!'); continue; }
       if (!battle.wild) { await say('You can\'t give Treats to another trainer\'s pet!'); continue; }
@@ -6373,18 +6440,19 @@ async function shopScript() {
   let start = 0;
   for (;;) {
     const n = ITEM_ORDER.length;
-    const opts = ITEM_ORDER.map(k => ({ label: ITEMS[k].name, right: ITEMS[k].price + 'c' })).concat([{ label: 'Leave' }]);
+    const opts = ITEM_ORDER.map(k => ({ label: ITEMS[k].name, right: ITEMS[k].rod && G.bag[k] ? 'Got it' : ITEMS[k].price + 'c' })).concat([{ label: 'Leave' }]);
     const i = await choose(opts, {
       cancel: n, start, x: W - 160, y: 22, minW: 150, title: 'Buy',
-      info: k => k < n ? ITEMS[ITEM_ORDER[k]].desc + '  You have ' + G.bag[ITEM_ORDER[k]] + '.' : 'Thanks for stopping by!',
+      info: k => k < n ? ITEMS[ITEM_ORDER[k]].desc + (ITEMS[ITEM_ORDER[k]].rod ? (G.bag.rod ? '  You have one.' : '  You only need one.') : '  You have ' + G.bag[ITEM_ORDER[k]] + '.') : 'Thanks for stopping by!',
     });
     start = i;
     if (i === n) { await say('Come back soon!', 'Shopkeeper Ben'); return; }
     const k = ITEM_ORDER[i];
+    if (ITEMS[k].rod && G.bag[k]) { await say('You already have a Fishing Rod, and one is all you need. It never runs out!', 'Shopkeeper Ben'); continue; }
     if (G.coins < ITEMS[k].price) { sfx('bump'); await say('Oops, you need ' + ITEMS[k].price + ' coins for that. Win battles to earn more!', 'Shopkeeper Ben'); continue; }
     G.coins -= ITEMS[k].price; G.bag[k]++;
     sfx('coin'); bg.flash = 0;
-    await say('You bought a ' + ITEMS[k].name + '! (You have ' + G.bag[k] + ' now.)');
+    await say(ITEMS[k].rod ? 'You bought the Fishing Rod! Use it from your Bag in a battle with a wild fish.' : 'You bought a ' + ITEMS[k].name + '! (You have ' + G.bag[k] + ' now.)');
   }
 }
 
@@ -6944,6 +7012,16 @@ class BattleScreen {
         if (this.treat.t % 3 === 0) fxSpawn(this, x + 8, y + 8, 1, { cols: ['#ffffff', '#fff29a'], speed: 0.4, life: 10, g: 0.02, spread: 6 });
       } else if (!this.treat.landed) { this.treat.landed = true; fxSpawn(this, EPOS.x + 32, EPOS.y + 44, 8, { cols: ['#fffbe9', '#f6e6bc'], speed: 1.4, life: 12, g: 0.05 }); }
     }
+    if (this.cast) {   // the fishing line arcs out to the wild fish, with a red and white float on the end
+      const c = this.cast, f = clamp(c.t / 24, 0, 1), x0 = PPOS.x + 84, y0 = PPOS.y + 14, x1 = x0 + (EPOS.x + 30 - x0) * f, y1 = y0 + (EPOS.y + 46 - y0) * f + (c.tug > 0 ? (c.tug % 4 < 2 ? 2 : 0) : 0);
+      c.t++; if (c.tug > 0) c.tug--;
+      ctx.fillStyle = PALETTE[PI.wood[3]]; for (let k = 0; k < 26; k++) ctx.fillRect(Math.round(PPOS.x + 58 + k), Math.round(PPOS.y + 40 - k), 2, 2);   // the rod, held out beside your pet
+      ctx.fillStyle = PALETTE[PI.ink[1]];
+      for (let k = 0; k <= 60; k++) { const u = k / 60; ctx.fillRect(Math.round(x0 + (x1 - x0) * u), Math.round(y0 + (y1 - y0) * u - Math.sin(u * Math.PI) * 26 * f), 1, 1); }
+      ctx.fillStyle = PALETTE[PI.ink[0]]; ctx.fillRect(Math.round(x1) - 3, Math.round(y1) - 3, 6, 7);
+      ctx.fillStyle = PALETTE[PI.red[0]]; ctx.fillRect(Math.round(x1) - 2, Math.round(y1) - 2, 4, 3);
+      ctx.fillStyle = PALETTE[PI.snow[0]]; ctx.fillRect(Math.round(x1) - 2, Math.round(y1) + 1, 4, 2);
+    }
     if (this.eating && this.t % 12 === 0) fxSpawn(this, EPOS.x + 32, EPOS.y + 22, 1, { cols: ['#f0689a', '#ffb3a8'], kind: 'heart', up: true, speed: 0.9, life: 28, g: -0.01, spread: 26 });
     fxDraw(this);
     ctx.restore();
@@ -7053,6 +7131,7 @@ async function chooseAction(B) {
       const r = await bagMenu(true, B);
       if (!r) continue;
       if (r.treat) return { kind: 'treat', key: r.treat };
+      if (r.rod) return { kind: 'rod' };
       return { kind: 'item' };
     }
     if (a === 2) {
@@ -7161,20 +7240,38 @@ async function throwTreat(B, key) {
   const ok = Math.random() < treatChance(e, key);
   for (let k = 0; k < 3; k++) { sfx('wiggle'); B.wiggle = 16; await wait(26); if (!ok && k === 1 && Math.random() < 0.5) break; }
   B.eating = false;
-  if (ok) {
-    sfx('catchOk');
-    B.caught = true;
-    fxSpawn(B, EPOS.x + 32, EPOS.y + 36, 18, { cols: ['#ffffff', '#fff29a', '#ffd94a', '#f0689a'], kind: 'star', speed: 2.6, life: 26 });
-    e.pending = [];
-    G.stats.caught++;
-    await bsay('Yay! ' + petName(e) + ' became your friend!');
-    await nicknamePet(e);
-    if (G.party.length < PARTY_MAX) G.party.push(e);
-    else { healPet(e); G.pen.push(e); await bsay('Your party is full, so ' + petName(e) + ' went to rest in the Pet Pen at the Clinic.'); }
-    return true;
-  }
+  if (ok) return befriend(B);
   sfx('catchFail');
   await bsay(petName(e) + ' finished the snack, but isn\'t ready to be friends yet!');
+  return false;
+}
+// The wild pet joins you (after a treat or a catch with the Fishing Rod).
+async function befriend(B) {
+  const e = B.enemy;
+  sfx('catchOk');
+  B.caught = true;
+  fxSpawn(B, EPOS.x + 32, EPOS.y + 36, 18, { cols: ['#ffffff', '#fff29a', '#ffd94a', '#f0689a'], kind: 'star', speed: 2.6, life: 26 });
+  e.pending = [];
+  G.stats.caught++;
+  await bsay('Yay! ' + petName(e) + ' became your friend!');
+  await nicknamePet(e);
+  if (G.party.length < PARTY_MAX) G.party.push(e);
+  else { healPet(e); G.pen.push(e); await bsay('Your party is full, so ' + petName(e) + ' went to rest in the Pet Pen at the Clinic.'); }
+  return true;
+}
+// Fish are caught with the Fishing Rod (bought once at the Pet Shop, never used up). The more tired the fish, the better the odds.
+async function castRod(B) {
+  const e = B.enemy;
+  sfx('throw');
+  B.cast = { t: 0 };
+  await wait(30);
+  await bsay('You cast your Fishing Rod toward the wild ' + petName(e) + '!');
+  const ok = Math.random() < rodChance(e);
+  for (let k = 0; k < 3; k++) { sfx('wiggle'); B.wiggle = 16; B.cast.tug = 10; await wait(26); if (!ok && k === 1 && Math.random() < 0.5) break; }
+  B.cast = null;
+  if (ok) { await bsay('A bite! You gently reel ' + petName(e) + ' in...'); return befriend(B); }
+  sfx('catchFail');
+  await bsay(petName(e) + ' wriggled off the line! Tire it out a little more and try again.');
   return false;
 }
 async function battleTurn(B) {
@@ -7194,6 +7291,10 @@ async function battleTurn(B) {
     const r = await enemyTurn(B); return r === 'lose' ? 'lose' : null;
   }
   if (act.kind === 'item') { B.dispP = B.player.hp; const r = await enemyTurn(B); return r === 'lose' ? 'lose' : null; }
+  if (act.kind === 'rod') {
+    if (await castRod(B)) return 'caught';
+    const r = await enemyTurn(B); return r === 'lose' ? 'lose' : null;
+  }
   if (act.kind === 'treat') {
     if (await throwTreat(B, act.key)) return 'caught';
     const r = await enemyTurn(B); return r === 'lose' ? 'lose' : null;
@@ -7448,7 +7549,7 @@ function runSelfTest() {
     for (const n of m.npcs) if (!met.has(n.id)) mErr.push(n.id + ' can never be reached');
     G = { flags: END_FLAGS };
     const w = m.rows[0].length, h = m.rows.length;
-    if (w > 48 || h > 32) mErr.push('too big ' + w + 'x' + h);
+    if (w > 72 || h > 48) mErr.push('too big ' + w + 'x' + h);
     m.rows.forEach((r, y) => { if (r.length !== w) mErr.push('row ' + y + ' is ' + r.length + ' wide'); for (const ch of r) if (!TILE_INFO[ch]) mErr.push('bad tile ' + ch); });
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       if ((x === 0 || y === 0 || x === w - 1 || y === h - 1) && TILE_INFO[m.rows[y][x]] && TILE_INFO[m.rows[y][x]].walk && !exitAt(m, x, y)) mErr.push('open edge at ' + x + ',' + y);
@@ -7486,6 +7587,26 @@ function runSelfTest() {
     for (const n of m.npcs) if (n.moveTo && (!TILE_INFO[tileAt(m, n.moveTo.x, n.moveTo.y)].walk || exitAt(m, n.moveTo.x, n.moveTo.y))) mErr.push(n.id + ' steps aside into a wall');
     check('Map "' + m.name + '" (' + w + 'x' + h + ') is valid and fully reachable', !mErr.length, mErr.slice(0, 4).join('; '));
   }
+  // Bigger maps: every outdoor map is about 1.5 times its written size, buildings and doors are untouched, and gatekeepers still block the way.
+  { const zErr = [], gates = [];
+    for (const k in MAPS) for (const n of MAPS[k].npcs) if (n.moveTo) gates.push([k, n]);
+    for (const k in MAPS) {
+      const m = MAPS[k], g = MAP_GROW[k];
+      if (!g) { if (!NO_GROW[k]) zErr.push(k + ' did not grow'); continue; }
+      const w = m.rows[0].length, h2 = m.rows.length;
+      if (w < g.w * 1.4 || w > g.w * 1.5 + 1 || h2 < g.h * 1.4 || h2 > g.h * 1.5 + 1) zErr.push(k + ' is ' + w + 'x' + h2 + ', written ' + g.w + 'x' + g.h);
+      for (const d of m.doors) if (tileAt(m, d.x, d.y) !== 'D' || tileAt(m, d.x - 1, d.y) === 'D' || tileAt(m, d.x + 1, d.y) === 'D' || tileAt(m, d.x, d.y - 1) === 'D') zErr.push(k + ' door was stretched');
+      for (const e of m.exits) if ((e.y === 0 || e.y + e.h >= h2 ? e.h : e.w) !== 1) zErr.push(k + ' exit to ' + e.to + ' got deeper');
+      const reachN = () => { const seen = new Set([m.spawn.x + ',' + m.spawn.y]), q = [[m.spawn.x, m.spawn.y]]; while (q.length) { const [x, y] = q.shift(); for (const d of Object.values(DIRS)) { const key = (x + d[0]) + ',' + (y + d[1]); if (!seen.has(key) && isWalkable(m, x + d[0], y + d[1])) { seen.add(key); q.push([x + d[0], y + d[1]]); } } } return seen; };
+      for (const [gk, n] of gates) if (gk === k) {
+        G = { flags: {} }; for (const [, o] of gates) G.flags[o.id] = true;
+        const open = reachN(); G.flags[n.id] = false;
+        const shut = reachN(), post = n.x + ',' + n.y;
+        if (![...open].some(t => t !== post && !shut.has(t))) zErr.push(n.id + ' no longer blocks the way');   // beating them must open up somewhere new
+      }
+    }
+    G = savedG;
+    check('Maps are 1.5 times their written size; doors, exits and gatekeepers still work', !zErr.length, zErr.slice(0, 4).join('; ')); }
   G = savedG;
   const exitPairs = [];
   for (const k in MAPS) for (const e of MAPS[k].exits) exitPairs.push(MAPS[e.to].exits.some(b => b.to === k));
@@ -7852,7 +7973,7 @@ function runSelfTest() {
   check('Easy fights: a Lv 5 starter beats ' + (easyWins / 10).toFixed(0) + '% of Meadow pets on its own', easyWins >= 900, (easyWins / 10) + '%');
   // Treats: every kind of pet likes something the shop sells, and favourites work better than other snacks.
   const trErr = [];
-  for (const t of TYPES) { if (!TREAT_LIKES[t] || !TREAT_LIKES[t].length) trErr.push(t + ' likes nothing'); else for (const k of TREAT_LIKES[t]) if (!ITEMS[k] || !ITEMS[k].treat || !(ITEMS[k].price > 0)) trErr.push(t + ' likes unknown ' + k); }
+  for (const t of TYPES) { if (t === 'Fish') { if (TREAT_LIKES.Fish.length || !ITEMS.rod || ITEMS.rod.price !== 350) trErr.push('fish need the 350-coin Fishing Rod, not a treat'); } else if (!TREAT_LIKES[t] || !TREAT_LIKES[t].length) trErr.push(t + ' likes nothing'); else for (const k of TREAT_LIKES[t]) if (!ITEMS[k] || !ITEMS[k].treat || !(ITEMS[k].price > 0)) trErr.push(t + ' likes unknown ' + k); }
   for (const k of TREAT_KEYS) if (!TYPES.some(t => TREAT_LIKES[t].includes(k))) trErr.push('nobody likes ' + k);
   for (const k in SPECIES) { const q = createPet(k, 8); q.hp = 1; for (const tk of TREAT_KEYS) if (likesTreat(q, tk) ? treatChance(q, tk) < catchChance(q) : treatChance(q, tk) >= catchChance(q) * 0.5) trErr.push(k + '/' + tk); }
   check(TREAT_KEYS.length + ' kinds of treats: every pet has a favorite and the wrong snack rarely works', !trErr.length, trErr.slice(0, 4).join('; '));
@@ -7912,6 +8033,12 @@ function runSelfTest() {
   texts.push(goalText.toString().match(/'Goal:[^']*'/g).join(' '));
   for (const k in MAPS) for (const n of MAPS[k].npcs) { texts.push(...n.lines, ...(n.after || []), ...(n.final || [])); if (textW(n.name) + 10 > DLG.w) uErr.push('name tag ' + n.name); }
   for (const k of ITEM_ORDER) texts.push(ITEMS[k].desc + '  You have 99.', '\u2665 The wild Squeakers loves this! ' + ITEMS[k].desc);
+  texts.push('\u2665 Just the thing for a wild Squeakers! ' + ITEMS.rod.desc, 'Fish don\'t take treats. A wild Squeakers needs a Fishing Rod.', ITEMS.rod.desc + '  You only need one.',
+    'You don\'t have a Fishing Rod. The Pet Shop sells one for 350 coins.', 'The Fishing Rod only works on fish. Offer Squeakers a treat instead!', 'Fish don\'t take treats! You need a Fishing Rod to catch Squeakers. The Pet Shop sells one.',
+    'You already have a Fishing Rod, and one is all you need. It never runs out!', 'You bought the Fishing Rod! Use it from your Bag in a battle with a wild fish.', 'You cast your Fishing Rod toward the wild Squeakers!',
+    'Squeakers wriggled off the line! Tire it out a little more and try again.', 'A bite! You gently reel Squeakers in...');
+  if (toNext(5) !== 300 || toNext(10) !== 1200) uErr.push('levelling up should take 12 x level x level XP (20% more than the first versions)');
+  { const f = createPet('bubbles', 8); f.hp = 1; if (!needsRod(f) || rodChance(f) <= catchChance(f) || TREAT_KEYS.some(k => likesTreat(f, k)) || needsRod(createPet('buddy', 5)) || ITEMS.flakes) uErr.push('fish are caught with the Fishing Rod only'); }
   for (const k in MAPS) for (const c of MAPS[k].chests) texts.push('You found ' + chestLabel(c) + '!');
   for (const k in SPECIES) texts.push((SPECIES[k].desc || ''), 'Champion Maple\'s ' + SPECIES[k].name + ' used Whisker Swipe!', SPECIES[k].name + ' wants to learn Pouch Cannon! But a pet can only know 4 moves.');
   texts.push('Your party is full, so ' + longName + ' went to rest in the Pet Pen at the Clinic.');
@@ -8029,7 +8156,7 @@ function devView(v) {
     } }); }
   else if (/^intro\d$/.test(v)) { const s = push(new IntroScreen()); s.i = +v.slice(5); s.begin(); s.t = s.i ? 240 : 140; }
   else if (v === 'title') push(new TitleScreen());
-  else if (v === 'emote') { push(overworld); enterMap('pawsville', 12, 8, 'down'); world.banner = 0; world.emote = { t: 18, kind: 'heart' }; }
+  else if (v === 'emote') { push(overworld); enterMap('pawsville', gx('pawsville', 12), gy('pawsville', 8), 'down'); world.banner = 0; world.emote = { t: 18, kind: 'heart' }; }
   else if (v === 'emotebattle') { G.party[0] = createPet('kiwi', 8); const B = battleWith(createPet('cookie', 5)); B.emote = { t: 12, kind: 'star' }; push(new ActionMenu(B, () => {})); }
   else if (v === 'name') { push(new NameEntryScreen(() => {}, { title: 'Hello, new hero! What\'s your name?', initial: 'Sam', cancel: true })); }
   else if (v === 'nick') { push(new NameEntryScreen(() => {}, { title: 'Name your Kiwi', initial: 'Sunny', pet: createPet('kiwi', 5), allowEmpty: true, cancel: true, help: 'Leave it empty to keep the name Kiwi.' })); }
@@ -8051,7 +8178,7 @@ function devView(v) {
     const mk = location.hash.split('&')[1] || 'woods', m = MAPS[mk], bootMs = Math.round(performance.now());   // time from opening the page until all art is built
     const t0 = performance.now(); paintGround(m.rows, biomeOf(m)); const paintMs = performance.now() - t0;
     push(overworld); enterMap(mk, m.spawn ? m.spawn.x : 24, m.spawn ? m.spawn.y : 16, 'down'); world.banner = 0;
-    const spots = [[24, 16], [10, 8], [38, 24], [24, 28]].filter(([x, y]) => m.rows[y] && m.rows[y][x] !== undefined);
+    const spots = [[36, 24], [15, 12], [57, 36], [36, 42]].filter(([x, y]) => m.rows[y] && m.rows[y][x] !== undefined);
     setTimeout(() => {
       const times = [];
       for (let i = 0; i < 600; i++) {
@@ -8067,7 +8194,7 @@ function devView(v) {
     const [, mk, mine, foe, fxk] = location.hash.split('&');
     world.map = MAPS[mk] || MAPS.pawsville; G.party[0] = createPet(mine || 'rocky', 14);
     const B = battleWith(createPet(foe || 'cream', 12)); push(new ActionMenu(B, () => {}));
-    if (fxk === 'hit') { B.hitE = 12; battleImpact(B, 'E', 1); } else if (fxk === 'super') { B.hitE = 20; battleImpact(B, 'E', 2); B.flash = 7; } else if (fxk === 'caught') { B.caught = true; fxSpawn(B, EPOS.x + 32, EPOS.y + 36, 18, { cols: ['#ffffff', '#fff29a', '#ffd94a', '#f0689a'], kind: 'star', speed: 2.6, life: 26 }); }
+    if (fxk === 'hit') { B.hitE = 12; battleImpact(B, 'E', 1); } else if (fxk === 'super') { B.hitE = 20; battleImpact(B, 'E', 2); B.flash = 7; } else if (fxk === 'cast') { B.cast = { t: 30 }; } else if (fxk === 'caught') { B.caught = true; fxSpawn(B, EPOS.x + 32, EPOS.y + 36, 18, { cols: ['#ffffff', '#fff29a', '#ffd94a', '#f0689a'], kind: 'star', speed: 2.6, life: 26 }); }
   }
   else if (v === 'petsheet') { const page = +(location.hash.split('&')[1] || 0); push({ opaque: true, update() {}, hint() { return 'pets ' + (page * 6 + 1) + '+ : battle (64), mirrored, menu (32), overworld (16), original'; }, draw() {
     ctx.fillStyle = PALETTE[PI.grass[1]]; ctx.fillRect(0, 0, W, H);
@@ -8158,7 +8285,7 @@ function devView(v) {
     out.push('done'); document.getElementById('testout').textContent = out.join('\n');
   }); }
   else if (v === 'jukebox') { const s = push(new MusicRoomScreen()); audioUnlock(); s.i = s.names.indexOf('champion'); playMusic('champion', { cut: true }); }
-  else if (v === 'pausemenu') { push(overworld); enterMap('pawsville', 12, 11, 'down'); world.banner = 0; runScript(pauseMenu); }
+  else if (v === 'pausemenu') { push(overworld); enterMap('pawsville', gx('pawsville', 12), gy('pawsville', 11), 'down'); world.banner = 0; runScript(pauseMenu); }
   else if (v === 'themeprobe') { const room = push(new MusicRoomScreen()); runScript(async () => {   // real Web Audio check of main Theme 1 and theme switching
     const out = []; const log = s => { out.push(s); document.getElementById('testout').textContent = out.join('\n'); };
     const real = ms => new Promise(r => setTimeout(r, ms));
@@ -8205,9 +8332,9 @@ function devView(v) {
     log('live audio nodes peaked at ' + NODES.peak + ', notes skipped to stay under the cap: ' + NODES.skipped);
     document.getElementById('testout').textContent = out.join('\n');
   }); }
-  else if (v === 'tasks') { push(overworld); enterMap('pawsville', 12, 11, 'up'); world.banner = 0; G.quests = { pudding: 'active', glasses: 'found', mouse: 'done' }; runScript(showTasks); }
-  else if (v === 'taskmap') { push(overworld); G.quests = { pudding: 'active' }; enterMap('meadow', 37, 25, 'right'); world.banner = 0; }
-  else if (v === 'labtop') { push(overworld); enterMap('lab', 11, 5, 'up'); world.banner = 0; }
+  else if (v === 'tasks') { push(overworld); enterMap('pawsville', gx('pawsville', 12), gy('pawsville', 11), 'up'); world.banner = 0; G.quests = { pudding: 'active', glasses: 'found', mouse: 'done' }; runScript(showTasks); }
+  else if (v === 'taskmap') { push(overworld); G.quests = { pudding: 'active' }; enterMap('meadow', gx('meadow', 37), gy('meadow', 25), 'right'); world.banner = 0; }
+  else if (v === 'labtop') { push(overworld); enterMap('lab', gx('lab', 11), gy('lab', 5), 'up'); world.banner = 0; }
   else if (v === 'boss') { world.map = MAPS.lab; G.party[0] = createPet('mango', 14); const gz = MAPS.lab.npcs.find(n => n.id === 'gizmo'); const B = new BattleScreen({ wild: false, trainer: gz, enemies: gz.trainer.team.map(([s, l]) => createPet(s, l)) }); B.eIn = 1; B.setPlayer(G.party[0]); B.pIn = 1; push(B); push(new MessageScreen(gz.lines[1], () => {}, 'Dr. Gizmo')); }
   else if (v === 'starter') push(new StarterScreen());
   else if (v === 'party') push(new PartyScreen(() => {}, { title: 'Your pets' }));
@@ -8220,8 +8347,8 @@ function devView(v) {
   else if (v === 'evolve') { const s = push(new EvolveScreen('cookie', 'cream')); s.t = 25; }
   else if (v === 'superbattle') { G.party[0] = createPet('superham', 20); const e = createPet('superham', 20); e.hp = 30; const B = battleWith(e); push(new ActionMenu(B, () => {})); }
   else if (v === 'superham') { const s = push(new EvolveScreen('nugget', 'superham')); s.done = true; }
-  else if (v === 'dialog') { push(overworld); enterMap('pawsville', 11, 9, 'right'); world.banner = 0; push(new MessageScreen(MAPS.pawsville.npcs[0].lines[1], () => {}, 'Granny Rose')); }
-  else if (v === 'menu') { push(overworld); enterMap('meadow', 9, 18, 'down'); world.banner = 0; push(new ChoiceScreen(['Pets', 'Bag', 'Save', 'Controls', 'Close'], () => {}, { x: W - 96, y: 22, minW: 90, title: G.coins + ' coins', info: () => 'Pets caught: 3   Chests: 2/8   Time: 0h 12m' })); }
+  else if (v === 'dialog') { push(overworld); enterMap('pawsville', gx('pawsville', 11), gy('pawsville', 9), 'right'); world.banner = 0; push(new MessageScreen(MAPS.pawsville.npcs[0].lines[1], () => {}, 'Granny Rose')); }
+  else if (v === 'menu') { push(overworld); enterMap('meadow', gx('meadow', 9), gy('meadow', 18), 'down'); world.banner = 0; push(new ChoiceScreen(['Pets', 'Bag', 'Save', 'Controls', 'Close'], () => {}, { x: W - 96, y: 22, minW: 90, title: G.coins + ' coins', info: () => 'Pets caught: 3   Chests: 2/8   Time: 0h 12m' })); }
   else if (v === 'pets') {
     push({ opaque: true, update() {}, hint() { return 'All pets'; }, draw() {
       ctx.fillStyle = '#dff2ff'; ctx.fillRect(0, 0, W, H);
@@ -8284,11 +8411,11 @@ async function runSmoke() {
     await mash(idle, 20);
     ok('A pet can wear a pink top hat (' + JSON.stringify(G.party[0].acc) + ')', G.party[0].acc && G.party[0].acc.kind === 'tophat' && G.party[0].acc.color === 1);
     // H = home, with a confirmation first.
-    enterMap('meadow', 21, 26, 'up'); await wait(5);
+    enterMap('meadow', gx('meadow', 21), gy('meadow', 26), 'up'); await wait(5);
     await key('KeyH'); await wait(5);
     ok('H asks before teleporting', topScreen() instanceof ChoiceScreen && G.map === 'meadow');
     await key('ArrowDown'); await key('Enter'); await mash(idle, 20);
-    ok('Saying No keeps you where you are', G.map === 'meadow' && G.x === 21);
+    ok('Saying No keeps you where you are', G.map === 'meadow' && G.x === gx('meadow', 21));
     await key('KeyH'); await wait(5); await key('Enter');
     await mash(idle, 40);
     ok('Saying Yes teleports you home', G.map === 'pawsville' && G.x === HOME.x && G.y === HOME.y);
@@ -8327,13 +8454,13 @@ async function runSmoke() {
     }
     // The longer road: Meadow -> Pebble Canyon (gatekeeper) -> Whisker Woods -> Misty Marsh (gatekeeper) -> Frosty Peak.
     { const rex = MAPS.canyon.npcs[0];
-      enterMap('meadow', 8, 1, 'up'); await wait(5);
+      enterMap('meadow', gx('meadow', 8), gy('meadow', 1), 'up'); await wait(5);
       window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', key: 'w' })); await wait(20);
       window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW', key: 'w' })); await wait(40);
       ok('North of Meadow Path is Pebble Canyon', G.map === 'canyon');
-      ok('Climber Rex blocks the canyon pass until beaten', !isWalkable(MAPS.canyon, 19, 11));
+      ok('Climber Rex blocks the canyon pass until beaten', !isWalkable(MAPS.canyon, gx('canyon', 19), gy('canyon', 11)));
       G.flags.rex = true;
-      ok('...then he steps aside', isWalkable(MAPS.canyon, 19, 11) && !npcAt(MAPS.canyon, 19, 11));
+      ok('...then he steps aside', isWalkable(MAPS.canyon, gx('canyon', 19), gy('canyon', 11)) && !npcAt(MAPS.canyon, gx('canyon', 19), gy('canyon', 11)));
       G.flags.rex = false;
       ok('Whisker Woods now leads to Misty Marsh, and the marsh to Frosty Peak', MAPS.woods.exits.some(e => e.to === 'marsh') && MAPS.marsh.exits.some(e => e.to === 'peak') && MAPS.peak.exits.some(e => e.to === 'lab'));
       ok('Trail Ribbon guardians wait in the Farm, Lake, Dunes and Jungle', RIBBON_IDS.every(id => Object.values(MAPS).some(mm => mm.npcs.some(n => n.id === id && n.ribbon))));
@@ -8341,13 +8468,13 @@ async function runSmoke() {
     // Leaving a trainer battle, and tips from helpful characters.
     { const rex = MAPS.canyon.npcs.find(n => n.id === 'rex'), savedParty = G.party;
       G.party = [createPet('buddy', 9)]; G.flags.rex = false;
-      enterMap('canyon', 19, 12, 'up'); runScript(() => talkTo(rex));
+      enterMap('canyon', gx('canyon', 19), gy('canyon', 12), 'up'); runScript(() => talkTo(rex));
       await mash(() => topScreen() instanceof ActionMenu, 200);
       await key('ArrowRight'); await key('ArrowDown'); await key('Enter');   // Run
       await mash(idle, 60);
       ok('You can leave a trainer battle with Run, and the trainer stays unbeaten', idle() && !G.flags.rex && G.map === 'canyon');
       const granny = MAPS.pawsville.npcs.find(n => n.id === 'lily');   // a helpful character without a task
-      delete G.flags.met_lily; enterMap('pawsville', 20, 8, 'down');
+      delete G.flags.met_lily; enterMap('pawsville', gx('pawsville', 20), gy('pawsville', 8), 'down');
       runScript(() => talkTo(granny)); await wait(5);
       const said = [];
       for (let i = 0; i < 40 && !idle(); i++) { const t = topScreen(); if (t instanceof MessageScreen) said.push(t.pages.flat().join(' ')); await key('Enter'); await wait(4); }
@@ -8360,28 +8487,28 @@ async function runSmoke() {
     // Tasks: a lost item (accept, find, hand in) and a show-me-a-pet task.
     { const waddle = MAPS.pawsville.npcs.find(n => n.id === 'waddle'), glasses = QUESTS.find(q => q.id === 'glasses');
       const keepCoins = G.coins, keepBag = Object.assign({}, G.bag);
-      enterMap('pawsville', 8, 15, 'down'); runScript(() => talkTo(waddle));
+      enterMap('pawsville', gx('pawsville', 8), gy('pawsville', 15), 'down'); runScript(() => talkTo(waddle));
       for (let i = 0; i < 20 && !(topScreen() instanceof ChoiceScreen); i++) { await key('Enter'); await wait(4); }
       await key('Enter');   // Yes, I'll help
       await mash(idle, 20);
       ok('Mr. Waddle asks for help and the task becomes active', questState(glasses) === 'active');
-      enterMap('lake', 3, 18, 'down'); await wait(5);
-      ok('His glasses now sparkle on the beach (and block that tile)', !!questObjAt(MAPS.lake, 3, 19) && !isWalkable(MAPS.lake, 3, 19));
+      enterMap('lake', gx('lake', 3), gy('lake', 19) - 1, 'down'); await wait(5);
+      ok('His glasses now sparkle on the beach (and block that tile)', !!questObjAt(MAPS.lake, gx('lake', 3), gy('lake', 19)) && !isWalkable(MAPS.lake, gx('lake', 3), gy('lake', 19)));
       await key('Enter'); await mash(idle, 20);
-      ok('Pressing A on the sparkle picks them up', questState(glasses) === 'found' && !questObjAt(MAPS.lake, 3, 19));
+      ok('Pressing A on the sparkle picks them up', questState(glasses) === 'found' && !questObjAt(MAPS.lake, gx('lake', 3), gy('lake', 19)));
       const coins0 = G.coins, band0 = G.bag.bandage;
-      enterMap('pawsville', 8, 15, 'down'); runScript(() => talkTo(waddle)); await mash(idle, 30);
+      enterMap('pawsville', gx('pawsville', 8), gy('pawsville', 15), 'down'); runScript(() => talkTo(waddle)); await mash(idle, 30);
       ok('Handing them in completes the task with a reward', questState(glasses) === 'done' && G.coins === coins0 + 60 && G.bag.bandage === band0 + 2);
       const milo = MAPS.pawsville.npcs.find(n => n.id === 'milo'), mouseQ = QUESTS.find(q => q.id === 'mouse');
       G.quests.mouse = 'active'; const savedParty = G.party; G.party = savedParty.concat([createPet('nibbles', 3)]);
-      enterMap('pawsville', 17, 4, 'right'); runScript(() => talkTo(milo)); await mash(idle, 30);
+      enterMap('pawsville', gx('pawsville', 17), gy('pawsville', 4), 'right'); runScript(() => talkTo(milo)); await mash(idle, 30);
       ok('Showing Milo a mouse completes his task', questState(mouseQ) === 'done');
       G.party = savedParty; G.coins = keepCoins; G.bag = keepBag; G.quests = {};
       enterMap('pawsville', HOME.x, HOME.y, 'down'); await wait(5); }
     // Super Growth Machine: locked until Dr. Gizmo is beaten, then a Nugget becomes a Super Hamster.
     { const keepParty = G.party, keepGizmo = G.flags.gizmo;
       G.party = [createPet('nugget', 15)].concat(keepParty.slice(0, 5));
-      G.flags.gizmo = false; enterMap('lab', 13, 3, 'up'); await wait(5);
+      G.flags.gizmo = false; enterMap('lab', gx('lab', 13), gy('lab', 3), 'up'); await wait(5);
       await key('Enter'); await mash(idle, 20);
       ok('The machine is off-limits while Dr. Gizmo is around', G.party[0].sp === 'nugget');
       G.flags.gizmo = true;
@@ -8401,12 +8528,12 @@ async function runSmoke() {
     await key('Escape'); await mash(idle, 20);
     ok('...and the game continues', idle());
     // New areas: walk east out of town to the farm, then back.
-    enterMap('pawsville', 30, 7, 'right'); await wait(5);
+    enterMap('pawsville', gx('pawsville', 30), gy('pawsville', 7), 'right'); await wait(5);
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyD' })); await wait(20);
     window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyD' })); await wait(40);
     ok('Walking east from town reaches Sunny Farm', G.map === 'farm' && !exitAt(world.map, G.x, G.y));
     ok('Piglets live in the mud, puppies in the wheat, ducklings by the pond',
-      wildTable(MAPS.farm, 15, 4)[0].sp === 'truffle' && wildTable(MAPS.farm, 4, 13).some(e => e.sp === 'buddy') && wildTable(MAPS.farm, 16, 13).some(e => e.sp === 'puddles'));
+      wildTable(MAPS.farm, gx('farm', 15), gy('farm', 4))[0].sp === 'truffle' && wildTable(MAPS.farm, gx('farm', 4), gy('farm', 13)).some(e => e.sp === 'buddy') && wildTable(MAPS.farm, gx('farm', 16), gy('farm', 13)).some(e => e.sp === 'puddles'));
     enterMap('pawsville', HOME.x, HOME.y, 'down'); await wait(5);
     ok('Started with Mittens Lv 5, 3 Fish + 1 of every other treat, 2 Bandages, 100 coins', G && G.party[0].sp === 'mittens' && G.party[0].lv === 5 && G.bag.fish === 3 && G.bag.bone === 1 && G.bag.bandage === 2 && G.coins === 100);
     // Walk: turn and walk right along the path.
@@ -8420,7 +8547,7 @@ async function runSmoke() {
     await key('KeyV');
     ok('Pressing V again shows a different emote (' + (world.emote && world.emote.kind) + ')', !!world.emote && world.emote.kind !== EMOTES[0]);
     // Walk into the clinic door from below.
-    enterMap('pawsville', 26, 7, 'up'); await wait(5);
+    enterMap('pawsville', gx('pawsville', 26), gy('pawsville', 6), 'up'); await wait(5);   // the tile in front of the Clinic door
     G.party[0].hp = 3;
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' })); await wait(14);
     window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW' }));
@@ -8431,9 +8558,9 @@ async function runSmoke() {
     await mash(() => topScreen() instanceof ChoiceScreen, 30);
     ok('Clinic healed the party', G.party[0].hp === maxHp(G.party[0]));
     await key('ArrowUp'); await key('Enter');  // Leave (wraps to last)
-    ok('Left the clinic and stand in front of the door', await mash(idle, 40) && G.x === 26 && G.y === 6);
+    ok('Left the clinic and stand in front of the door', await mash(idle, 40) && G.x === gx('pawsville', 26) && G.y === gy('pawsville', 6));
     // Map transition: walk north through the town gate.
-    enterMap('pawsville', 15, 2, 'up'); await wait(5);
+    enterMap('pawsville', gx('pawsville', 15), gy('pawsville', 1), 'up'); await wait(5);
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp' })); await wait(50);
     window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowUp' })); await wait(40);
     ok('Walking through the gate enters Meadow Path', G.map === 'meadow' && !exitAt(world.map, G.x, G.y));
@@ -8465,7 +8592,7 @@ async function runSmoke() {
     G.party = [createPet('buddy', 2)];
     for (const id of RIBBON_IDS) G.flags[id] = false;
     { const champ0 = MAPS.peak.npcs.find(n => n.id === 'maple');
-      enterMap('peak', 19, 2, 'up'); runScript(() => talkTo(champ0)); await wait(5);
+      enterMap('peak', gx('peak', 19), gy('peak', 2), 'up'); runScript(() => talkTo(champ0)); await wait(5);
       ok('Champion Maple refuses to battle without the 4 Trail Ribbons', topScreen() instanceof MessageScreen && topScreen().pages.flat().join(' ').includes('4 Trail Ribbons'));
       await mash(idle, 30);
       ok('...and no battle started', idle() && !G.flags.maple); }
@@ -8489,7 +8616,30 @@ async function runSmoke() {
       ok('Running away from the picky cat works', await mash(idle, 200));
       G.party = [createPet('buddy', 2)];
       bagMenu.last = 0; }
-    enterMap('peak', 19, 3, 'up');
+    // Fish take no treats: they are caught with the Fishing Rod, which is bought once and never used up.
+    { const realRandom = Math.random; Math.random = () => 0.1;
+      const fish = createPet('bubbles', 4); fish.hp = 1;
+      const keepParty = G.party, keepBag = Object.assign({}, G.bag), keepPen = G.pen.slice(), caught0 = G.stats.caught, rodAt = ITEM_ORDER.indexOf('rod');
+      G.party = [createPet('buddy', 9)]; G.bag.rod = 0; G.bag.seeds = 2;
+      runScript(() => startBattle({ wild: true, enemies: [fish] }));
+      await mash(() => topScreen() instanceof ActionMenu, 300);
+      await key('ArrowRight'); await key('Enter'); await wait(5);   // Bag
+      const heart = topScreen() instanceof ChoiceScreen && topScreen().opts[rodAt].label.startsWith('\u2665') && topScreen().opts[rodAt].right === 'No' && !topScreen().opts[2].label.startsWith('\u2665');
+      await key('ArrowDown'); await key('ArrowDown'); await key('Enter'); await wait(6);    // Seeds
+      const told = topScreen() instanceof MessageScreen && topScreen().pages.flat().join(' ').includes('Fishing Rod');
+      ok('A wild fish takes no treats (none is wasted) and the Bag points to the Fishing Rod', heart && told && G.bag.seeds === 2);
+      await mash(() => topScreen() instanceof ChoiceScreen, 40); 
+      for (let i = 2; i < rodAt; i++) await key('ArrowDown');
+      await key('Enter'); await wait(6);                                                   // Fishing Rod, without owning one
+      const need = topScreen() instanceof MessageScreen && topScreen().pages.flat().join(' ').includes('350 coins');
+      await mash(() => topScreen() instanceof ChoiceScreen, 40);
+      G.bag.rod = 1;
+      await key('Enter');                                                                  // Fishing Rod again, now owned
+      await mash(idle, 800);
+      Math.random = realRandom;
+      ok('Without a rod you are sent to the shop; with one, a tired fish is caught and the rod is kept', need && G.party.includes(fish) && G.bag.rod === 1 && G.stats.caught === caught0 + 1);
+      G.party = keepParty; G.bag = keepBag; G.pen = keepPen; G.stats.caught = caught0; bagMenu.last = 0; }
+    enterMap('peak', gx('peak', 19), gy('peak', 3), 'up');
     runScript(() => talkTo(champ));
     await mash(() => topScreen() instanceof ActionMenu, 300);
     bagMenu.last = 0;
@@ -8504,12 +8654,12 @@ async function runSmoke() {
     // Lose to the Champion on purpose: blackout -> clinic, coins -25%.
     await key('ArrowLeft');                                      // cursor remembers 'Bag': move back to 'Fight'
     const lostOk = await mash(idle, 1500);
-    ok('Losing sends you back to the Clinic', lostOk && G.map === 'pawsville' && G.x === 26 && G.y === 6);
+    ok('Losing sends you back to the Clinic', lostOk && G.map === 'pawsville' && G.x === gx('pawsville', 26) && G.y === gy('pawsville', 6));
     if (!lostOk || G.map !== 'pawsville') log.push('   state: top=' + (topScreen() && topScreen().constructor.name) + ' busy=' + busy + ' fade=' + fade.a + '/' + fade.target + ' map=' + G.map + ' ' + G.x + ',' + G.y + ' stack=' + stack.map(s => s.constructor.name).join('>') + ' hp=' + G.party.map(q => q.hp).join(','));
     ok('Lost 25% of coins (' + coins0 + ' -> ' + G.coins + ') and the party is healed', G.coins === coins0 - Math.floor(coins0 * 0.25) && G.party.every(p => p.hp === maxHp(p)));
     ok('Champion not marked as beaten', !G.flags.maple);
     // Chest
-    enterMap('pawsville', 9, 3, 'up');
+    enterMap('pawsville', gx('pawsville', 9), gy('pawsville', 3), 'up');
     await key('Enter');
     await mash(idle, 40);
     ok('Chest gives 3 Treats and stays open', G.chests.paw1 === true);
@@ -8523,20 +8673,20 @@ async function runSmoke() {
     // Beat the Champion: she reveals Dr. Gizmo and steps aside from the lab path.
     G.party = ['rocky', 'shadow', 'nugget', 'cream', 'spike', 'mango'].map(sp => createPet(sp, 20));   // an end-game team
     G.party.forEach(q => q.moves.sort((x, y) => MOVES[y].power - MOVES[x].power));   // mashing Enter uses the first move, so put the strongest first, like a real player would pick
-    ok('The lab path is blocked before the Champion is beaten', !isWalkable(MAPS.peak, 19, 1));
-    enterMap('peak', 19, 2, 'up');
+    ok('The lab path is blocked before the Champion is beaten', !isWalkable(MAPS.peak, gx('peak', 19), gy('peak', 1)));
+    enterMap('peak', gx('peak', 19), gy('peak', 2), 'up');
     runScript(() => talkTo(champ));
-    ok('Champion battle won and she steps aside', await mash(idle, 2000) && G.flags.maple === true && npcPos(champ).x === 17 && !G.flags.gizmo);
+    ok('Champion battle won and she steps aside', await mash(idle, 2000) && G.flags.maple === true && npcPos(champ).x === gx('peak', 17) && !G.flags.gizmo);
     ok('No win screen yet (the story continues)', !stack.some(s => s instanceof WinScreen));
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' })); await wait(40);
     window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW' })); await wait(40);
     ok('Walking north enters Gizmo\'s Lab', await mash(idle, 10) && G.map === 'lab');
     const bolt = MAPS.lab.npcs.find(n => n.id === 'bolt'), gizmo = MAPS.lab.npcs.find(n => n.id === 'gizmo');
-    ok('Lab Helper Bolt blocks the door', !isWalkable(MAPS.lab, 11, 10));
-    enterMap('lab', 11, 11, 'up');
+    ok('Lab Helper Bolt blocks the door', !isWalkable(MAPS.lab, gx('lab', 11), gy('lab', 10)));
+    enterMap('lab', gx('lab', 11), gy('lab', 11), 'up');
     runScript(() => talkTo(bolt));
-    ok('Beat Bolt and he steps aside', await mash(idle, 2000) && G.flags.bolt === true && isWalkable(MAPS.lab, 11, 10));
-    enterMap('lab', 11, 4, 'up');
+    ok('Beat Bolt and he steps aside', await mash(idle, 2000) && G.flags.bolt === true && isWalkable(MAPS.lab, gx('lab', 11), gy('lab', 10)));
+    enterMap('lab', gx('lab', 11), gy('lab', 4), 'up');
     runScript(() => talkTo(gizmo));
     let sawWin = false;
     for (let i = 0; i < 3000 && !(sawWin && idle()); i++) { if (topScreen() instanceof WinScreen) sawWin = true; await key('Enter'); await wait(6); }
