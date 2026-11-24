@@ -1074,6 +1074,7 @@ function buildPets() {
 function buildAllSprites() {
   buildFont();
   buildTiles();
+  buildGroundTiles();
   buildPeople();
   buildPets();
   SPR_CHEST_C = buildSprite('chest_closed', CHEST_CLOSED, CHEST_PAL);
@@ -1254,6 +1255,209 @@ function shadowSprite(w, h) {
 }
 function drawShadow(x, y, w = 12, h = 5) { ctx.drawImage(shadowSprite(w, h), Math.round(x - w / 2 + 1), Math.round(y - h / 2 + 1)); }
 // <<< GFX:core
+
+// >>> GFX:ground
+// ---------------------------------------------------------------------
+// 3c. GFX GROUND: each map's ground is painted once, pixel by pixel, into one big picture.
+// Tile ids, collision and walkability are untouched: this only decides how a tile LOOKS.
+// Instead of stamping square tiles, every pixel asks "which terrain am I on?" through a small
+// noise wobble, so grass, paths, water and sand meet along organic edges (auto-tiling without seams),
+// and texture comes from deterministic noise, so no two patches repeat and nothing flickers.
+// ---------------------------------------------------------------------
+const T_VOID = 0, T_GRASS = 1, T_PATH = 2, T_WATER = 3, T_SAND = 4, T_SNOW = 5, T_MUD = 6, T_SOIL = 7, T_FLOOR = 8;
+const TERRAIN = { '.': 1, 'f': 1, ',': 1, 'T': 1, '|': 1, 'R': 1, 'B': 1, 'K': 1, 'H': 1, 'W': 1, 'D': 1, 'J': 1, 'j': 1, '=': 2, '~': 3, 'b': 3,
+  '_': 4, ';': 4, 'c': 4, 'r': 4, '*': 5, '^': 5, 'Y': 5, 'q': 5, 'm': 6, 'w': 7, 'L': 8, 'P': 8, 'M': 8, 'X': 8, 'Z': 8, 'C': 8 };
+// Per-biome mood. g = four steps of the foliage ramp (highlight, light, mid, shadow); flowers = wildflower density.
+const BIOME = {
+  pawsville: { g: [1, 2, 3, 4], flowers: 0.035, seed: 11 },
+  meadow:    { g: [0, 1, 2, 3], flowers: 0.09, seed: 23 },
+  woods:     { g: [2, 3, 4, 5], flowers: 0.012, seed: 37 },
+  farm:      { g: [1, 2, 3, 4], flowers: 0.03, seed: 41 },
+  lake:      { g: [1, 2, 3, 4], flowers: 0.015, seed: 53, reeds: true },
+  dunes:     { g: [1, 2, 3, 4], flowers: 0, seed: 67 },
+  canyon:    { g: [1, 2, 3, 4], flowers: 0, seed: 71, warm: true },
+  jungle:    { g: [2, 3, 4, 5], flowers: 0.03, seed: 83 },
+  marsh:     { g: [3, 4, 5, 6], flowers: 0.008, seed: 97, reeds: true },
+  peak:      { g: [2, 3, 4, 5], flowers: 0, seed: 101 },
+  lab:       { g: [1, 2, 3, 4], flowers: 0, seed: 113, indoor: true },
+};
+function mapKey(m) { if (!m._key) m._key = Object.keys(MAPS).find(k => MAPS[k] === m) || 'pawsville'; return m._key; }
+function biomeOf(m) { return BIOME[mapKey(m)] || BIOME.pawsville; }
+const FLOWER_COLS = () => [PI.pink[1], PI.violet[1], PI.blue[2], PI.pink[0], PI.yellow[1], PI.snow[0]];   // magenta, violet, cobalt, coral, yellow, white
+const TALL_KIND = { ',': 'grass', ';': 'brush', 'w': 'wheat', 'j': 'fern', '^': 'shrub' };
+
+// Paint the ground of a map (given as rows of tile characters). Returns a Pix of (cols*16) x (rows*16).
+function paintGround(rows, B) {
+  const cols = rows[0].length, nrows = rows.length, w = cols * TS, h = nrows * TS, seed = B.seed, g = new Pix(w, h);
+  const leaf = PI.leaf, G = B.g.map(i => leaf[i]), GD = leaf[Math.min(B.g[3] + 1, leaf.length - 1)];
+  const chAt = (tx, ty) => rows[clamp(ty, 0, nrows - 1)][clamp(tx, 0, cols - 1)];
+  // 1. terrain of every pixel, with a wobble so borders are organic (indoors stay square)
+  const T = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let sx = x, sy = y;
+    if (!B.indoor) { sx = x + Math.round((vnoise(x, y, 7, seed + 1) - 0.5) * 6); sy = y + Math.round((vnoise(x, y, 7, seed + 2) - 0.5) * 6); }
+    T[y * w + x] = TERRAIN[chAt(sx >> 4, sy >> 4)] || T_GRASS;
+  }
+  const tAt = (x, y) => T[clamp(y, 0, h - 1) * w + clamp(x, 0, w - 1)];
+  const near = (x, y, t, r) => tAt(x - r, y) !== t || tAt(x + r, y) !== t || tAt(x, y - r) !== t || tAt(x, y + r) !== t;
+  // 2. colour
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const t = T[y * w + x], ch = rows[y >> 4][x >> 4], sp = speckle(x, y, seed + 3);
+    let c;
+    if (t === T_GRASS) {
+      const tall = TALL_KIND[ch] || ch === 'T' || ch === 'J';                       // under tall grass and trees the ground is darker
+      const v = vnoise(x, y, 18, seed + 4) * 0.42 + vnoise(x, y, 6, seed + 5) * 0.33 + sp * 0.25 + (tall ? 0.2 : 0);
+      c = v < 0.5 ? G[1] : v < 0.8 ? G[2] : v < 0.93 ? G[3] : GD;                   // two-tone mottled patches, with a few shadow flecks
+      if (!tall && v < 0.33 && sp > 0.66) c = G[0];                                 // sunlit flecks
+      if (tAt(x + 1, y + 1) === T_PATH || tAt(x, y + 1) === T_PATH) c = G[3];       // the lip of the turf above a path
+    } else if (t === T_PATH) {
+      const v = vnoise(x, y, 9, seed + 6) * 0.55 + sp * 0.45;
+      c = v < 0.34 ? PI.earth[0] : v < 0.8 ? PI.earth[1] : PI.earth[2];
+      if (near(x, y, T_PATH, 1)) c = PI.earth[2];                                   // soft darker rim where dirt meets grass
+      else if (tAt(x, y - 2) !== T_PATH || tAt(x - 2, y) !== T_PATH) c = v < 0.6 ? PI.earth[1] : PI.earth[2];
+    } else if (t === T_WATER) {
+      const v = vnoise(x * 0.5, y, 9, seed + 7) * 0.75 + sp * 0.25;                  // stretched sideways, so the water looks like it flows
+      c = v < 0.7 ? PI.water[1] : PI.water[2];
+      let up = 9; for (let k = 1; k <= 6; k++) if (tAt(x, y - k) !== T_WATER) { up = k; break; }
+      const landish = tAt(x, y - up) === T_SAND || tAt(x, y - up) === T_SNOW;
+      if (up <= 1) c = landish ? PI.earth[1] : PI.earth[2];                         // the bank: a low wall of soil seen from the front
+      else if (up === 2) c = landish ? PI.earth[2] : PI.earth[3];
+      else if (up === 3) c = PI.water[3];                                           // dark teal where the bank shades the water
+      else if (up <= 5) c = PI.water[2];
+      else if (tAt(x - 1, y) !== T_WATER || tAt(x - 2, y) !== T_WATER) c = PI.water[3];
+      else if (tAt(x, y + 1) !== T_WATER || tAt(x, y + 2) !== T_WATER || tAt(x, y + 3) !== T_WATER || tAt(x + 1, y) !== T_WATER || tAt(x + 2, y) !== T_WATER) c = PI.water[0];   // lighter band along the near bank
+    } else if (t === T_SAND) {
+      const v = vnoise(x, y, 11, seed + 8) * 0.6 + sp * 0.4, warm = B.warm;
+      c = v < 0.3 ? (warm ? PI.earth[0] : PI.cream[0]) : v < 0.78 ? (warm ? PI.earth[1] : PI.cream[1]) : (warm ? PI.earth[2] : PI.earth[0]);
+      if (vnoise(x * 0.35 + y, y * 2.2, 5, seed + 9) > 0.78 && sp > 0.5) c = warm ? PI.earth[2] : PI.earth[0];   // wind ripples
+      if (tAt(x, y + 1) === T_WATER || tAt(x, y + 2) === T_WATER) c = warm ? PI.earth[2] : PI.earth[1];          // damp sand at the waterline
+    } else if (t === T_SNOW) {
+      const v = vnoise(x, y, 13, seed + 10) * 0.7 + sp * 0.3;
+      c = v < 0.55 ? PI.snow[0] : v < 0.85 ? PI.snow[1] : PI.snow[2];
+      if (TALL_KIND[ch] && v > 0.4) c = PI.snow[1];
+    } else if (t === T_MUD) {
+      const v = vnoise(x, y, 8, seed + 11) * 0.6 + sp * 0.4;
+      c = v < 0.2 ? PI.earth[2] : v < 0.7 ? PI.earth[3] : PI.earth[4];
+      if (near(x, y, T_MUD, 1)) c = PI.earth[4];
+    } else if (t === T_SOIL) {
+      const row = ((y % 16) + 16) % 8;                                              // tilled furrows
+      c = row < 2 ? PI.earth[4] : row < 3 ? PI.earth[2] : sp > 0.7 ? PI.earth[2] : PI.earth[3];
+    } else if (t === T_FLOOR) {
+      const lx = x & 15, ly = y & 15, alt = ((x >> 4) + (y >> 4)) & 1;              // big lab floor tiles, lit from the upper left
+      c = lx === 15 || ly === 15 ? PI.stone[2] : lx === 0 || ly === 0 ? PI.snow[0] : alt ? PI.stone[0] : PI.snow[1];
+      if (sp > 0.93 && lx > 1 && ly > 1 && lx < 14 && ly < 14) c = PI.stone[1];
+    } else c = PI.teal[2];
+    g.d[y * w + x] = c;
+  }
+  // 3. little details stamped on top, a few per tile, placed by noise
+  const put = (x, y, c) => { if (x >= 0 && y >= 0 && x < w && y < h) g.d[y * w + x] = c; };
+  const flowerCols = FLOWER_COLS();
+  for (let ty = 0; ty < nrows; ty++) for (let tx = 0; tx < cols; tx++) {
+    const ch = rows[ty][tx], ox = tx * TS, oy = ty * TS, r = k => hash2(tx, ty, seed + 20 + k);
+    if (ch === '.' || ch === 'f') {
+      for (let k = 0; k < 2; k++) if (r(k) < 0.42) {                               // grass tufts: three little blades with a shadow under them
+        const x = ox + 1 + Math.floor(r(k + 4) * 10), y = oy + 4 + Math.floor(r(k + 8) * 9);
+        if (tAt(x + 2, y) !== T_GRASS) continue;
+        put(x, y, G[0]); put(x, y - 1, G[0]); put(x + 2, y, G[1]); put(x + 2, y - 1, G[0]); put(x + 2, y - 2, G[0]); put(x + 4, y, G[0]); put(x + 4, y - 1, G[1]);
+        for (let i = 0; i < 5; i++) put(x + i, y + 1, G[3]);
+      }
+      const many = ch === 'f' ? 5 : r(30) < B.flowers * 3 ? 1 + Math.floor(r(31) * 2) : 0;                  // flower beds, and stray wildflowers
+      for (let k = 0; k < many; k++) {
+        const x = ox + 2 + Math.floor(r(40 + k) * 12), y = oy + 3 + Math.floor(r(50 + k) * 10), col = flowerCols[Math.floor(r(60 + (ch === 'f' ? k >> 1 : k)) * flowerCols.length)];
+        if (tAt(x, y) !== T_GRASS) continue;
+        put(x, y + 2, G[3]); put(x, y + 1, GD);                                    // stem and its shadow
+        put(x - 1, y, col); put(x + 1, y, col); put(x, y - 1, col); put(x, y + 1, DARKER[col]); put(x, y, col === PI.yellow[1] ? PI.orange[2] : PI.yellow[1]);
+      }
+    } else if (ch === '=') {
+      for (let k = 0; k < 2; k++) if (r(k) < 0.5) {                                // pebbles
+        const x = ox + 2 + Math.floor(r(k + 4) * 11), y = oy + 2 + Math.floor(r(k + 8) * 11);
+        if (tAt(x, y) !== T_PATH || tAt(x + 2, y + 1) !== T_PATH) continue;
+        put(x, y, PI.stone[0]); put(x + 1, y, PI.stone[1]); put(x, y + 1, PI.earth[3]); put(x + 1, y + 1, PI.earth[3]);
+      }
+    } else if (ch === '_') {
+      if (r(0) < 0.16) { const x = ox + 3 + Math.floor(r(4) * 9), y = oy + 3 + Math.floor(r(8) * 9); put(x, y, PI.stone[1]); put(x + 1, y, PI.stone[0]); put(x + 1, y + 1, PI.earth[2]); }
+    } else if (ch === '*') {
+      if (r(0) < 0.2) { const x = ox + 3 + Math.floor(r(4) * 9), y = oy + 3 + Math.floor(r(8) * 9); put(x, y, PI.blue[0]); put(x + 1, y + 1, PI.snow[2]); }
+    } else if (ch === 'b') paintBridge(g, rows, tx, ty);
+    else if (ch === 'P') { for (let j = 3; j < 13; j++) for (let i = 3; i < 13; i++) { const d = Math.abs(i - 7.5) + Math.abs(j - 7.5); put(ox + i, oy + j, d > 6.5 ? PI.mint[2] : (i > 6 && i < 9) || (j > 6 && j < 9) ? PI.snow[0] : PI.mint[1]); } }
+  }
+  return g;
+}
+// A plank bridge over water: planks run across the way you walk, with rails that catch the light on top.
+function paintBridge(g, rows, tx, ty) {
+  const ox = tx * TS, oy = ty * TS, isW = (x, y) => (rows[y] || '')[x] === '~';
+  const alongX = isW(tx, ty - 1) || isW(tx, ty + 1);       // water above/below: you walk left-right
+  for (let j = 0; j < 16; j++) for (let i = 0; i < 16; i++) {
+    const across = alongX ? j : i, along = alongX ? i : j;
+    let c = along % 4 === 3 ? PI.wood[3] : along % 4 === 0 ? PI.wood[0] : PI.wood[1];
+    if (across < 2) c = across === 0 ? PI.wood[0] : PI.wood[2];
+    else if (across > 13) c = across === 14 ? PI.wood[2] : PI.wood[4];
+    g.set(ox + i, oy + j, c);
+  }
+}
+// ---- tall grass, reeds, brush, wheat, ferns, snowy shrubs: a swaying overlay drawn on top of the ground ----
+const TALL_SPR = {};
+function tallBlades(kind, variant = 0) {   // 3 variants per kind, picked per tile, so rows of tiles don't line up
+  const key = kind + variant;
+  if (TALL_SPR[key]) return TALL_SPR[key];
+  const S = { grass: [PI.grass[1], PI.grass[2], PI.grass[4]], reed: [PI.grass[2], PI.grass[3], PI.teal[1]], brush: [PI.cream[1], PI.earth[1], PI.earth[3]],
+    wheat: [PI.yellow[0], PI.yellow[1], PI.orange[2]], fern: [PI.grass[1], PI.grass[3], PI.teal[1]], shrub: [PI.grass[3], PI.grass[5], PI.teal[2]] }[kind];
+  const frames = [0, 1, -1].map(lean => {
+    const p = new Pix(16, 16);
+    for (let row = 0; row < 2; row++) for (let i = 0; i < 8; i++) {
+      const sd = variant * 10, bx = i * 2 + hash2(i, row, 5 + sd) * 1.4 + row, base = (row ? 15 : 11) - Math.floor(hash2(i, row, 8 + sd) * 3), hgt = (row ? 7 : 5) + Math.floor(hash2(i, row, 6 + sd) * 4), bend = hash2(i, row, 7 + sd) < 0.5 ? -1 : 1;
+      for (let k = 0; k < hgt; k++) {
+        const top = k / hgt, x = Math.round(bx + (top > 0.55 ? bend : 0) + (top > 0.45 ? lean : 0)), y = base - k;
+        p.set(x, y, top > 0.7 ? S[0] : top > 0.3 ? S[1] : S[2]);
+        if (kind === 'fern' && k > 1 && k % 2 === 0) { p.set(x - 1, y, S[1]); p.set(x + 1, y + 1, S[1]); }
+      }
+      const tx = Math.round(bx + bend + lean), tyy = base - hgt;
+      if (kind === 'wheat') { p.set(tx, tyy, PI.yellow[0]); p.set(tx, tyy + 1, PI.orange[1]); p.set(tx + 1, tyy + 1, PI.yellow[1]); }
+      if (kind === 'reed' && i % 2 === 0) { p.set(tx, tyy, PI.wood[3]); p.set(tx, tyy + 1, PI.wood[3]); p.set(tx, tyy + 2, PI.wood[2]); }
+      if (kind === 'shrub') { p.set(tx, tyy, PI.snow[0]); p.set(tx + (i % 2 ? 1 : -1), tyy + 1, PI.snow[1]); }
+    }
+    return p.toCanvas();
+  });
+  return (TALL_SPR[key] = frames);
+}
+function tallKindAt(m, ch) { const k = TALL_KIND[ch]; return k === 'grass' && biomeOf(m).reeds ? 'reed' : k; }
+// ---- water sparkles: short white dashes that drift and twinkle ----
+function drawSparkles(tx, ty, X, Y) {
+  const h = hash2(tx, ty, 77);
+  if (h > 0.55) return;
+  const t = Math.floor(frame / 12) + Math.floor(h * 97), ph = t % 8;
+  if (ph > 4) return;
+  const x = X + 2 + ((Math.floor(h * 640) + Math.floor(frame / 30)) % 10), y = Y + 3 + Math.floor(hash2(tx, ty, 78) * 10);
+  ctx.fillStyle = PALETTE[PI.snow[0]]; ctx.fillRect(x, y, ph === 2 ? 3 : 2, 1);
+  if (ph === 2) { ctx.fillStyle = PALETTE[PI.water[0]]; ctx.fillRect(x + 4, y + 1, 2, 1); }
+}
+// ---- cache: one ground picture per map ----
+const GROUND = {};
+function groundOf(m) {
+  const k = mapKey(m);
+  if (!GROUND[k]) GROUND[k] = paintGround(m.rows, biomeOf(m)).toCanvas();
+  return GROUND[k];
+}
+function drawGround(m, cx, cy) {
+  const g = groundOf(m), sx = Math.max(0, cx), sy = Math.max(0, cy), ex = Math.min(g.width, cx + W), ey = Math.min(g.height, cy + H);
+  if (ex > sx && ey > sy) ctx.drawImage(g, sx, sy, ex - sx, ey - sy, sx - cx, sy - cy, ex - sx, ey - sy);
+}
+// Stand-alone 16x16 ground tiles (for the intro, title and battle scenes), cut from a tiny painted field.
+function groundTile(ch, B = BIOME.pawsville, variant = 0) {
+  const row = ch.repeat(5), p = paintGround([row, row, row, row, row], Object.assign({}, B, { seed: B.seed + variant * 31 })), t = new Pix(16, 16);
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.set(x, y, p.get(32 + x, 32 + y));
+  return t;
+}
+function buildGroundTiles() {
+  for (const ch of ['.', 'f', '=', '_', '*', 'm', 'w', 'L', 'P']) TILES[ch] = [groundTile(ch).toCanvas()];
+  TILES['~'] = [groundTile('~').toCanvas(), groundTile('~', BIOME.pawsville, 1).toCanvas()];
+  for (const ch in TALL_KIND) {
+    const base = groundTile(ch === ';' ? '_' : ch === '^' ? '*' : ch === 'w' ? 'w' : ',', ch === 'j' ? BIOME.jungle : BIOME.pawsville).toCanvas();
+    const c = makeCanvas(16, 16), q = c.getContext('2d'); q.drawImage(base, 0, 0); q.drawImage(tallBlades(TALL_KIND[ch])[0], 0, 0);
+    TILES[ch] = [c];
+  }
+}
+// <<< GFX:ground
 
 // ---------------------------------------------------------------------
 // 4. AUDIO (Web Audio: synthesized SFX + tiny step sequencer)
@@ -4404,19 +4608,22 @@ function drawCage(tx, ty, X, Y) {
   ctx.drawImage(PET_SPR[sp], 0, 0, 32, 32, X + 2, Y + 2 + bob, 12, 12);
   ctx.drawImage(SPR_CAGE_BARS, X, Y);
 }
+const GROUND_ONLY = { '.': 1, 'f': 1, '=': 1, '_': 1, '*': 1, 'm': 1, 'w': 1, 'b': 1, 'L': 1, 'P': 1 };   // fully painted into the ground picture
 function drawWorld() {
   const m = world.map;
   const cx = Math.round(world.camX), cy = Math.round(world.camY);
   ctx.fillStyle = m.bg || (m.lab ? '#14121e' : '#1e5a2a'); ctx.fillRect(0, 0, W, H);
   const x0 = Math.floor(cx / TS), y0 = Math.floor(cy / TS);
   const wf = Math.floor(frame / 30) % 2;
+  drawGround(m, cx, cy);   // the pre-painted ground; then only the tiles that move or stand up are drawn each frame
   for (let ty = y0; ty <= y0 + Math.ceil(H / TS); ty++) {
     for (let tx = x0; tx <= x0 + Math.ceil(W / TS); tx++) {
       if (ty < 0 || tx < 0 || ty >= m.rows.length || tx >= m.rows[0].length) continue;
-      const ch = m.rows[ty][tx];
-      if (ch === 'C') { drawCage(tx, ty, tx * TS - cx, ty * TS - cy); continue; }
-      const frames = TILES[ch] || TILES['.'];
-      ctx.drawImage(frames[frames.length > 1 ? wf : 0], tx * TS - cx, ty * TS - cy);
+      const ch = m.rows[ty][tx], X = tx * TS - cx, Y = ty * TS - cy;
+      if (ch === 'C') drawCage(tx, ty, X, Y);
+      else if (ch === '~') drawSparkles(tx, ty, X, Y);
+      else if (TALL_KIND[ch]) ctx.drawImage(tallBlades(tallKindAt(m, ch), (tx * 7 + ty * 13) % 3)[[0, 1, 0, 2][(Math.floor(frame / 24) + tx * 3 + ty * 5) % 4]], X, Y);
+      else if (!GROUND_ONLY[ch]) { const frames = TILES[ch] || TILES['.']; ctx.drawImage(frames[frames.length > 1 ? wf : 0], X, Y); }
     }
   }
   // Things that stand on the map, back to front.
@@ -4453,8 +4660,9 @@ function drawWorld() {
     const hop = emoteHop(world.emote);
     ctx.drawImage(PEOPLE.player[world.emote ? 'down' : G.dir][pf], Math.round(pp.x) - cx, Math.round(pp.y) - cy - 2 + hop);
     drawEmote(world.emote, Math.round(pp.x) - cx + 8, Math.round(pp.y) - cy - 2 + hop);
-    if (!world.moving && TILE_INFO[tileAt(m, G.x, G.y)].grass) {
-      ctx.drawImage(TILES[','][0], 0, 11, 16, 5, G.x * TS - cx, G.y * TS - cy + 11, 16, 5);
+    const under = tileAt(m, G.x, G.y);
+    if (!world.moving && TALL_KIND[under]) {   // standing in tall grass: the front blades cover your feet
+      ctx.drawImage(tallBlades(tallKindAt(m, under), (G.x * 7 + G.y * 13) % 3)[0], 0, 9, 16, 7, G.x * TS - cx, G.y * TS - cy + 9, 16, 7);
     }
   } });
   things.sort((a, b) => a.y - b.y).forEach(t => t.draw());
@@ -5947,6 +6155,18 @@ function runSelfTest() {
   { const t = new Pix(12, 12); t.ell(6, 6, 4, 4, PI.fox).outline(PI.ink[0]); const cv = t.toCanvas();
     if (t.get(0, 0) !== 0 || t.get(6, 6) === 0 || t.get(6, 1) !== PI.ink[0] || cv.width !== 12) gErr.push('pixel map helpers'); }
   check('Graphics: ' + (PALETTE.length - 1) + '-colour master palette (no plain grays or blacks), shading steps and noise are sound', !gErr.length, gErr.slice(0, 4).join('; '));
+  // Graphics: every map's painted ground has the right size and uses only master palette colours.
+  const grErr = [];
+  for (const k in MAPS) {
+    const m = MAPS[k], t0 = performance.now(), px = paintGround(m.rows, biomeOf(m));
+    if (px.w !== m.rows[0].length * TS || px.h !== m.rows.length * TS) grErr.push(k + ' ground size');
+    if (px.d.some(c => c < 1 || c >= PALETTE.length)) grErr.push(k + ' has an unpainted or off-palette pixel');
+    if (!BIOME[k]) grErr.push(k + ' has no biome');
+    if (performance.now() - t0 > 3000) grErr.push(k + ' takes too long to paint');
+  }
+  for (const ch in TILE_INFO) if (!TERRAIN[ch]) grErr.push('tile ' + ch + ' has no terrain');
+  for (const kind of ['grass', 'reed', 'brush', 'wheat', 'fern', 'shrub']) for (let v = 0; v < 3; v++) if (tallBlades(kind, v).length !== 3) grErr.push(kind + ' frames');
+  check('Graphics: the ground of all ' + Object.keys(MAPS).length + ' maps paints fully, in palette, with a biome each', !grErr.length, grErr.slice(0, 4).join('; '));
   // Tasks: every giver is a helpful (non-trainer) character, every lost item/pet sits on an open, reachable tile.
   const qErr = [], qSaved = G;
   G = { flags: END_FLAGS, quests: {}, party: [], pen: [] };
