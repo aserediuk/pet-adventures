@@ -22,6 +22,8 @@ Press **Space** to begin. A short intro from *When Pets Attack Studio Production
 | N | Music on/off (sound effects stay on) |
 | F | Fullscreen on/off |
 
+**Super Hamster:** once Dr. Gizmo is beaten, he rewires his Mega-Zapper into the Super Growth Machine. Bring a Nugget (a grown-up Alvin), face the machine and press A to turn it into a Super Hamster, the strongest pet in the game.
+
 **Tasks:** characters with a yellow **?** over their head need help: find a lost item, bring home a lost pet, or befriend a certain kind of pet to show them. Accept with Yes, check progress under **Tasks** in the menu, and come back (green **!**) for a reward.
 
 **Helpful characters** in every area give tips: what to do next (who to beat, where, and how strong your team should be) and how to battle better. You can leave any battle with Run; trainers stay unbeaten so you can come back stronger.
@@ -68,7 +70,7 @@ Types come in loops (1.5× damage forward, 0.67× backward): **Dog > Cat > Hamst
 
 ## Music
 
-The soundtrack is "math-rock chiptune" with three sound styles you can switch in the Jukebox (Left/Right): **8-bit**, **Mix** (the default: punchy 8-bit lead, arps and drums with a fuller FM bass) and **16-bit**, an emulated FM sound chip with an FM lead, a glassy FM arp/bell, a growly FM bass, a soft detuned-saw pad for calm songs, gated kick/snare/hat, and a 1/8-note echo on the Title, Whisker Woods and Clinic/Shop songs (sound effects stay 8-bit), odd meters, polyrhythms, and a shared five-note theme quoted in every song. Listen to any song from the pause menu's **Jukebox**, or open `pet-adventures.html#music` for the Music Room: W/S to choose, Enter to play. It shows each layer's step pattern, so you can see the polyrhythms.
+The soundtrack is "math-rock chiptune" with three sound styles you can switch in the Jukebox (Left/Right): **8-bit**, **Mix** (punchy 8-bit lead, arps and drums with a fuller FM bass) and **16-bit** (the default), an emulated FM sound chip with an FM lead, a glassy FM arp/bell, a growly FM bass, a soft detuned-saw pad for calm songs, gated kick/snare/hat, and a 1/8-note echo on the Title, Whisker Woods and Clinic/Shop songs (sound effects stay 8-bit), odd meters, polyrhythms, and a shared five-note theme quoted in every song. Listen to any song from the pause menu's **Jukebox**, or open `pet-adventures.html#music` for the Music Room: W/S to choose, Enter to play. It shows each layer's step pattern, so you can see the polyrhythms.
 
 The audio engine matches loudness across songs and styles, places Mix and 16-bit voices in subtle stereo (8-bit stays mono, like a real chip), and runs everything through a soft clipper and limiter so it never distorts.
 

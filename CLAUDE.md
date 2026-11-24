@@ -78,6 +78,10 @@ A top-down, turn-based pet-collecting RPG for kids. The whole game is **one self
 - **Pets:** `SPECIES[id] = { name, type, fam, base: {hp, atk, def, spd}, evo, evoLv }`. Adult forms have about 1.3× the baby's stats. Learnsets give 6 moves at Lv 1, 1, 7, 9 (a move against the pet's weakness), 13 and 17. A pet object is `{ sp, lv, xp, hp, moves, pending, nick?, acc? }`.
 - **Treats:** `TREAT_LIKES[type]` lists the treats each type likes (real-life diets). A wrong treat is usually refused (`WRONG_TREAT_REFUSE`).
 
+## Machine evolution
+
+Some grown-up pets have `machineEvo` (a species marked `machineOnly`) instead of `evo`. So far that's Nugget → Super Hamster (`superham`). Battles never trigger it. The player faces Dr. Gizmo's Mega-Zapper (`Z` tiles in the lab) and presses A (`useMachine`). It's locked until `G.flags.gizmo`, and Gizmo's `final` lines explain it. `evolveScene(p, to, intro)` handles both kinds of evolution. The Super Hamster sprite is built from Nugget's art: a mask and cape sides are painted onto the half rows, and a cape canvas (`pet_superham_cape`) is drawn behind the body. The difficulty-curve self-test leaves `machineOnly` pets out of a "usual" team.
+
 ## Tasks (section 7c)
 
 `QUESTS` lists 12 tasks, one per helpful character (`giver`). Kinds: `item` (a sparkle on `map` at `x,y`), `pet` (a lost pet sprite there) and `show` (have one of `show` in the party or Pet Pen). State lives in `G.quests[id]`: `new` → `active` → (`found`) → `done`. Lost items and pets only exist on the map while the task is active (`questObjAt` blocks the tile and `interact` picks them up). Givers show a yellow ? (task offered) or green ! (ready to hand in). The self-test checks every object tile is open and reachable and never blocks a path.
@@ -109,7 +113,7 @@ A top-down, turn-based pet-collecting RPG for kids. The whole game is **one self
 
 ## Music (section 4)
 
-- **Sound styles (`STYLES`, default `mix`):** 8-bit (pulse lead and arps, triangle bass, noise drums), **Mix** (8-bit pulse lead and tapping arps plus snappy noise drums, with an FM bass, a sine kick and a light echo, no pad) and 16-bit (all FM, gated drums, pad, full echo). The user found pure 16-bit lost the punch and fun of 8-bit, so Mix is the default. Players switch styles with Left/Right in the Jukebox; the choice is saved in `localStorage` (`petAdventures.settings.v1`). The compressor is set gently (ratio 3, 8 ms attack) so attacks punch through.
+- **Sound styles (`STYLES`, default `16bit`, chosen by the user; `MUS.style` at startup):** 8-bit (pulse lead and arps, triangle bass, noise drums), **Mix** (8-bit pulse lead and tapping arps plus snappy noise drums, with an FM bass, a sine kick and a light echo, no pad) and 16-bit (all FM, gated drums, pad, full echo). Mix was the default for a while (the user felt pure 16-bit lost some punch), but the user then chose 16-bit as the default. A saved Jukebox choice still wins. Players switch styles with Left/Right in the Jukebox; the choice is saved in `localStorage` (`petAdventures.settings.v1`). The compressor is set gently (ratio 3, 8 ms attack) so attacks punch through.
 
 - **The 16-bit voices.** Songs are data in `SONGS`; in 16-bit style the voices map as follows:
 
@@ -152,6 +156,7 @@ A top-down, turn-based pet-collecting RPG for kids. The whole game is **one self
   - **Loudness trims:** `SONG_TRIM[style][song]` sets each song's player gain so songs and styles match in level. The trims close 60% of each song's gap to the median, so calm songs stay a little quieter on purpose. After changing voices, styles or song data, re-measure with `python3 tools/cdp_probe.py "$F#view=loudness&raw" 45` (raw levels) and `#view=loudness` (with trims). The compressor absorbs part of a trim, so refine the trims against the measured result.
   - **Stereo:** `PAN` values times the style's `width` (8-bit is 0, so it stays mono; Mix 0.6; 16-bit 1). Each song player gets 5 fixed panner nodes (`makeBuses`), which are not counted in the ~40-node note budget. The echo is ping-pong when width > 0.
   - **Master stage (`makeMasterChain`):** mute gain → 28 Hz highpass → 4× oversampled soft clip (clean below 0.6) → limiter. `makeMusicChain` is shared by live playback and the offline probes.
+  - **Node budget in crossfades:** a song that is fading out stops starting pad, arp (`p2`) and hi-hat notes, so the incoming song has room. The ping-pong echo's extra 4 nodes are fixed routing (`pl.fixed`), like the panners. With 16-bit, the real-audio probe can still skip about 1 quiet arp note while a new song fades in, which the old engine did too.
   - **M and N** fade with `smoothSet` (no clicks). Noise hits start at a random offset in a 2 s buffer.
 - **Scheduler:** `setInterval` every 25 ms schedules 120 ms ahead on the audio clock. A hidden tab skips missed steps instead of bursting. Songs crossfade over 400 ms between areas, battles start with a sting, and the victory jingle is a one-shot.
 - **Parrot Jungle is the user's favorite.** Its groove is the reference for the other songs, so don't change its patterns without asking.

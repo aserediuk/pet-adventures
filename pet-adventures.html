@@ -998,6 +998,19 @@ for (const [id, animal, s, adult, pal] of NEW_PETS) {
   const [base, detail] = ANIMALS[animal](s, adult);
   PET_ART[id] = { pal: Object.assign({}, EYES, pal), rows: paintPet(base, detail) };
 }
+// Super Hamster: Nugget with a hero mask and a cape (down its sides, and peeking out behind).
+{
+  const n = PET_ART.nugget;
+  const half = n.half.map((r, y) => r.split('').map((ch, x) => (y >= 7 && y <= 9 && x >= 5 && ch === '1') ? 'k' : ch).join(''));
+  for (let y = 11; y <= 27; y++) {   // the cape hangs down both sides
+    const o = half[y].indexOf('o');
+    half[y] = half[y].split('').map((ch, x) => (x > o && x <= o + (y < 14 ? 1 : 2) && ch === '1') ? 'r' : ch).join('');
+  }
+  const cape = [];
+  for (let y = 0; y < 32; y++) cape.push(y < 8 ? '.'.repeat(16) : y === 8 || y === 31 ? 'qqqq' + 'r'.repeat(12) : 'q' + (y >= 27 && y <= 30 ? 'rsr' : 'rrr') + 'r'.repeat(12));
+  PET_ART.superham = { pal: Object.assign({}, n.pal, { 1: '#f8cc50', 2: '#d09a30', k: '#d8302c', r: '#d8302c' }), half, tail: n.tail,
+    cape: { rows: cape, pal: { q: '#6a1018', r: '#d8302c', s: '#a81c24' } } };
+}
 const PET_SPR = {};
 // ---- Pet accessories (Customize): drawn on top of the head, in a colour the player picks ----
 const ACC_ORDER = ['none', 'bow', 'tophat', 'crown', 'flower', 'partyhat'];
@@ -1040,6 +1053,11 @@ function buildPets() {
     const a = PET_ART[k];
     PET_SPR[k] = a.rows ? buildSprite('pet_' + k, a.rows, a.pal, {})
       : buildSprite('pet_' + k, a.half, a.pal, { mirror: true, h: 32, overlay: a.tail ? [a.tail] : null });
+    if (a.cape) {   // the cape goes behind the body
+      const c = makeCanvas(32, 32), g = c.getContext('2d');
+      g.drawImage(buildSprite('pet_' + k + '_cape', a.cape.rows, a.cape.pal, { mirror: true }), 0, 0); g.drawImage(PET_SPR[k], 0, 0);
+      PET_SPR[k] = c;
+    }
   }
 }
 
@@ -1723,8 +1741,12 @@ function makeBuses(pl, ac) {
   const w = (STYLES[MUS.style] || STYLES.mix).width || 0;
   if (!w || !ac.createStereoPanner) return;
   for (const k in PAN) { const pn = ac.createStereoPanner(); pn.pan.value = PAN[k] * w; pn.connect(pl.gain); pl.bus[k] = pn; pl.fixed.push(pn); }
+  for (const k of ['padL', 'padR']) {   // the pad's warm lowpass lives on its bus, so each pad note needs no filter of its own
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1300; lp.Q.value = 0.5;
+    lp.connect(pl.bus[k]); pl.bus[k] = lp; pl.fixed.push(lp);
+  }
 }
-MUS.style = 'mix';
+MUS.style = '16bit';   // default; the Jukebox switches between 8-bit, Mix and 16-bit
 function setSoundStyle(k) {
   if (!STYLES[k]) return;
   MUS.style = k;
@@ -1811,6 +1833,8 @@ function playDrumChip(kind, t, acc, dest, kickWave) {
 function playChipEvent(layer, ev, t, sd, pl) {
   const ac = Snd.ac; if (!ac || !pl.gain) return;
   const bus = pl.bus || {}, dest = bus[layer.voice] || pl.gain, S = STYLES[MUS.style] || STYLES.mix;
+  // A song that is fading out (crossfade) drops its quiet extras, so the incoming song always has room for every note.
+  if (pl.stopAt !== undefined && (layer.voice === 'pad' || layer.voice === 'p2' || ev.drum === 'h' || ev.drum === 'g')) return;
   if (layer.voice === 'noise') {
     const dd = (ev.drum === 'h' || ev.drum === 'g') ? (bus.hat || pl.gain) : pl.gain;
     return S.drums === 'gated' ? playDrum(ev.drum, t, ev.acc ? 1.3 : 1, dd) : playDrumChip(ev.drum, t, ev.acc ? 1.3 : 1, dd, S.kick);
@@ -1853,23 +1877,25 @@ function playFM(layer, ev, t, sd, dest) {
 function playPad(ev, t, sd, dest, bus = {}) {
   const ac = Snd.ac, tones = ev.arp ? [0, ev.arp[1], ev.arp[2]] : [0];
   const sides = bus.padL ? [[-7, bus.padL], [7, bus.padR]] : null;      // stereo: the two detuned saws go left and right
-  if (!roomFor(t, tones.length * 2 + (sides ? 4 : 2), false)) return;
+  if (!roomFor(t, tones.length * 2 + 2, false)) return;
   const len = (ev.hold ? ev.dur : 1) * sd, nodes = [];
   let last = null, end = t;
-  const chain = (out, level) => {
-    const lp = ac.createBiquadFilter(), amp = ac.createGain();
-    lp.type = 'lowpass'; lp.frequency.value = 1300; lp.Q.value = 0.5;
-    end = envelope(amp.gain, t, level, len, { attack: 0.25, release: 0.45 });
-    lp.connect(amp); amp.connect(out); nodes.push(lp, amp);
-    return lp;
+  const amp = (out, level) => {   // stereo: amp -> the side's bus (which has the lowpass); mono: lowpass -> amp
+    const g = ac.createGain();
+    end = envelope(g.gain, t, level, len, { attack: 0.25, release: 0.45 });
+    g.connect(out); nodes.push(g);
+    return g;
   };
-  const saw = (st, det, lp) => {
+  const saw = (st, det, into) => {
     const o = ac.createOscillator(); o.type = 'sawtooth';
     o.frequency.setValueAtTime(ev.f * Math.pow(2, st / 12), t); o.detune.setValueAtTime(det, t);
-    o.connect(lp); o.start(t); o.stop(end); nodes.push(o); last = o;
+    o.connect(into); o.start(t); o.stop(end); nodes.push(o); last = o;
   };
-  if (sides) for (const [det, out] of sides) { const lp = chain(out, 0.085); for (const st of tones) saw(st, det, lp); }
-  else { const lp = chain(dest, 0.06); for (const st of tones) for (const det of [-7, 7]) saw(st, det, lp); }
+  if (sides) for (const [det, out] of sides) { const g = amp(out, 0.085); for (const st of tones) saw(st, det, g); }
+  else {
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1300; lp.Q.value = 0.5; nodes.push(lp);
+    lp.connect(amp(dest, 0.06)); for (const st of tones) for (const det of [-7, 7]) saw(st, det, lp);
+  }
   registerNodes(t, end, nodes, last);
 }
 function playDrum(kind, t, acc, dest) {
@@ -1910,7 +1936,7 @@ function addEcho(pl, ac, now) {
     lp.connect(pl1); pl1.connect(Snd.musicIn);
     lp.connect(hop); hop.connect(dl2); dl2.connect(pr1); pr1.connect(Snd.musicIn);
     dl2.connect(fb); fb.connect(dl);
-    nodes.push(dl2, hop, pl1, pr1);
+    pl.fixed = (pl.fixed || []).concat([dl2, hop, pl1, pr1]);   // fixed stereo routing, like the panners: not part of the note budget
   } else { lp.connect(fb); fb.connect(dl); lp.connect(Snd.musicIn); }
   pl.echo = { nodes, entry: { t0: now, t1: Infinity, n: nodes.length } };
   NODES.list.push(pl.echo.entry);
@@ -2122,7 +2148,8 @@ const SPECIES = {
   mittens: { name: 'Mittens', type: 'Cat',     fam: 'cat',     base: { hp: 46, atk: 52, def: 42, spd: 58 }, evo: 'shadow', evoLv: 10, desc: 'A quick, curious kitten with white paws.' },
   shadow:  { name: 'Shadow',  type: 'Cat',     fam: 'cat',     base: { hp: 60, atk: 68, def: 55, spd: 75 } },
   alvin:   { name: 'Alvin',   type: 'Hamster', fam: 'hamster', base: { hp: 56, atk: 46, def: 54, spd: 42 }, evo: 'nugget', evoLv: 10, desc: 'A chubby hamster with stuffed cheeks.' },
-  nugget:  { name: 'Nugget',  type: 'Hamster', fam: 'hamster', base: { hp: 73, atk: 60, def: 70, spd: 55 } },
+  nugget:  { name: 'Nugget',  type: 'Hamster', fam: 'hamster', base: { hp: 73, atk: 60, def: 70, spd: 55 }, machineEvo: 'superham' },
+  superham: { name: 'Super Hamster', type: 'Hamster', fam: 'hamster', base: { hp: 88, atk: 74, def: 84, spd: 68 }, machineOnly: true },   // only from the Super Growth Machine in Gizmo's Lab
   cookie:  { name: 'Cookie',  type: 'Gerbil',  fam: 'gerbil',  base: { hp: 46, atk: 50, def: 44, spd: 58 }, evo: 'cream',  evoLv: 10, desc: 'A small, speedy gerbil with a long tail.' },
   cream:   { name: 'Cream',   type: 'Gerbil',  fam: 'gerbil',  base: { hp: 60, atk: 65, def: 57, spd: 75 } },
   ziggy:   { name: 'Ziggy',   type: 'Lizard',  fam: 'lizard',  base: { hp: 48, atk: 50, def: 50, spd: 52 }, evo: 'spike',  evoLv: 10, desc: 'A sticky-toed gecko with a big grin.' },
@@ -2231,9 +2258,9 @@ function gainXP(p, amount) {
   return ev;
 }
 function canEvolve(p) { const s = SPECIES[p.sp]; return !!(s.evo && p.lv >= s.evoLv); }
-function evolvePet(p) {
+function evolvePet(p, to = SPECIES[p.sp].evo) {
   const oldMax = maxHp(p);
-  p.sp = SPECIES[p.sp].evo;
+  p.sp = to;
   const nm = maxHp(p);
   if (p.hp > 0) p.hp = Math.min(nm, p.hp + (nm - oldMax));
 }
@@ -2499,7 +2526,9 @@ MAPS.lab = {
         'Well, well! A child with pets. How delightful... for my EXPERIMENTS!',
         'I am Dr. Gizmo! With my Mega-Zapper, I\'ll turn every pet in Pawsville into my obedient Robo-Pets!',
         'Mwa-ha-ha! Your pets will be my next test subjects. Battle me if you dare!'],
-      after: ['I\'m working on a new invention: a machine that makes endless treats. For good this time, I promise!'] },
+      after: ['I\'m working on a new invention: a machine that makes endless treats. For good this time, I promise!'],
+      final: ['I rewired my Mega-Zapper into a Super Growth Machine. It only helps pets grow now, I promise!',
+        'Bring a Nugget, press A at the machine, and watch it become a Super Hamster!'] },
   ],
   chests: [],
   wild: null,
@@ -3605,6 +3634,31 @@ function interact() {
   if (qo) { runScript(() => pickUpQuestObj(qo)); return; }
   const chest = chestAt(world.map, fx, fy);
   if (chest) { runScript(() => openChest(chest)); return; }
+  if (world.map.lab && (world.map.rows[fy] || '')[fx] === 'Z') { runScript(useMachine); return; }
+}
+// Dr. Gizmo's Mega-Zapper. Once he's beaten, he rewires it into the Super Growth Machine.
+function machinePets(list) { return list.filter(q => SPECIES[q.sp].machineEvo); }
+async function useMachine() {
+  if (!G.flags.gizmo) { sfx('zap'); await say('The Mega-Zapper crackles and fizzes. Better not touch it while Dr. Gizmo is around!'); return; }
+  sfx('hum');
+  await say('SUPER GROWTH MACHINE. It helps a grown-up Nugget grow into a Super Hamster!');
+  const ready = machinePets(G.party);
+  if (!ready.length) {
+    if (machinePets(G.pen).length) await say('Your Nugget is resting in the Pet Pen. Put it in your party at the Pet Clinic, then come back!');
+    else await say('You don\'t have a Nugget yet. Raise an Alvin to Lv 10 so it grows into a Nugget, then come back!');
+    return;
+  }
+  let p = ready[0];
+  if (ready.length > 1) {
+    const i = await choose(ready.map(q => ({ label: petName(q), right: 'Lv ' + q.lv })).concat([{ label: 'Cancel' }]), { prompt: 'Which pet should use the machine?', cancel: ready.length });
+    if (i === ready.length) return;
+    p = ready[i];
+  }
+  if (!await yesNo('Put ' + petName(p) + ' in the machine?')) { await say('Maybe another time!'); return; }
+  sfx('zap');
+  await evolveScene(p, SPECIES[p.sp].machineEvo, petName(p) + ' hops in. You pull the big lever... BZZZT! It tickles!');
+  healPet(p);
+  saveGame();
 }
 const OPPOSITE = { up: 'down', down: 'up', left: 'right', right: 'left' };
 async function talkTo(npc) {
@@ -3688,7 +3742,8 @@ function progressTip() {
   if (!G.flags.bo) return 'Tip: Mountaineer Bo blocks the pass on Frosty Peak with Lv 16 pets.' + levelAdvice(15);
   if (!G.flags.maple) return 'Tip: Champion Maple waits at the summit of Frosty Peak with four pets up to Lv 19. Bring your best team!' + levelAdvice(17);
   if (!G.flags.gizmo) return 'Tip: Dr. Gizmo\'s lab is past the summit. His pets are all Lv 20, so heal up and bring six pets!' + levelAdvice(19);
-  return 'Tip: You saved the pets! There are 32 kinds of pets. How many have you befriended? You have ' + G.stats.caught + ' so far.';
+  if (G.tipN % 4 === 1 && !G.party.concat(G.pen).some(q => SPECIES[q.sp].machineOnly)) return 'Tip: Dr. Gizmo\'s Super Growth Machine in his lab can turn a Nugget into a Super Hamster!';
+  return 'Tip: You saved the pets! There are ' + Object.keys(SPECIES).length + ' kinds of pets. How many have you befriended? You have ' + G.stats.caught + ' so far.';
 }
 function nextTip() {
   G.tipN = (G.tipN || 0) + 1;
@@ -5105,15 +5160,15 @@ class EvolveScreen {
   }
   hint() { return ''; }
 }
-async function evolveScene(p) {
-  const from = p.sp, to = SPECIES[p.sp].evo;
-  await say('Oh? ' + petName(p) + ' is starting to grow!');
+async function evolveScene(p, to = SPECIES[p.sp].evo, intro = 'Oh? ' + petName(p) + ' is starting to grow!') {
+  const from = p.sp;
+  await say(intro);
   await fadeTo(1, 12, '#fff');
   const sc = push(new EvolveScreen(from, to));
   await fadeTo(0, 12, '#fff');
   sfx('evolve');
   await wait(170);
-  evolvePet(p);
+  evolvePet(p, to);
   sc.done = true;
   sfx('levelUp');
   await wait(30);
@@ -5211,6 +5266,7 @@ function runSelfTest() {
     if (!TYPES.includes(s.type)) dErr.push(k + ' bad type');
     if (!LEARNSETS[s.fam]) dErr.push(k + ' no learnset');
     if (s.evo && !SPECIES[s.evo]) dErr.push(k + ' evolves into missing ' + s.evo);
+    if (s.machineEvo && (!SPECIES[s.machineEvo] || !SPECIES[s.machineEvo].machineOnly)) dErr.push(k + ' machine evolution ' + s.machineEvo);
     if (!PET_SPR[k]) dErr.push(k + ' has no sprite');
     for (const st of ['hp', 'atk', 'def', 'spd']) if (!(s.base[st] > 0)) dErr.push(k + ' bad ' + st);
     if (s.evo) { const e = SPECIES[s.evo].base; const ratio = (e.hp + e.atk + e.def + e.spd) / (s.base.hp + s.base.atk + s.base.def + s.base.spd); if (ratio < 1.2 || ratio > 1.4) dErr.push(k + ' evo ratio ' + ratio.toFixed(2)); }
@@ -5516,7 +5572,7 @@ function runSelfTest() {
   for (const k of TREAT_KEYS) if (!TYPES.some(t => TREAT_LIKES[t].includes(k))) trErr.push('nobody likes ' + k);
   for (const k in SPECIES) { const q = createPet(k, 8); q.hp = 1; for (const tk of TREAT_KEYS) if (likesTreat(q, tk) ? treatChance(q, tk) < catchChance(q) : treatChance(q, tk) >= catchChance(q) * 0.5) trErr.push(k + '/' + tk); }
   check(TREAT_KEYS.length + ' kinds of treats: every pet has a favorite and the wrong snack rarely works', !trErr.length, trErr.slice(0, 4).join('; '));
-  check(Object.keys(SPECIES).length + ' pets, ' + TYPES.length + ' types, ' + Object.keys(MOVES).length + ' moves', Object.keys(SPECIES).length === 32, 'expected 32 pets');
+  check(Object.keys(SPECIES).length + ' pets, ' + TYPES.length + ' types, ' + Object.keys(MOVES).length + ' moves', Object.keys(SPECIES).length === 33, 'expected 33 pets');
   // Difficulty curve: a typical team at the expected level should usually (but not always) win each big fight.
   const simTeams = (team, foes) => {
     let a = 0, b = 0;
@@ -5530,7 +5586,7 @@ function runSelfTest() {
     }
     return b >= foes.length;
   };
-  const allSp = Object.keys(SPECIES), curve = [];
+  const allSp = Object.keys(SPECIES).filter(k => !SPECIES[k].machineOnly), curve = [];   // a usual team, before any Super Hamster
   const fights = [['rex', 3, 9, 'canyon'], ['fen', 3, 13, 'marsh'], ['bo', 3, 15, 'peak'], ['maple', 4, 17, 'peak'], ['gizmo', 4, 19, 'lab']];   // team size + level a player usually has
   let curveOK = true;
   for (const [id, size, lv, mapId] of fights) {
@@ -5575,6 +5631,10 @@ function runSelfTest() {
   for (const k in MAPS) for (const c of MAPS[k].chests) texts.push('You found ' + chestLabel(c) + '!');
   for (const k in SPECIES) texts.push((SPECIES[k].desc || ''), 'Champion Maple\'s ' + SPECIES[k].name + ' used Whisker Swipe!', SPECIES[k].name + ' wants to learn Pouch Cannon! But a pet can only know 4 moves.');
   texts.push('Your party is full, so ' + longName + ' went to rest in the Pet Pen at the Clinic.');
+  texts.push('SUPER GROWTH MACHINE. It helps a grown-up Nugget grow into a Super Hamster!', 'You don\'t have a Nugget yet. Raise an Alvin to Lv 10 so it grows into a Nugget, then come back!',
+    'Your Nugget is resting in the Pet Pen. Put it in your party at the Pet Clinic, then come back!', '{name} hops in. You pull the big lever... BZZZT! It tickles!', 'Put {name} in the machine?',
+    '{name} grew into a Super Hamster! It looks stronger than ever!', 'Tip: Dr. Gizmo\'s Super Growth Machine in his lab can turn a Nugget into a Super Hamster!',
+    'The Mega-Zapper crackles and fizzes. Better not touch it while Dr. Gizmo is around!', ...MAPS.lab.npcs.find(n => n.id === 'gizmo').final);
   let maxPages = 0;
   const longest = 'W'.repeat(NAME_MAX);
   for (let i = 0; i < texts.length; i++) texts[i] = String(texts[i]).replace(/\{name\}/g, longest);
@@ -5582,6 +5642,7 @@ function runSelfTest() {
   if (252 + textW(longest) > 416 - textW('Lv 20') - 4) uErr.push('nickname in battle box');
   if (44 + textW(longest) + 8 + textW('Lv 20') > 208) uErr.push('nickname on party card');
   if (16 + textW(longest + ' Lv20') + textW('99/99 HP') + 8 > 206) uErr.push('nickname in Pet Pen');
+  if (16 + textW(longName + ' Lv20') + textW('99/99 HP') + 8 > 206 || 44 + textW(longName) + 8 + textW('Lv 20') > 208) uErr.push('longest pet name on cards');
   if (textW('Name your Hopscotch') > W - 100 || textW('Hello, new hero! What\'s your name?') > W - 100) uErr.push('name entry title');
   for (const t of texts) {
     const lines = wrapText(t, DLG.w - 30);
@@ -5757,6 +5818,8 @@ function devView(v) {
   else if (v === 'clinic') { push(new BuildingScreen('clinic')); push(new ChoiceScreen(['Heal my pets', 'Pet Pen', 'Leave'], () => {}, { prompt: 'How can we help you today?' })); }
   else if (v === 'win') { const s = push(new WinScreen(() => {})); s.t = 100; }
   else if (v === 'evolve') { const s = push(new EvolveScreen('cookie', 'cream')); s.t = 25; }
+  else if (v === 'superbattle') { G.party[0] = createPet('superham', 20); const e = createPet('superham', 20); e.hp = 30; const B = battleWith(e); push(new ActionMenu(B, () => {})); }
+  else if (v === 'superham') { const s = push(new EvolveScreen('nugget', 'superham')); s.done = true; }
   else if (v === 'dialog') { push(overworld); enterMap('pawsville', 11, 9, 'right'); world.banner = 0; push(new MessageScreen(MAPS.pawsville.npcs[0].lines[1], () => {}, 'Granny Rose')); }
   else if (v === 'menu') { push(overworld); enterMap('meadow', 9, 18, 'down'); world.banner = 0; push(new ChoiceScreen(['Pets', 'Bag', 'Save', 'Controls', 'Close'], () => {}, { x: W - 96, y: 22, minW: 90, title: G.coins + ' coins', info: () => 'Pets caught: 3   Chests: 2/8   Time: 0h 12m' })); }
   else if (v === 'pets') {
@@ -5915,6 +5978,18 @@ async function runSmoke() {
       ok('Showing Milo a mouse completes his task', questState(mouseQ) === 'done');
       G.party = savedParty; G.coins = keepCoins; G.bag = keepBag; G.quests = {};
       enterMap('pawsville', HOME.x, HOME.y, 'down'); await wait(5); }
+    // Super Growth Machine: locked until Dr. Gizmo is beaten, then a Nugget becomes a Super Hamster.
+    { const keepParty = G.party, keepGizmo = G.flags.gizmo;
+      G.party = [createPet('nugget', 15)].concat(keepParty.slice(0, 5));
+      G.flags.gizmo = false; enterMap('lab', 13, 3, 'up'); await wait(5);
+      await key('Enter'); await mash(idle, 20);
+      ok('The machine is off-limits while Dr. Gizmo is around', G.party[0].sp === 'nugget');
+      G.flags.gizmo = true;
+      await key('Enter');
+      for (let i = 0; i < 20 && !(topScreen() instanceof ChoiceScreen); i++) { await key('Enter'); await wait(4); }
+      await key('Enter');   // Yes
+      ok('After Dr. Gizmo is beaten, the machine turns Nugget into a Super Hamster', await mash(idle, 1500) && G.party[0].sp === 'superham' && G.party[0].hp === maxHp(G.party[0]));
+      G.party = keepParty; G.flags.gizmo = keepGizmo; enterMap('pawsville', HOME.x, HOME.y, 'down'); await wait(5); }
     // Jukebox in the pause menu.
     await key('KeyQ'); await wait(5);
     for (let k = 0; k < 5; k++) await key('ArrowDown');
