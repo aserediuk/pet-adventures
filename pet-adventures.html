@@ -1076,6 +1076,7 @@ function buildAllSprites() {
   buildTiles();
   buildGroundTiles();
   buildPeople();
+  buildPeople2();
   buildPets();
   SPR_CHEST_C = buildSprite('chest_closed', CHEST_CLOSED, CHEST_PAL);
   SPR_CHEST_O = buildSprite('chest_open', CHEST_OPEN, CHEST_PAL);
@@ -1832,6 +1833,163 @@ function buildProps() {
   TILES['r'] = tileWith('_', boulderPix(0, 'warm')); TILES['q'] = tileWith('*', boulderPix(0, 'snow')); TILES['c'] = tileWith('_', cactusPix(0)); TILES['|'] = tileWith('.', fencePix(3, false));
 }
 // <<< GFX:props
+
+// >>> GFX:people
+// ---------------------------------------------------------------------
+// 3f. GFX CHARACTERS: 16x24 people with big friendly heads, drawn from a few parameters.
+// Four directions; frames per direction: 0 stand, 1 step A, 2 stand (mid-stride), 3 step B, 4 idle (breathing in).
+// Every look is our own design: a hairstyle, an outfit and maybe a hat, glasses or backpack.
+// ---------------------------------------------------------------------
+const PW = 16, PH = 24;
+function hairRamp(name) {
+  return { brown: [PI.earth[2], PI.earth[3], PI.earth[4]], dark: [PI.stone[3], PI.ink[0], PI.ink[1]], gray: [PI.stone[0], PI.stone[1], PI.stone[2]], blond: [PI.yellow[0], PI.yellow[1], PI.orange[1]],
+    ginger: [PI.orange[1], PI.orange[2], PI.wood[3]], red: [PI.red[0], PI.red[1], PI.wood[4]], pink: [PI.pink[0], PI.pink[1], PI.pink[2]], white: [PI.snow[0], PI.snow[1], PI.snow[2]], teal: [PI.mint[1], PI.mint[2], PI.teal[1]] }[name];
+}
+function clothRamp(name) {
+  return { green: [PI.grass[2], PI.grass[3], PI.grass[4]], blue: [PI.blue[1], PI.blue[2], PI.blue[3]], navy: [PI.blue[2], PI.blue[3], PI.ink[1]], red: [PI.pink[0], PI.red[0], PI.red[1]], violet: [PI.violet[0], PI.violet[1], PI.blue[3]],
+    orange: [PI.orange[0], PI.orange[1], PI.orange[2]], yellow: [PI.yellow[0], PI.yellow[1], PI.orange[1]], white: [PI.snow[0], PI.snow[1], PI.snow[2]], pink: [PI.pink[0], PI.pink[1], PI.pink[2]], tan: [PI.cream[1], PI.earth[0], PI.earth[1]],
+    brown: [PI.earth[1], PI.earth[2], PI.earth[3]], olive: [PI.grass[3], PI.grass[4], PI.grass[5]], sky: [PI.snow[1], PI.blue[0], PI.blue[1]], mint: [PI.mint[0], PI.mint[1], PI.mint[2]], wood: [PI.wood[0], PI.wood[1], PI.wood[2]] }[name];
+}
+// skin: 0 light, 1 medium, 2 deep.  hair style: short, messy, bob, long, bun, spiky, curly, pony, bald.
+const LOOK2 = {
+  player:   { skin: 0, hair: 'brown', style: 'messy', top: 'green', bottom: 'navy', shoes: 'wood', hood: true, pack: 'orange' },
+  granny:   { skin: 0, hair: 'gray', style: 'bun', top: 'violet', bottom: 'violet', shoes: 'brown', dress: true, glasses: true },
+  milo:     { skin: 2, hair: 'dark', style: 'curly', top: 'orange', bottom: 'brown', shoes: 'white' },
+  waddle:   { skin: 1, hair: 'gray', style: 'bald', top: 'blue', bottom: 'navy', shoes: 'brown', vest: 'tan', glasses: true },
+  pip:      { skin: 0, hair: 'ginger', style: 'spiky', top: 'yellow', bottom: 'olive', shoes: 'brown' },
+  moss:     { skin: 1, hair: 'dark', style: 'short', top: 'olive', bottom: 'brown', shoes: 'brown', hat: 'beanie', hatCol: 'green' },
+  champion: { skin: 0, hair: 'red', style: 'long', top: 'yellow', bottom: 'navy', shoes: 'white', circlet: true, cape: 'red' },
+  nurse:    { skin: 0, hair: 'pink', style: 'bob', top: 'white', bottom: 'pink', shoes: 'white', dress: true, hat: 'cap', hatCol: 'white' },
+  clerk:    { skin: 1, hair: 'dark', style: 'short', top: 'sky', bottom: 'navy', shoes: 'brown', apron: 'orange' },
+  lily:     { skin: 0, hair: 'blond', style: 'pony', top: 'pink', bottom: 'pink', shoes: 'white', dress: true },
+  gizmo:    { skin: 0, hair: 'gray', style: 'spiky', top: 'white', bottom: 'navy', shoes: 'brown', coat: true, goggles: true },
+  bolt:     { skin: 0, hair: 'ginger', style: 'short', top: 'sky', bottom: 'sky', shoes: 'navy', goggles: true },
+  farmer:   { skin: 1, hair: 'ginger', style: 'short', top: 'red', bottom: 'blue', shoes: 'brown', bib: true, hat: 'straw', hatCol: 'yellow' },
+  fisher:   { skin: 1, hair: 'white', style: 'short', top: 'yellow', bottom: 'navy', shoes: 'brown', hat: 'bucket', hatCol: 'tan', beard: true },
+  explorer: { skin: 2, hair: 'brown', style: 'bob', top: 'tan', bottom: 'brown', shoes: 'brown', hat: 'safari', hatCol: 'tan', scarf: 'red' },
+};
+function personPix(look, dir, frame) {
+  const L = LOOK2[look], p = new Pix(PW, PH);
+  const skin = [PI.skin, PI.skin2, PI.skin3][L.skin], hair = hairRamp(L.hair), top = clothRamp(L.top), bot = clothRamp(L.bottom), shoe = clothRamp(L.shoes)[2];
+  const bob = frame === 4 ? 1 : 0, step = frame === 1 ? 1 : frame === 3 ? -1 : 0;    // step: +1 = left foot forward, -1 = right foot
+  const hy = 1 + bob, ty = hy + 11;                                                   // top of the head, top of the torso
+  const side = dir === 'right' || dir === 'left', back = dir === 'up';
+  const R = (x, y, w, h, c) => p.rect(x, y, w, h, c);
+  // ---- legs and shoes ----
+  if (!side) {
+    const lift = (s) => (step === s ? 1 : 0);                                          // the lifted foot is drawn one pixel higher
+    for (const [x, s] of [[5, -1], [8, 1]]) {
+      const up = lift(s);
+      R(x, 19, 3, 3 - up, bot[1]); R(x + 2, 19, 1, 3 - up, bot[2]);
+      R(x - (s < 0 ? 1 : 0), 22 - up, 4, 1, shoe);
+    }
+    if (L.dress || L.coat) { R(4, 18, 8, 3, L.coat ? PI.snow[1] : bot[1]); R(4, 20, 8, 1, L.coat ? PI.snow[2] : bot[2]); R(4, 18, 1, 3, L.coat ? PI.snow[0] : bot[0]); }
+  } else {
+    if (step === 0) { R(6, 19, 4, 3, bot[1]); R(9, 19, 1, 3, bot[2]); R(6, 22, 5, 1, shoe); }
+    else {
+      const f = step > 0;   // which leg swings forward
+      R(f ? 8 : 4, 19, 3, 3, bot[f ? 1 : 2]); R(f ? 8 : 4, 22, 4, 1, shoe);            // front leg
+      R(f ? 4 : 8, 19, 3, 2, bot[f ? 2 : 1]); R(f ? 3 : 8, 21, 4, 1, shoe);            // back leg, lifted
+    }
+    if (L.dress || L.coat) { R(5, 18, 6, 3, L.coat ? PI.snow[1] : bot[1]); R(5, 20, 6, 1, L.coat ? PI.snow[2] : bot[2]); }
+  }
+  // ---- backpack or cape behind the body (seen from the front it only peeks out) ----
+  const packC = L.pack ? clothRamp(L.pack) : null, capeC = L.cape ? clothRamp(L.cape) : null;
+  if (capeC && !back) { if (side) R(4, ty, 3, 8, capeC[2]); else { R(3, ty + 1, 1, 7, capeC[2]); R(12, ty + 1, 1, 7, capeC[2]); } }
+  if (packC && side) { R(3, ty + 1, 3, 6, packC[1]); R(3, ty + 1, 3, 1, packC[0]); R(3, ty + 6, 3, 1, packC[2]); }
+  // ---- torso and arms ----
+  const coat = L.coat ? [PI.snow[0], PI.snow[1], PI.snow[2]] : top;
+  if (!side) {
+    R(4, ty, 8, 19 - ty, coat[1]); R(4, ty, 1, 19 - ty, coat[0]); R(11, ty, 1, 19 - ty, coat[2]); R(5, 18, 6, 1, coat[2]);
+    const armL = step > 0 ? 1 : 0, armR = step < 0 ? 1 : 0;                            // arms swing opposite the feet
+    R(3, ty + 1, 1, 4 + armR, coat[1]); p.set(3, ty + 5 + armR, skin[1]);
+    R(12, ty + 1, 1, 4 + armL, coat[2]); p.set(12, ty + 5 + armL, skin[1]);
+    if (!back) {
+      if (L.hood) { R(5, ty, 6, 1, top[2]); p.set(7, ty + 2, PI.snow[0]); p.set(8, ty + 3, PI.snow[0]); R(6, ty + 5, 4, 1, top[2]); }   // hood collar, drawstrings, pocket
+      if (packC) { R(5, ty + 1, 1, 4, packC[2]); R(10, ty + 1, 1, 4, packC[2]); }                                                      // backpack straps
+      if (L.vest) { const v = clothRamp(L.vest); R(4, ty, 2, 6, v[1]); R(10, ty, 2, 6, v[2]); }
+      if (L.apron) { const a = clothRamp(L.apron); R(5, ty + 2, 6, 19 - ty - 2, a[1]); R(5, ty + 2, 6, 1, a[0]); R(7, ty, 2, 2, a[1]); }
+      if (L.bib) { R(5, ty + 1, 6, 19 - ty - 1, bot[1]); R(5, ty + 1, 6, 1, bot[0]); p.set(5, ty, bot[1]); p.set(10, ty, bot[1]); p.set(6, ty + 2, PI.yellow[1]); p.set(9, ty + 2, PI.yellow[1]); }
+      if (L.coat) { R(7, ty, 2, 19 - ty, PI.snow[2]); p.set(7, ty + 1, top[2]); p.set(8, ty + 1, top[2]); p.set(6, ty + 3, PI.blue[1]); }
+      if (L.scarf) { const s = clothRamp(L.scarf); R(5, ty, 6, 2, s[1]); R(5, ty, 6, 1, s[0]); p.set(9, ty + 2, s[2]); }
+      if (L.cape) R(5, ty, 6, 1, capeC[1]);
+      if (L.dress) { R(4, ty, 8, 1, top[0]); p.set(7, ty + 2, PI.snow[0]); }
+    } else {
+      if (packC) { R(5, ty + 1, 6, 6, packC[1]); R(5, ty + 1, 6, 1, packC[0]); R(10, ty + 2, 1, 5, packC[2]); R(5, ty + 6, 6, 1, packC[2]); R(7, ty + 3, 2, 1, PI.cream[0]); }
+      if (capeC) { R(4, ty, 8, 8, capeC[1]); R(4, ty, 1, 8, capeC[0]); R(11, ty, 1, 8, capeC[2]); }
+      if (L.hood) R(5, ty, 6, 2, top[2]);
+      if (L.apron) { const a = clothRamp(L.apron); R(7, ty + 1, 2, 1, a[1]); }
+    }
+  } else {
+    R(5, ty, 6, 19 - ty, coat[1]); R(5, ty, 1, 19 - ty, coat[0]); R(10, ty, 1, 19 - ty, coat[2]); R(5, 18, 6, 1, coat[2]);
+    const sw = step;                                                                    // the near arm swings with the stride
+    R(7 + sw, ty + 1, 2, 4, coat[2]); p.set(7 + sw, ty + 1, coat[1]); R(7 + sw, ty + 5, 2, 1, skin[1]);
+    if (L.hood) R(5, ty, 3, 2, top[2]);
+    if (L.apron) { const a = clothRamp(L.apron); R(9, ty + 2, 2, 19 - ty - 2, a[1]); }
+    if (L.bib) R(9, ty + 1, 2, 19 - ty - 1, bot[1]);
+    if (L.scarf) { const s = clothRamp(L.scarf); R(6, ty, 5, 2, s[1]); }
+    if (L.coat) R(10, ty, 1, 19 - ty, PI.snow[2]);
+  }
+  // ---- head ----
+  const hx = side ? 8.5 : 8, cy = hy + 5.5;
+  if (L.style === 'long' || L.style === 'pony') { if (side) R(4, hy + 5, 3, L.style === 'pony' ? 9 : 8, hair[2]); else if (back) R(3, hy + 5, 10, 8, hair[1]); else { R(2, hy + 5, 2, 8, hair[2]); R(12, hy + 5, 2, 8, hair[2]); } }
+  p.ell(hx, cy, 5.4, 5.3, [skin[0], skin[1], skin[1], skin[2]], { tex: 0 });
+  // hair: a cap over the top and back of the head, then the face shows through
+  const bald = L.style === 'bald', big = L.style === 'curly' ? 0.7 : L.style === 'bob' || L.style === 'long' ? 0.4 : 0;
+  if (!bald) p.ell(side ? 7.4 : 8, hy + 4.6 - big * 0.3, 5.9 + big, 5.2 + big * 0.6, hair, { tex: L.style === 'curly' ? 0.7 : 0.25, seed: look.length * 7 });
+  else { R(side ? 3 : 2, hy + 5, 2, 3, hair[1]); if (!side) R(12, hy + 5, 2, 3, hair[2]); }
+  if (!back) {
+    if (side) p.ell(10.2, hy + 7, 3.5, 3.7, [skin[0], skin[1], skin[1]], { tex: 0 });
+    else p.ell(8, hy + 7.3, 4.5, 3.6, [skin[0], skin[1], skin[1]], { tex: 0 });
+    if (bald && !side) p.ell(8, hy + 4, 4.4, 3.2, [skin[0], skin[0], skin[1]], { tex: 0 });
+    // fringe
+    if (L.style === 'messy') { for (const x of side ? [8, 10] : [5, 7, 10]) p.set(x, hy + 4, hair[1]); p.set(side ? 9 : 6, hy + 5, hair[1]); }
+    if (L.style === 'bob' || L.style === 'long' || L.style === 'pony') { if (!side) { R(4, hy + 3, 8, 2, hair[1]); R(4, hy + 5, 1, 3, hair[1]); R(11, hy + 5, 1, 3, hair[2]); } else R(7, hy + 3, 5, 2, hair[1]); }
+    if (L.style === 'spiky') for (const [x, y] of side ? [[5, 0], [8, 0], [11, 1], [3, 2]] : [[3, 1], [5, 0], [8, 0], [10, 0], [12, 1]]) { p.set(x, hy + y - 1 < 0 ? 0 : hy + y - 1, hair[0]); p.set(x, hy + y, hair[1]); }
+    // face
+    const ey = hy + 7;
+    const eye = L.skin ? PI.ink[1] : PI.ink[0], blush = L.skin === 2 ? PI.red[0] : PI.pink[0];
+    if (side) { R(11, ey, 1, 2, eye); if (L.skin) p.set(12, ey, PI.snow[0]); p.set(10, ey + 2, blush); p.set(13, ey + 1, skin[1]); p.set(11, ey + 3, skin[2]); }
+    else { R(5, ey, 1, 2, eye); R(10, ey, 1, 2, eye); if (L.skin) { p.set(6, ey, PI.snow[0]); p.set(9, ey, PI.snow[0]); }   // a glint of white keeps the eyes readable on deeper skin
+      p.set(4, ey + 2, blush); p.set(11, ey + 2, blush); R(7, ey + 3, 2, 1, skin[2]); }
+    if (L.glasses && !side) { R(4, ey, 3, 1, PI.blue[0]); R(9, ey, 3, 1, PI.blue[0]); p.set(7, ey, PI.stone[2]); p.set(8, ey, PI.stone[2]); R(5, ey, 1, 2, PI.ink[0]); R(10, ey, 1, 2, PI.ink[0]); }
+    if (L.glasses && side) { R(10, ey, 3, 1, PI.blue[0]); R(11, ey, 1, 2, PI.ink[0]); }
+    if (L.goggles) { if (side) { R(9, hy + 4, 4, 2, PI.mint[1]); R(9, hy + 4, 4, 1, PI.mint[0]); } else { R(4, hy + 4, 3, 2, PI.mint[1]); R(9, hy + 4, 3, 2, PI.mint[1]); R(7, hy + 4, 2, 1, PI.stone[3]); p.set(4, hy + 4, PI.mint[0]); p.set(9, hy + 4, PI.mint[0]); } }
+    if (L.beard) { if (side) R(9, ey + 3, 4, 2, PI.snow[1]); else { R(5, ey + 3, 6, 2, PI.snow[1]); R(6, ey + 4, 4, 1, PI.snow[2]); R(7, ey + 3, 2, 1, skin[2]); } }
+  }
+  if (L.style === 'bun') p.ell(side ? 5 : 8, hy + (side ? 2 : 0), 2.4, 2, hair, { tex: 0 });
+  if (L.style === 'pony' && side) R(3, hy + 3, 2, 3, hair[1]);
+  if (L.circlet) { R(side ? 5 : 3, hy + 2, side ? 8 : 10, 1, PI.yellow[1]); p.set(side ? 11 : 8, hy + 1, PI.yellow[0]); }
+  // hats (never on the player)
+  if (L.hat) {
+    const hc = clothRamp(L.hatCol);
+    if (L.hat === 'straw' || L.hat === 'safari' || L.hat === 'bucket') {
+      const wide = L.hat === 'bucket' ? 6 : 7.4;
+      p.ell(side ? 8.5 : 8, hy + 2.8, wide, 2, [hc[0], hc[1], hc[2]], { tex: 0 });                         // brim
+      p.ell(side ? 8 : 8, hy + 1, 4.4, 2.6, [hc[0], hc[1], hc[1]], { tex: 0 });                            // crown
+      R(side ? 4 : 4, hy + 2, side ? 8 : 8, 1, L.hat === 'straw' ? PI.red[0] : hc[2]);                     // band
+    } else if (L.hat === 'beanie') { p.ell(side ? 7.6 : 8, hy + 1.6, 5.6, 3.2, hc, { tex: 0.3 }); R(side ? 3 : 3, hy + 3, 10, 1, hc[2]); p.set(side ? 7 : 8, hy - 1 < 0 ? 0 : hy - 1, hc[0]); }
+    else if (L.hat === 'cap') { p.ell(8, hy + 1.2, 4.2, 2.2, [PI.snow[0], PI.snow[0], PI.snow[1]], { tex: 0 }); if (!back) { R(side ? 9 : 7, hy, 2, 3, PI.pink[1]); R(side ? 8 : 6, hy + 1, 4, 1, PI.pink[1]); } }
+  }
+  p.outline(PI.ink[0]);
+  return p;
+}
+function buildPeople2() {
+  for (const k in LOOK2) {
+    const mk = d => [0, 1, 2, 3, 4].map(f => personPix(k, d, f).toCanvas());
+    const right = mk('right');
+    PEOPLE[k] = { down: mk('down'), up: mk('up'), right, left: right.map(flipCanvas) };
+  }
+}
+// Which frame to show: walking alternates step A / stand / step B / stand; standing still breathes slowly.
+function walkFrame(moving, mt, stepCount) { return moving ? (mt < 0.55 ? (stepCount % 2 ? 3 : 1) : 2) : (Math.floor(frame / 36) % 2 ? 4 : 0); }
+function idleFrame(seed) { return Math.floor((frame + seed * 17) / 40) % 2 ? 4 : 0; }
+// Draw a person with their feet on the bottom of the tile at (x, y) (the sprite is taller than a tile), with a contact shadow.
+function drawChar(look, dir, f, x, y) {
+  drawShadow(x + 8, y + 14, 12, 5);
+  ctx.drawImage(PEOPLE[look][dir][f], Math.round(x), Math.round(y) - 10);
+}
+// <<< GFX:people
 
 // ---------------------------------------------------------------------
 // 4. AUDIO (Web Audio: synthesized SFX + tiny step sequencer)
@@ -5018,10 +5176,10 @@ function drawWorld() {
   } });
   for (const n of m.npcs) { const q = npcPos(n); things.push({ y: q.y, cx: q.x * TS - cx, cy: q.y * TS - cy, draw: () => {
     const d = world.npcDir[n.id] || q.dir;
-    ctx.drawImage(PEOPLE[n.look][d][0], q.x * TS - cx, q.y * TS - cy - 2);
-    if (n.trainer && !G.flags[n.id] && Math.floor(frame / 30) % 2 === 0) drawText('!', q.x * TS - cx + 6, q.y * TS - cy - 12, COL.red);
+    drawChar(n.look, d, idleFrame(q.x * 3 + q.y), q.x * TS - cx, q.y * TS - cy);
+    if (n.trainer && !G.flags[n.id] && Math.floor(frame / 30) % 2 === 0) drawText('!', q.x * TS - cx + 6, q.y * TS - cy - 21, COL.red, 1, COL.paper);
     const task = QUEST_BY_GIVER[n.id];
-    if (task && (questState(task) === 'new' || questReady(task))) drawText(questReady(task) ? '!' : '?', q.x * TS - cx + 6, q.y * TS - cy - 12 - (Math.floor(frame / 20) % 2), questReady(task) ? '#3cc85a' : '#ffd84a', 1, COL.border);
+    if (task && (questState(task) === 'new' || questReady(task))) drawText(questReady(task) ? '!' : '?', q.x * TS - cx + 6, q.y * TS - cy - 21 - (Math.floor(frame / 20) % 2), questReady(task) ? '#3cc85a' : '#ffd84a', 1, COL.border);
   } }); }
   for (const q of QUESTS) if (q.kind !== 'show' && MAPS[q.map] === m && questState(q) === 'active') things.push({ y: q.y, draw: () => {
     const X = q.x * TS - cx, Y = q.y * TS - cy, bob = Math.floor(frame / 15) % 2;
@@ -5032,8 +5190,9 @@ function drawWorld() {
   const pf = world.moving && world.mt < 0.55 ? 1 : 0;
   things.push({ y: pp.y / TS + 0.01, cx: Math.round(pp.x) - cx, cy: Math.round(pp.y) - cy, draw: () => {
     const hop = emoteHop(world.emote);
-    ctx.drawImage(PEOPLE.player[world.emote ? 'down' : G.dir][pf], Math.round(pp.x) - cx, Math.round(pp.y) - cy - 2 + hop);
-    drawEmote(world.emote, Math.round(pp.x) - cx + 8, Math.round(pp.y) - cy - 2 + hop);
+    drawShadow(Math.round(pp.x) - cx + 8, Math.round(pp.y) - cy + 14, 12, 5);
+    ctx.drawImage(PEOPLE.player[world.emote ? 'down' : G.dir][world.emote ? 0 : walkFrame(world.moving, world.mt, G.stats.steps)], Math.round(pp.x) - cx, Math.round(pp.y) - cy - 10 + hop);
+    drawEmote(world.emote, Math.round(pp.x) - cx + 8, Math.round(pp.y) - cy - 10 + hop);
     const under = tileAt(m, G.x, G.y);
     if (!world.moving && TALL_KIND[under]) {   // standing in tall grass: the front blades cover your feet
       ctx.drawImage(tallBlades(tallKindAt(m, under), (G.x * 7 + G.y * 13) % 3)[0], 0, 9, 16, 7, G.x * TS - cx, G.y * TS - cy + 9, 16, 7);
@@ -5279,7 +5438,7 @@ class BuildingScreen {
     for (let y = 100; y < H; y += 16) for (let x = ((y - 100) / 16) % 2 * 16; x < W; x += 32) ctx.fillRect(x, y, 16, 16);
     ctx.fillStyle = clinic ? '#f28fb8' : '#4c86e2'; ctx.fillRect(0, 0, W, 20);
     drawTextC(clinic ? 'PET CLINIC' : 'PET SHOP', W / 2, 6, COL.white);
-    ctx.drawImage(PEOPLE[clinic ? 'nurse' : 'clerk'].down[0], 108, 46, 32, 32);
+    ctx.drawImage(PEOPLE[clinic ? 'nurse' : 'clerk'].down[Math.floor(frame / 40) % 2 ? 4 : 0], 108, 30, 32, 48);
     ctx.fillStyle = '#b07a4a'; ctx.fillRect(60, 76, 130, 22); ctx.fillStyle = '#8a5a2b'; ctx.fillRect(60, 94, 130, 4);
     if (clinic) {
       ctx.fillStyle = '#dfe6ee'; ctx.fillRect(18, 40, 30, 36); ctx.fillStyle = '#9aa7b8'; ctx.fillRect(22, 44, 22, 14);
@@ -5477,7 +5636,7 @@ class SplashScreen {
   hint() { return 'SPACE: begin   M: sound   F: fullscreen'; }
   tap() { inputQueue.push('ok'); }
 }
-function drawPerson(look, dir, f, x, y, s) { ctx.drawImage(PEOPLE[look][dir][f], Math.round(x), Math.round(y), 16 * s, 16 * s); }
+function drawPerson(look, dir, f, x, y, s) { ctx.drawImage(PEOPLE[look][dir][f], Math.round(x), Math.round(y - 8 * s), 16 * s, 24 * s); }   // (x, y) is where a 16-pixel-tall sprite used to start
 function introSky(top, bottom) { ctx.fillStyle = top; ctx.fillRect(0, 0, W, 90); ctx.fillStyle = bottom; ctx.fillRect(0, 90, W, 90); }
 function introGround(y, tile) { for (let yy = y; yy < 176; yy += 16) for (let x = 0; x < W; x += 16) ctx.drawImage(TILES[tile][0], x, yy); }
 function introBuilding(x, y, roof) {
@@ -6569,6 +6728,14 @@ function runSelfTest() {
   if (SPR_CHEST_C.width !== 16 || SPR_CHEST_O.height !== 16 || !SPR_CHEST_C.pix) grErr.push('chest sprites');
   for (const ch of ['X', 'Z']) if (TILES[ch].length !== 2) grErr.push(ch + ' should animate');
   for (const kind of ['T', 'J', 'Y']) for (let v = 0; v < 3; v++) { const t = treePix(kind, v, BIOME.pawsville); if (t.w !== TREE_W || t.h !== TREE_H || !t.get(16, 40)) grErr.push('tree ' + kind + v); }
+  for (const k in LOOKS) if (!LOOK2[k]) grErr.push('no new look for ' + k);
+  for (const k in LOOK2) for (const d of ['down', 'up', 'left', 'right']) {
+    const fr = PEOPLE[k][d];
+    if (fr.length !== 5 || fr.some(c => c.width !== PW || c.height !== PH)) grErr.push(k + ' ' + d + ' frames');
+    if (d !== 'left' && !fr[0].pix.d.includes(PI.ink[0])) grErr.push(k + ' has no outline');
+    if (d !== 'left' && fr[1].pix.d.join() === fr[3].pix.d.join()) grErr.push(k + ' ' + d + ' steps A and B are the same');
+  }
+  if (LOOK2.player.hat || !LOOK2.player.hood || !LOOK2.player.pack) grErr.push('the player wears a green hoodie and a backpack, no cap');
   check('Graphics: the ground of all ' + Object.keys(MAPS).length + ' maps paints fully, in palette, with a biome each', !grErr.length, grErr.slice(0, 4).join('; '));
   // Tasks: every giver is a helpful (non-trainer) character, every lost item/pet sits on an open, reachable tile.
   const qErr = [], qSaved = G;
@@ -7058,6 +7225,18 @@ function devView(v) {
       return k + (b ? (lead ? ' doubled' : ' bell at bar ' + (Math.floor(b.ev.findIndex(Boolean) / sg.parts[k].barSteps) + 1)) : ' none'); }).join(', '); });
     document.getElementById('testout').textContent = 'SIGNATURE\n' + lines.join('\n');
   }
+  else if (v === 'people') { push({ opaque: true, update() {}, hint() { return Object.keys(LOOK2).length + ' looks: stand, step A, mid, step B, idle (down) + up, right, left'; }, draw() {
+    ctx.fillStyle = PALETTE[PI.grass[2]]; ctx.fillRect(0, 0, W, H);
+    Object.keys(LOOK2).forEach((k, i) => { const x = 4 + (i % 3) * 143, y = 2 + Math.floor(i / 3) * 46;
+      [0, 1, 2, 3, 4].forEach(f => ctx.drawImage(PEOPLE[k].down[f], x + f * 16, y));
+      ['up', 'right', 'left'].forEach((d, j) => ctx.drawImage(PEOPLE[k][d][Math.floor(frame / 12) % 4], x + 84 + j * 16, y));
+      drawText(k, x, y + 26, COL.white); });
+  } }); }
+  else if (v === 'people2') { push({ opaque: true, update() {}, hint() { return ''; }, draw() {
+    ctx.fillStyle = PALETTE[PI.grass[2]]; ctx.fillRect(0, 0, W, H);
+    ['player', 'granny', 'milo', 'gizmo', 'farmer', 'nurse', 'explorer', 'champion'].forEach((k, i) => { const x = 4 + (i % 4) * 106, y = 6 + Math.floor(i / 4) * 112;
+      ['down', 'right', 'up'].forEach((d, j) => ctx.drawImage(PEOPLE[k][d][0], x + j * 34, y, 32, 48)); ctx.drawImage(PEOPLE[k].down[1], x, y + 50, 32, 48); ctx.drawImage(PEOPLE[k].right[1], x + 34, y + 50, 32, 48); ctx.drawImage(PEOPLE[k].right[3], x + 68, y + 50, 32, 48); });
+  } }); }
   else if (v === 'palette') { push({ opaque: true, update() {}, hint() { return 'master palette: ' + (PALETTE.length - 1) + ' colours'; }, draw() {
     ctx.fillStyle = PALETTE[PI.grass[3]]; ctx.fillRect(0, 0, W, H);
     let y = 4;
