@@ -1055,7 +1055,8 @@ function drawPet(p, x, y, s = 1, opts = {}) {
   const im = petImage(p.sp, s, opts), top = petHeadTop(im.img);
   ctx.save();
   if (opts.alpha !== undefined) ctx.globalAlpha = opts.alpha;
-  ctx.drawImage(img, Math.round(x + im.ox + im.w / 2 - img.width * im.sc / 2), Math.round(y + im.oy + (top + 3 - img.height) * im.sc), img.width * im.sc, img.height * im.sc);
+  const k = im.w / im.img.width;   // screen pixels per picture pixel
+  ctx.drawImage(img, Math.round(x + im.ox + im.w / 2 - img.width * im.sc / 2), Math.round(y + im.oy + top * k + (3 - img.height) * im.sc), img.width * im.sc, img.height * im.sc);
   ctx.restore();
 }
 function buildPets() {
@@ -2222,311 +2223,94 @@ function drawChar(look, dir, f, x, y) {
 
 // >>> GFX:pets
 // ---------------------------------------------------------------------
-// 3g. GFX PETS: every pet is built from soft shaded shapes, in three sizes from one description:
-// 48x48 for battle (a front view for the other side's pet, a back view for yours), 32x32 for menus
-// and 16x16 for the overworld. Real animals, in our own realistic-cute designs. Grown-up forms are
-// bigger and carry more detail (collars, manes, markings, longer tails).
+// 3g. GFX PETS: the original hand-drawn pet sprites (section 3), given light and shade.
+// The drawings themselves are the 32x32 string-array sprites; nothing about their shapes changes here.
+// Each one is doubled with corner smoothing for battles (64x64), moved onto the master palette, and
+// shaded from the upper left. Menus use the 32-pixel drawing with a lighter touch of the same shading,
+// and the overworld uses a 16-pixel reduction.
 // ---------------------------------------------------------------------
-const FUR = {
-  tan: () => [PI.cream[1], PI.earth[0], PI.earth[1], PI.earth[2]], brown: () => [PI.earth[1], PI.earth[2], PI.earth[3], PI.earth[4]], choc: () => [PI.earth[2], PI.earth[3], PI.earth[4], PI.wood[4]],
-  cream: () => [PI.cream[0], PI.cream[1], PI.cream[2], PI.earth[1]], white: () => [PI.snow[0], PI.snow[0], PI.snow[1], PI.snow[2]], gray: () => [PI.stone[0], PI.stone[1], PI.stone[2], PI.stone[3]],
-  slate: () => [PI.stone[1], PI.stone[2], PI.stone[3], PI.blue[3]], night: () => [PI.stone[2], PI.stone[3], PI.blue[3], PI.ink[1]], gold: () => [PI.yellow[0], PI.yellow[1], PI.orange[1], PI.orange[2]],
-  orange: () => [PI.orange[0], PI.orange[1], PI.orange[2], PI.wood[2]], rust: () => [PI.wood[0], PI.wood[1], PI.wood[2], PI.wood[3]], pink: () => [PI.skin[0], PI.pink[0], PI.pink[0], PI.pink[1]],
-  rose: () => [PI.pink[0], PI.pink[0], PI.pink[1], PI.pink[2]], green: () => [PI.grass[1], PI.grass[2], PI.grass[3], PI.grass[4]], forest: () => [PI.grass[2], PI.grass[3], PI.grass[4], PI.grass[5]],
-  teal: () => [PI.mint[0], PI.mint[1], PI.mint[2], PI.teal[1]], blue: () => [PI.blue[0], PI.blue[1], PI.blue[2], PI.blue[3]], red: () => [PI.pink[0], PI.red[0], PI.red[1], PI.wood[4]],
-  yellow: () => [PI.yellow[0], PI.yellow[0], PI.yellow[1], PI.orange[1]], lilac: () => [PI.violet[0], PI.violet[0], PI.violet[1], PI.blue[3]],
-};
-// One entry per pet: family, size (s), colours and the details that make it itself.
-const PET_DEF = {
-  buddy:     { fam: 'mammal', s: 0.91, fur: 'tan', belly: 'cream', ear: 'floppy', earFur: 'brown', tail: 'curl', muzzle: 'cream', nose: 'ink', collar: 'red', tongue: true, head: [12.5, 10.5], body: [10.5, 9.5] },
-  rocky:     { fam: 'mammal', s: 1.0, fur: 'brown', belly: 'cream', ear: 'point', earIn: 'rose', tail: 'curl', muzzle: 'cream', nose: 'ink', collar: 'blue', saddle: 'choc', brow: true, head: [12, 10.5], body: [12.5, 11] },
-  mittens:   { fam: 'mammal', s: 0.91, fur: 'gray', belly: 'white', ear: 'point', earIn: 'rose', tail: 'long', nose: 'pink', iris: 'green', whiskers: true, paws: 'white', stripes: true, head: [12.5, 10.5], body: [10, 9.5] },
-  shadow:    { fam: 'mammal', s: 1.0, fur: 'night', belly: 'slate', ear: 'point', earIn: 'lilac', tail: 'long', nose: 'pink', iris: 'yellow', whiskers: true, tuft: true, head: [12, 10.5], body: [11.5, 11.5] },
-  alvin:     { fam: 'mammal', s: 0.9, fur: 'orange', belly: 'white', ear: 'round', earIn: 'rose', tail: 'none', nose: 'pink', cheeks: 'white', blush: true, head: [11.5, 9.8], body: [12.8, 9.6] },
-  nugget:    { fam: 'mammal', s: 1.0, fur: 'gold', belly: 'cream', ear: 'round', earIn: 'rose', tail: 'none', nose: 'pink', cheeks: 'cream', blush: true, crown: 'orange', head: [12, 10.4], body: [14.5, 11] },
-  superham:  { fam: 'mammal', s: 1.0, fur: 'gold', belly: 'cream', ear: 'round', earIn: 'rose', tail: 'none', nose: 'pink', cheeks: 'cream', blush: true, crown: 'orange', mask: 'red', cape: 'red', head: [12, 10.4], body: [14.5, 11] },
-  cookie:    { fam: 'mammal', s: 0.88, fur: 'tan', belly: 'cream', ear: 'round', earIn: 'rose', tail: 'thin', tailTip: 'choc', nose: 'pink', cheeks: 'cream', saddle: 'brown', head: [10.4, 9.2], body: [9.2, 9.6] },
-  cream:     { fam: 'mammal', s: 1.0, fur: 'cream', belly: 'white', ear: 'round', earIn: 'rose', tail: 'thin', tailTip: 'white', nose: 'pink', cheeks: 'white', blush: true, fluffy: true, head: [11.4, 10], body: [12.8, 11.6] },
-  clover:    { fam: 'mammal', s: 0.9, fur: 'tan', belly: 'cream', ear: 'long', earIn: 'rose', tail: 'puff', nose: 'pink', cheeks: 'cream', blush: true, head: [11.5, 10], body: [10, 9.5] },
-  hopscotch: { fam: 'mammal', s: 1.0, fur: 'gray', belly: 'white', ear: 'long', earIn: 'rose', tail: 'puff', nose: 'pink', cheeks: 'white', blush: true, tuft: true, head: [11.5, 9.6], body: [12, 9.8] },
-  nibbles:   { fam: 'mammal', s: 0.88, fur: 'tan', belly: 'cream', ear: 'big', earIn: 'rose', tail: 'thin', tailTip: 'rose', nose: 'pink', whiskers: true, head: [11, 9.5], body: [9, 8.5] },
-  squeakers: { fam: 'mammal', s: 0.96, fur: 'gray', belly: 'white', ear: 'big', earIn: 'rose', tail: 'thin', tailTip: 'rose', nose: 'pink', whiskers: true, cheeks: 'white', head: [11.5, 10], body: [11, 10] },
-  noodle:    { fam: 'mammal', s: 0.91, fur: 'cream', belly: 'white', ear: 'small', earIn: 'rose', tail: 'bushy', tailFur: 'brown', nose: 'pink', mask: 'brown', paws: 'brown', long: true, head: [10.5, 9], body: [9, 11.5] },
-  bandit:    { fam: 'mammal', s: 1.0, fur: 'tan', belly: 'cream', ear: 'small', earIn: 'rose', tail: 'bushy', tailFur: 'choc', nose: 'pink', mask: 'choc', paws: 'choc', long: true, saddle: 'brown', head: [11, 9.5], body: [10.5, 13] },
-  prickle:   { fam: 'mammal', s: 0.9, fur: 'cream', belly: 'cream', ear: 'small', earIn: 'rose', tail: 'none', nose: 'ink', spikes: 'brown', blush: true, snout: true, head: [10.5, 9], body: [11, 9.5] },
-  thistle:   { fam: 'mammal', s: 1.0, fur: 'tan', belly: 'cream', ear: 'small', earIn: 'rose', tail: 'none', nose: 'ink', spikes: 'choc', snout: true, head: [11, 9.5], body: [13, 11] },
-  daisy:     { fam: 'pony', s: 0.92, coat: 'rust', mane: 'yellow', muzzle: 'cream', hooves: 'choc', blaze: true },
-  thunder:   { fam: 'pony', s: 1.0, coat: 'choc', mane: 'white', muzzle: 'tan', hooves: 'cream', blaze: true, feather: true, belly: 'brown' },
-  truffle:   { fam: 'mammal', s: 0.9, fur: 'pink', belly: 'pink', ear: 'fold', tail: 'curly', nose: 'none', pigSnout: 'rose', blush: true, hooves: 'rose', head: [12.5, 10.5], body: [12, 9.5] },
-  hamlet:    { fam: 'mammal', s: 1.0, fur: 'pink', belly: 'pink', ear: 'fold', tail: 'curly', nose: 'none', pigSnout: 'rose', hooves: 'rose', patch: 'rust', head: [13, 11], body: [14, 11.5] },
-  ziggy:     { fam: 'lizard', s: 0.9, skin: 'green', belly: 'yellow', spots: 'forest' },
-  spike:     { fam: 'lizard', s: 1.0, skin: 'forest', belly: 'yellow', spots: 'green', crest: 'orange' },
-  kiwi:      { fam: 'bird', s: 0.9, body: 'green', chest: 'green', face: 'yellow', wing: 'forest', beak: 'orange', tailC: 'blue', hook: true },
-  mango:     { fam: 'bird', s: 1.0, body: 'red', chest: 'red', face: 'white', wing: 'blue', wingTip: 'yellow', beak: 'tan', tailC: 'blue', hook: true, crest: 'red', longTail: true },
-  puddles:   { fam: 'bird', s: 0.88, body: 'yellow', chest: 'yellow', wing: 'gold', beak: 'orange', feet: 'orange', fluff: true },
-  quackers:  { fam: 'bird', s: 1.0, body: 'white', chest: 'white', wing: 'gray', beak: 'orange', feet: 'orange', headC: 'forest', ring: true, tailCurl: true },
-  shelly:    { fam: 'turtle', s: 0.88, skin: 'green', shell: 'forest', rim: 'yellow' },
-  tank:      { fam: 'turtle', s: 1.0, skin: 'forest', shell: 'brown', rim: 'tan', ridged: true },
-  bubbles:   { fam: 'fish', s: 0.88, body: 'orange', belly: 'yellow', fin: 'orange' },
-  goldie:    { fam: 'fish', s: 1.0, body: 'gold', belly: 'cream', fin: 'orange', fancy: true },
-  ribbit:    { fam: 'frog', s: 0.91, skin: 'green', belly: 'cream' },
-  croaker:   { fam: 'frog', s: 1.0, skin: 'forest', belly: 'cream', warts: 'green', sac: true },
-};
-// Drawing kit for one sprite: shapes are given in a 48-unit space, standing on a ground line at y = 45.
-function petKit(sp, size, view, breath) {
-  const D = PET_DEF[sp], k = size / 48, s = D.s || 1, p = new Pix(size, size), small = size < 24;
-  const X = x => (24 + (x - 24) * s) * k, Y = y => (45 + (y - 45) * s) * k, R = r => Math.max(0.55, r * s * k);
-  const A = { p, D, k, s, size, small, back: view === 'back', b: breath ? 0.7 : 0, X, Y,
-    E(cx, cy, rx, ry, ramp, o = {}) { p.ell(X(cx), Y(cy), R(rx), R(ry), ramp, Object.assign({ tex: small ? 0 : 0.1, seed: sp.length * 3, squash: 0.8 }, o, o.clip ? { only: (x, y) => p.get(x, y) > 0 } : {})); return A; },
-    // A body part with a thin darker rim, so overlapping parts stay readable without black lines inside the shape.
-    part(cx, cy, rx, ry, ramp, o) { if (!small) p.ell(X(cx), Y(cy), R(rx) + 0.9, R(ry) + 0.9, [DARKER[ramp[ramp.length - 1]]], Object.assign({ tex: 0 }, o && o.rot ? { rot: o.rot } : {})); return A.E(cx, cy, rx, ry, ramp, o); },
-    dot(x, y, c, r = 1) { const n = Math.max(1, Math.round(r * s * k)); p.rect(Math.round(X(x) - n / 2), Math.round(Y(y) - n / 2), n, n, c); return A; },
-    tri(pts, c) { p.poly(pts.map(([x, y]) => [X(x), Y(y)]), c); return A; },
-    line(x0, y0, x1, y1, c) { p.line(Math.round(X(x0)), Math.round(Y(y0)), Math.round(X(x1)), Math.round(Y(y1)), c); return A; },
-    path(pts, r, ramp) { for (let i = 0; i + 1 < pts.length; i++) for (let t = 0; t <= 1; t += 0.2) A.E(pts[i][0] + (pts[i + 1][0] - pts[i][0]) * t, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t, r, r, ramp, { tex: 0 }); return A; },
-    // An eye: a dark oval with a white glint (or a coloured iris with a slit pupil).
-    eye(x, y, iris, es = 1) {
-      const w = Math.max(1, Math.round(3 * s * k * es)), h = Math.max(w, Math.ceil(3.9 * s * k * es)), x0 = Math.round(X(x) - w / 2), y0 = Math.round(Y(y) - h / 2);
-      for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) { if (w >= 4 && (i === 0 || i === w - 1) && (j === 0 || j === h - 1)) continue; p.set(x0 + i, y0 + j, iris ? iris[1] : PI.ink[0]); }
-      if (iris && w >= 2) for (let j = 0; j < h; j++) p.set(x0 + (w >> 1), y0 + j, PI.ink[1]);
-      if (w >= 2) p.set(x0, y0, PI.snow[0]);
-    },
-  };
-  return A;
+const PET_BIG = {}, PET16 = {}, PET_OLD = {}, PET_TOP = new Map();   // PET_BIG[sp] = { front: [frame0, frame1], back: [frame0, frame1] }, all 64x64
+// The nearest master-palette colour to an original sprite colour (very dark colours are the outline).
+const PET_NEAREST = {};
+function petColour(v) {
+  if (PET_NEAREST[v] === undefined) {
+    const r = v >> 16, g = (v >> 8) & 255, b = v & 255, rm = r / 2;
+    let best = 1, bd = 1e12;
+    for (let i = 1; i < PALETTE.length; i++) {
+      const q = PAL_RGB[i], dr = q[0] - r, dg = q[1] - g, db = q[2] - b, m = (q[0] + r) / 2;
+      const d = (2 + m / 256) * dr * dr + 4 * dg * dg + (2 + (255 - m) / 256) * db * db;   // a distance that follows how the eye weighs colours
+      if (d < bd) { bd = d; best = i; }
+    }
+    if (r > 200 && g > 0.76 * r && g < 0.9 * r && b < 0.36 * r) best = PI.yellow[1];   // golden fur stays gold (the nearest match by numbers is a peach)
+    PET_NEAREST[v] = r + g + b < 170 ? PI.ink[0] : best;
+  }
+  return PET_NEAREST[v];
 }
-const PET_FAMILY = {
-  mammal(A) {
-    const D = A.D, b = A.b, back = A.back, F = FUR[D.fur](), Bl = FUR[D.belly || D.fur](), [hrx, hry] = D.head, [brx, bry] = D.body;
-    const by = 45 - bry - 1.5, hy = by - bry * (D.long ? 0.62 : 0.5) - hry * 0.62 + b, earF = D.earFur ? FUR[D.earFur]() : F, earIn = D.earIn ? FUR[D.earIn]() : null;
-    const L = 24 - hrx, Rr = 24 + hrx, dark = F.slice(1);
-    if (D.cape && !back) A.tri([[24 - brx - 4, 45], [24 + brx + 4, 45], [24 + brx - 2, hy + 4], [24 - brx + 2, hy + 4]], FUR[D.cape]()[2]);
-    // tail (behind the body in the front view)
-    const tailF = D.tailFur ? FUR[D.tailFur]() : F;
-    if (!back) {
-      if (D.tail === 'curl') A.part(24 + brx + 0.5, by - 3, 2.8, 6.5, tailF, { rot: -0.55 });
-      else if (D.tail === 'long') A.path([[24 + brx - 2, 42], [24 + brx + 4, 40], [24 + brx + 5, 33], [24 + brx + 2, 28]], 1.7, tailF);
-      else if (D.tail === 'thin') { A.path([[24 + brx - 2, 43], [24 + brx + 5, 42], [24 + brx + 8, 37]], 1.0, [F[2]]); if (D.tailTip) A.E(24 + brx + 8.5, 35.5, 1.8, 1.8, FUR[D.tailTip](), { tex: 0 }); }
-      else if (D.tail === 'bushy') A.part(24 + brx + 2, by + 2, 4, 8, tailF, { rot: -0.5 });
-      else if (D.tail === 'mane') A.part(24 + brx + 1.5, by + 2, 3.2, 9, FUR[D.mane](), { rot: -0.2 });
-      else if (D.tail === 'curly') { A.dot(24 + brx + 1, by - 2, F[3], 2); A.dot(24 + brx + 3, by - 4, F[2], 2); A.dot(24 + brx + 2, by - 6, F[3], 2); }
-    }
-    // spikes (hedgehogs): a wide prickly mantle behind the head and body
-    if (D.spikes) {
-      const S = FUR[D.spikes]();
-      for (let a = -0.15; a <= 3.3; a += 0.24) { const cx = 24 + Math.cos(a) * (brx + 2.5), cy = by - 2 - Math.sin(a) * (bry + 6 + (back ? 2 : 0)); A.tri([[cx - 2.4, cy + 3.5], [cx + 2.4, cy + 3.5], [cx + Math.cos(a) * 3, cy - Math.sin(a) * 4]], S[2]); A.dot(cx + Math.cos(a) * 2, cy - Math.sin(a) * 2.8, PI.cream[0], 1.3); }
-      A.part(24, by - 3, brx + 2.5, bry + 5, S, { tex: 0.85 });
-    }
-    // ears that sit behind the head
-    const ears = (front) => {
-      for (const sgn of [-1, 1]) {
-        const ex = 24 + sgn * hrx * 0.62;
-        if (D.ear === 'point') { A.tri([[24 + sgn * hrx * 0.98, hy - hry * 0.25], [24 + sgn * hrx * 0.78, hy - hry - 6], [24 + sgn * hrx * 0.12, hy - hry * 0.8]], sgn < 0 ? earF[1] : earF[2]); if (earIn && !back) A.tri([[24 + sgn * hrx * 0.8, hy - hry * 0.5], [24 + sgn * hrx * 0.72, hy - hry - 3.5], [24 + sgn * hrx * 0.36, hy - hry * 0.8]], earIn[1]); }
-        else if (D.ear === 'round' || D.ear === 'big' || D.ear === 'small') { const r = D.ear === 'big' ? 5.4 : D.ear === 'small' ? 2.4 : 3.6; A.part(24 + sgn * hrx * 0.7, hy - hry * 0.8, r, r, earF); if (earIn && !back) A.E(24 + sgn * hrx * 0.7, hy - hry * 0.78, r * 0.58, r * 0.58, earIn, { tex: 0 }); }
-        else if (D.ear === 'long') { const ecy = hy - hry - 4, ery = Math.min(9, ecy - 1.8); A.part(ex - sgn * 1.5, ecy, 3.1, ery, earF, { rot: sgn * 0.14 }); if (earIn && !back) A.E(ex - sgn * 1.5, ecy + 0.5, 1.4, ery * 0.72, earIn, { rot: sgn * 0.14, tex: 0 }); }
-        else if (D.ear === 'pony') A.tri([[24 + sgn * hrx * 0.9, hy - hry * 0.5], [24 + sgn * hrx * 0.7, hy - hry - 4.5], [24 + sgn * hrx * 0.2, hy - hry * 0.85]], sgn < 0 ? F[1] : F[2]);
-      }
-    };
-    if (D.ear !== 'floppy' && D.ear !== 'fold') ears();
-    // body
-    A.part(24, by, brx, bry + b * 0.4, F);
-    if (D.fluffy) for (const sgn of [-1, 1]) A.part(24 + sgn * brx * 0.8, by + 2, 3.4, 5, F);
-    if (!back) A.E(24, by + 1.5, brx * 0.6, bry * 0.78, Bl, { squash: 0.45, clip: true });
-    if (back && D.saddle) A.E(24, by - 1, brx * 0.72, bry * 0.8, FUR[D.saddle](), { clip: true });
-    if (D.patch) A.E(24 + (back ? -4 : 5), by - 3, 4.5, 3.6, FUR[D.patch](), { clip: true });
-    if (D.cape && back) { A.tri([[24 - brx - 3, 45], [24 + brx + 3, 45], [24 + brx * 0.7, hy + 5], [24 - brx * 0.7, hy + 5]], FUR[D.cape]()[1]); A.tri([[24 + 2, 45], [24 + brx + 3, 45], [24 + brx * 0.7, hy + 5]], FUR[D.cape]()[2]); }
-    // feet
-    const paw = D.paws ? FUR[D.paws]() : D.hooves ? FUR[D.hooves]() : F;
-    for (const sgn of [-1, 1]) {
-      A.part(24 + sgn * brx * 0.74, 43.4, 3.8, 2.3, D.hooves ? paw : F);
-      if (!back) A.part(24 + sgn * (D.long ? 3.6 : 4.2), 43.6, 3.2, 2.3, paw);
-    }
-    if (D.feather && !back) for (const sgn of [-1, 1]) A.E(24 + sgn * 4.2, 41.8, 3.3, 1.4, FUR.white(), { tex: 0 });
-    // collar
-    if (D.collar && !back) A.E(24, hy + hry - 0.6, hrx * 0.66, 2, FUR[D.collar]().slice(1), { squash: 0.3, tex: 0 });
-    if (D.cape && !back) A.E(24, hy + hry - 0.4, hrx * 0.6, 1.8, FUR[D.cape]().slice(1), { tex: 0, squash: 0.3 });
-    // tail seen from behind sits on top of the body
-    if (back) {
-      if (D.tail === 'curl') A.part(24 + 2, by - 2.5, 2.8, 6.5, tailF, { rot: -0.35 });
-      else if (D.tail === 'long') A.path([[24, 42], [24 + 5, 40], [24 + 7, 33], [24 + 4, 27]], 1.7, tailF);
-      else if (D.tail === 'thin') { A.path([[24, 43], [24 + 6, 42], [24 + 9, 37]], 1.0, [F[2]]); if (D.tailTip) A.E(24 + 9.5, 35.5, 1.8, 1.8, FUR[D.tailTip](), { tex: 0 }); }
-      else if (D.tail === 'bushy') A.part(24 + 3, by + 1, 4, 8.5, tailF, { rot: -0.3 });
-      else if (D.tail === 'puff') A.part(24, by + bry * 0.42, 3.6, 3.3, FUR.white());
-      else if (D.tail === 'mane') A.part(24 + 1, by + 2.5, 3.4, 9, FUR[D.mane](), { rot: -0.1 });
-      else if (D.tail === 'curly') { A.dot(24, by + 2, F[3], 2); A.dot(24 + 2, by, F[2], 2); A.dot(24 + 1, by - 2, F[3], 2); }
-    }
-    // head
-    if (D.mane && !back) A.part(24 + hrx * 0.75, hy - 1, 3.4, hry * 0.95, FUR[D.mane]());
-    A.part(24, hy, hrx, hry, F);
-    if (D.saddle && !D.long) A.E(24, hy - hry * 0.62, hrx * 0.7, hry * 0.5, FUR[D.saddle](), { clip: true });
-    if (D.crown) A.E(24, hy - hry * 0.7, hrx * 0.5, hry * 0.36, FUR[D.crown](), { clip: true });
-    if (D.mane) { if (back) A.part(24, hy + 1, 4, hry + 2, FUR[D.mane]()); else A.E(24 - 1, hy - hry * 0.8, hrx * 0.55, 3, FUR[D.mane](), { tex: 0.3 }); }
-    if (D.tuft && !A.small) { A.tri([[24 - 2.5, hy - hry + 1], [24, hy - hry - 3], [24 + 2.5, hy - hry + 1]], F[1]); }
-    if (D.ear === 'floppy') for (const sgn of [-1, 1]) A.part(24 + sgn * (hrx + 0.6), hy + 1.5, 3.7, 7.2, earF, { rot: sgn * 0.22 });
-    if (D.ear === 'fold') for (const sgn of [-1, 1]) A.tri([[24 + sgn * hrx * 0.95, hy - hry * 0.5], [24 + sgn * hrx * 0.3, hy - hry * 0.95], [24 + sgn * (hrx + 1.5), hy - hry * 0.05]], sgn < 0 ? F[2] : F[3]);
-    if (back) {   // seen from behind: tufts of fur across the head and back, and the collar's band
-      if (!A.small) {
-        for (const [dx, dy] of [[-0.45, -0.15], [0.05, -0.4], [0.42, 0], [-0.15, 0.3]]) { const x = 24 + dx * hrx, y = hy + dy * hry; A.line(x, y, x + 1.1, y + 1.5, F[2]); A.line(x + 2.2, y, x + 1.1, y + 1.5, F[2]); A.dot(x + 1.1, y - 0.6, F[0], 0.8); }
-        for (const [dx, dy] of [[-0.5, -0.25], [0.3, -0.1], [-0.1, 0.3], [0.5, 0.35]]) { const x = 24 + dx * brx, y = by + dy * bry; A.line(x, y, x + 1.1, y + 1.5, F[2]); A.line(x + 2.2, y, x + 1.1, y + 1.5, F[2]); }
-      }
-      if (D.collar) A.E(24, hy + hry + 0.3, hrx * 0.58, 1.5, FUR[D.collar]().slice(1), { squash: 0.3, tex: 0 });
-      return;
-    }
-    // ---- face ----
-    const ey = hy + hry * (D.ponyFace ? -0.2 : 0.05), ex = hrx * (D.ponyFace ? 0.5 : 0.42);
-    if (D.mask) A.E(24, ey, hrx * 0.92, hry * 0.3, FUR[D.mask]().slice(1), { clip: true, tex: 0 });
-    if (D.cheeks) for (const sgn of [-1, 1]) A.E(24 + sgn * hrx * 0.4, hy + hry * 0.42, hrx * 0.44, hry * 0.4, FUR[D.cheeks](), { squash: 0.3, clip: true });
-    if (D.muzzle) A.E(24, hy + hry * (D.ponyFace ? 0.5 : 0.46), hrx * (D.ponyFace ? 0.72 : 0.5), hry * (D.ponyFace ? 0.5 : 0.42), FUR[D.muzzle](), { squash: 0.3, clip: true });
-    if (D.blaze) A.E(24, hy - hry * 0.3, 1.8, hry * 0.5, FUR.white(), { tex: 0, clip: true });
-    if (D.stripes && !A.small) for (const dx of [-3, 0, 3]) A.line(24 + dx, hy - hry + 2, 24 + dx, hy - hry + 5, F[3]);
-    if (D.brow && !A.small) for (const sgn of [-1, 1]) A.E(24 + sgn * ex, ey - 3.6, 1.7, 1, FUR.tan(), { tex: 0 });
-    A.eye(24 - ex, ey, D.iris ? FUR[D.iris]() : null); A.eye(24 + ex, ey, D.iris ? FUR[D.iris]() : null);
-    if (D.blush && !A.small) for (const sgn of [-1, 1]) A.E(24 + sgn * hrx * 0.68, hy + hry * 0.42, 1.9, 1.2, [PI.pink[0]], { tex: 0 });
-    const ny = hy + hry * (D.ponyFace ? 0.55 : D.snout ? 0.5 : 0.36);
-    if (D.pigSnout) { const S = FUR[D.pigSnout](); A.part(24, hy + hry * 0.42, 5, 3.5, S.slice(0, 3)); A.dot(22.4, hy + hry * 0.42, S[3], 1.5); A.dot(25.8, hy + hry * 0.42, S[3], 1.5); }
-    else if (D.snout) { A.part(24, ny, 3.2, 2.6, F); A.E(24, ny + 0.6, 1.7, 1.3, [PI.ink[0]], { tex: 0 }); }
-    else if (D.ponyFace) { A.dot(22, ny, PI.ink[0], 1.3); A.dot(26, ny, PI.ink[0], 1.3); }
-    else if (D.nose !== 'none') A.E(24, ny, D.nose === 'ink' ? 2 : 1.5, D.nose === 'ink' ? 1.5 : 1.1, [D.nose === 'ink' ? PI.ink[0] : PI.pink[1]], { tex: 0 });
-    if (!A.small && !D.pigSnout && !D.ponyFace && !D.snout) { A.line(24, ny + 1.5, 24, ny + 2.6, PI.ink[0]); A.line(24, ny + 2.6, 22.2, ny + 3.6, PI.ink[0]); A.line(24, ny + 2.6, 25.8, ny + 3.6, PI.ink[0]); }
-    if (D.tongue && !A.small) A.E(24, ny + 4.6, 1.5, 1.6, [PI.pink[1]], { tex: 0 });
-    if (D.whiskers && !A.small) for (const sgn of [-1, 1]) { A.line(24 + sgn * 5, ny + 1, 24 + sgn * 10.5, ny, PI.snow[0]); A.line(24 + sgn * 5, ny + 2.2, 24 + sgn * 10, ny + 3.2, PI.snow[0]); }
-  },
-  // Lizards and ponies are drawn from the side: the front view faces left, the back view faces away to the right.
-  lizard(A) {
-    const D = A.D, b = A.b, S = FUR[D.skin](), Bl = FUR[D.belly](), Sp = FUR[D.spots](), dir = A.back ? -1 : 1, mx = x => 24 + (x - 24) * dir;
-    A.path([[mx(35), 38], [mx(41), 37], [mx(44), 31], [mx(42), 25], [mx(38), 24]], 2, S);                  // tail curling up
-    for (const x of [19, 33]) { A.part(mx(x + 2), 41.5, 3.4, 2.6, S.slice(1)); }                            // far legs
-    A.part(mx(26), 35.5 + b * 0.4, 11.5, 5.8, S); A.E(mx(25), 38.5, 9, 2.6, Bl, { clip: true, squash: 0.4 });
-    for (const x of [17, 31]) { A.part(mx(x), 42, 3.8, 2.6, S); if (!A.small) for (const t of [-2.4, 0, 2.4]) A.dot(mx(x + t), 44.4, S[3], 1.2); }
-    A.part(mx(13), 30 + b, 7, 5.6, S); A.part(mx(7.5), 32 + b, 3.6, 3, S);                                  // head and snout
-    A.part(mx(13.5), 26 + b, 3.6, 3.4, S); A.E(mx(13.5), 26 + b, 2.5, 2.4, [PI.snow[0], PI.snow[1]], { tex: 0 }); A.eye(mx(13.2), 26.2 + b, null, 0.8);
-    if (!A.small) { A.line(mx(5), 33.5 + b, mx(12), 34.5 + b, S[3]); for (const [x, y] of [[22, 33], [28, 32], [33, 34]]) A.dot(mx(x), y, Sp[2], 1.7); A.E(mx(15.5), 31.5 + b, 1.4, 1, [PI.pink[0]], { tex: 0 }); }
-    if (D.crest) for (const x of [15, 20, 25, 30, 35]) A.tri([[mx(x - 2.2), 31.5 - (x > 18 ? 0 : 4)], [mx(x + 2.2), 31.5 - (x > 18 ? 0 : 4)], [mx(x + 0.6), 26 - (x > 18 ? 0 : 4)]], FUR[D.crest]()[x % 10 ? 1 : 2]);
-  },
-  pony(A) {
-    const D = A.D, b = A.b, C = FUR[D.coat](), Mn = FUR[D.mane](), Hf = FUR[D.hooves](), dir = A.back ? -1 : 1, mx = x => 24 + (x - 24) * dir;
-    A.part(mx(40), 31, 3.4, 9, Mn, { rot: dir * -0.25 });                                                    // tail
-    for (const x of [21, 34]) { A.part(mx(x), 39, 2.2, 5.6, C.slice(1)); A.E(mx(x), 44.2, 2.5, 1.4, Hf.slice(1), { tex: 0 }); }   // far legs
-    A.part(mx(27), 30, 12, 8 + b * 0.4, C);
-    if (D.belly) A.E(mx(27), 34.5, 8.5, 3.2, FUR[D.belly](), { clip: true, squash: 0.4 });
-    for (const x of [17, 37]) { A.part(mx(x), 39, 2.6, 5.9, C); A.E(mx(x), 44.3, 2.9, 1.5, Hf, { tex: 0 }); if (D.feather) A.E(mx(x), 42.4, 3.1, 1.3, FUR.white(), { tex: 0 }); }
-    A.part(mx(17), 22 + b, 5, 8.5, C, { rot: dir * 0.5 });                                                   // neck
-    A.part(mx(21), 18.5 + b, 3, 8.5, Mn, { rot: dir * 0.55 });                                               // mane
-    A.tri([[mx(14), 10.5 + b], [mx(16.5), 4.5 + b], [mx(18.5), 11 + b]], C[2]);                              // ear
-    A.part(mx(12.5), 15 + b, 6.4, 5.6, C); A.part(mx(7.6), 18.4 + b, 4.4, 3.8, FUR[D.muzzle]());
-    A.E(mx(14.5), 10 + b, 3.4, 2.2, Mn, { tex: 0 });                                                         // forelock
-    if (D.blaze) A.E(mx(10.4), 13.6 + b, 1.3, 3, FUR.white(), { clip: true, tex: 0, rot: dir * 0.4 });
-    A.eye(mx(12.8), 14 + b, null, 1);
-    if (!A.small) { A.dot(mx(5.6), 18.2 + b, PI.ink[0], 1.2); A.line(mx(6), 20.6 + b, mx(9), 21 + b, PI.ink[0]); A.E(mx(13.5), 17.6 + b, 1.5, 1, [PI.pink[0]], { tex: 0 }); }
-  },
-  bird(A) {
-    const D = A.D, b = A.b, Bd = FUR[D.body](), Ch = FUR[D.chest](), Wg = FUR[D.wing](), Bk = FUR[D.beak](), hc = D.headC ? FUR[D.headC]() : Bd, feet = FUR[D.feet || 'orange']();
-    const tailC = D.tailC ? FUR[D.tailC]() : Wg;
-    if (D.longTail) A.tri([[20, 38], [28, 38], [27, 47.5], [21, 47.5]], tailC[2]); else if (D.tailC) A.tri([[21, 38], [27, 38], [25.5, 45], [22.5, 45]], tailC[2]);
-    for (const sgn of [-1, 1]) { A.E(24 + sgn * 3.6, 44.2, 2.6, 1.4, feet.slice(1), { tex: 0 }); }
-    A.part(24, 33, 10.5, 11 + b * 0.4, Bd);
-    if (A.back) {
-      for (const sgn of [-1, 1]) { A.part(24 + sgn * 4.6, 33.5, 5.6, 9.5, Wg, { rot: sgn * 0.12 }); if (D.wingTip) A.E(24 + sgn * 4.6, 39, 4, 3.4, FUR[D.wingTip](), { clip: true, tex: 0 }); }
-      if (D.tailCurl) { A.dot(24, 43, PI.snow[0], 2); A.dot(26, 41.5, PI.snow[1], 2); }
-      A.part(24, 16.5 + b, 9.2, 8.6, hc);
-      if (D.crest) A.tri([[22, 9 + b], [26, 9 + b], [25, 3 + b]], FUR[D.crest]()[1]);
-      if (D.ring) A.E(24, 24 + b, 6.5, 1.3, [PI.snow[0]], { tex: 0 });
-      return;
-    }
-    A.E(24, 35, 6.8, 8, Ch.slice(0, 3), { squash: 0.4, clip: true });
-    for (const sgn of [-1, 1]) { A.part(24 + sgn * 9.6, 33, 3.6, 8, Wg, { rot: sgn * -0.12 }); if (D.wingTip) A.E(24 + sgn * 9.8, 38, 2.8, 3, FUR[D.wingTip](), { tex: 0, clip: true }); }
-    A.part(24, 16.5 + b, 9.4, 8.8, hc);
-    if (D.fluff && !A.small) { A.tri([[22.5, 8.5 + b], [25.5, 8.5 + b], [24, 4.5 + b]], Bd[1]); }
-    if (D.crest) A.tri([[21.5, 9 + b], [26.5, 9 + b], [25.5, 2.5 + b]], FUR[D.crest]()[1]);
-    if (D.face) A.E(24, 17.5 + b, 6.6, 5.6, FUR[D.face](), { clip: true, squash: 0.3 });
-    if (D.ring) A.E(24, 24.6 + b, 6.8, 1.3, [PI.snow[0]], { tex: 0 });
-    A.eye(24 - 4.6, 15.6 + b, null, 0.9); A.eye(24 + 4.6, 15.6 + b, null, 0.9);
-    if (D.hook) { A.part(24, 19.6 + b, 2.9, 2.4, Bk.slice(0, 3)); A.tri([[22.3, 20.5 + b], [25.7, 20.5 + b], [24, 24.2 + b]], Bk[2]); }
-    else { A.part(24, 20 + b, 5.4, 2.4, Bk.slice(0, 3)); if (!A.small) A.line(20, 20.4 + b, 28, 20.4 + b, Bk[3]); }
-    if (!A.small) for (const sgn of [-1, 1]) A.E(24 + sgn * 6.8, 19 + b, 1.6, 1.1, [PI.pink[0]], { tex: 0 });
-  },
-  turtle(A) {
-    const D = A.D, b = A.b, S = FUR[D.skin](), Sh = FUR[D.shell](), Rm = FUR[D.rim]();
-    const shell = (cy, rx, ry) => {
-      A.part(24, cy, rx + 1.4, ry + 1.2, Rm); A.E(24, cy - 0.6, rx, ry, Sh, { tex: 0.3 });
-      if (!A.small) { A.line(24, cy - ry + 1, 24, cy + ry - 2, Sh[3]); for (const sgn of [-1, 1]) { A.line(24 + sgn * rx * 0.5, cy - ry * 0.7, 24 + sgn * rx * 0.5, cy + ry * 0.7, Sh[3]); A.line(24 - rx * 0.86, cy + sgn * ry * 0.3, 24 + rx * 0.86, cy + sgn * ry * 0.3, Sh[3]); } }
-      if (D.ridged && !A.small) for (const x of [-rx * 0.5, 0, rx * 0.5]) A.E(24 + x, cy - ry * 0.5, 2, 1.4, [Sh[0]], { tex: 0 });
-    };
-    if (A.back) {
-      for (const [x, y] of [[11, 30], [37, 30], [12, 42], [36, 42]]) A.part(x, y, 3.8, 2.8, S);
-      A.part(24, 15 + b, 5.2, 4.8, S); A.dot(24, 44.5, S[2], 2);
-      shell(31, 13, 12);
-      return;
-    }
-    shell(27, 14, 11.5);
-    for (const sgn of [-1, 1]) A.part(24 + sgn * 11.5, 42.2, 4.4, 2.6, S);
-    A.part(24, 35 + b, 7.6, 7, S);
-    A.eye(24 - 3.4, 33.5 + b, null, 0.9); A.eye(24 + 3.4, 33.5 + b, null, 0.9);
-    if (!A.small) { A.line(21, 38.2 + b, 24, 39.4 + b, S[3]); A.line(24, 39.4 + b, 27, 38.2 + b, S[3]); for (const sgn of [-1, 1]) A.E(24 + sgn * 5.2, 36.6 + b, 1.5, 1, [PI.pink[0]], { tex: 0 }); }
-  },
-  fish(A) {
-    const D = A.D, b = A.b, Bd = FUR[D.body](), Bl = FUR[D.belly](), Fn = FUR[D.fin](), dir = A.back ? -1 : 1, mx = x => 24 + (x - 24) * dir, cy = 27 + b;
-    // side view: the front view swims toward the left, the back view toward the right (away from you)
-    A.tri([[mx(34), cy], [mx(43), cy - (D.fancy ? 9 : 7)], [mx(40), cy], [mx(43), cy + (D.fancy ? 9 : 7)]], Fn[2]);
-    A.tri([[mx(20), cy - 7], [mx(29), cy - (D.fancy ? 15 : 12)], [mx(31), cy - 6]], Fn[1]);
-    A.part(mx(23), cy, 13, 9, Bd); A.E(mx(22), cy + 3.5, 10, 4.6, Bl, { clip: true, squash: 0.4 });
-    if (!A.small) for (const [x, y] of [[26, -2], [30, 1], [27, 3], [31, -3]]) A.line(mx(x), cy + y, mx(x + 1.5), cy + y + 1.5, Bd[3]);
-    A.tri([[mx(22), cy + 2], [mx(27), cy + 6.5], [mx(21), cy + 6]], Fn[1]);
-    if (D.fancy) A.tri([[mx(18), cy + 7], [mx(24), cy + 12], [mx(27), cy + 7]], Fn[2]);
-    A.E(mx(15.5), cy - 1.5, 3, 3.2, [PI.snow[0], PI.snow[1]], { tex: 0 }); A.eye(mx(15.2), cy - 1.3, null, 0.9);
-    if (!A.small) { A.dot(mx(11), cy + 2.5, Bd[3], 1.4); A.E(mx(18.5), cy + 2.4, 1.6, 1, [PI.pink[0]], { tex: 0 }); }
-    if (!A.small) { A.E(mx(8), cy - 10, 1.7, 1.7, [PI.water[0]], { tex: 0 }); A.E(mx(5.5), cy - 15, 1.2, 1.2, [PI.water[0]], { tex: 0 }); }   // bubbles
-  },
-  frog(A) {
-    const D = A.D, b = A.b, S = FUR[D.skin](), Bl = FUR[D.belly]();
-    for (const sgn of [-1, 1]) A.part(24 + sgn * 11.5, 39, 5.4, 5, S);                                   // folded back legs
-    A.part(24, 35, 12.5, 9, S);
-    if (A.back) {
-      A.part(24, 25 + b, 11.5, 7.6, S);
-      for (const sgn of [-1, 1]) A.part(24 + sgn * 6.8, 18.5 + b, 4.4, 4.2, S);
-      if (!A.small) for (const [x, y] of [[19, 31], [28, 30], [24, 37], [31, 37], [17, 38]]) A.dot(x, y, (D.warts ? FUR[D.warts]() : S)[D.warts ? 1 : 3], 1.8);
-      for (const sgn of [-1, 1]) A.part(24 + sgn * 12.5, 43.4, 4.6, 2, S);
-      return;
-    }
-    A.E(24, 37.5, 8.6, 6, Bl, { clip: true, squash: 0.4 });
-    for (const sgn of [-1, 1]) { A.part(24 + sgn * 8, 43.4, 4.6, 2, S); if (!A.small) for (const t of [-2.6, 0, 2.6]) A.dot(24 + sgn * 8 + t, 44.6, S[3], 1.2); }
-    A.part(24, 26 + b, 12, 8, S);
-    if (D.sac) A.E(24, 31 + b, 6.5, 3.4, Bl, { clip: true, squash: 0.3 });
-    for (const sgn of [-1, 1]) { A.part(24 + sgn * 6.8, 18.5 + b, 4.6, 4.4, S); A.E(24 + sgn * 6.8, 18.5 + b, 3.2, 3.1, [PI.snow[0], PI.snow[1]], { tex: 0 }); A.eye(24 + sgn * 6.8, 18.7 + b, null, 0.85); }
-    if (!A.small) { A.line(16, 27.5 + b, 24, 30 + b, S[3]); A.line(24, 30 + b, 32, 27.5 + b, S[3]); for (const sgn of [-1, 1]) A.E(24 + sgn * 9.2, 27 + b, 1.7, 1.1, [PI.pink[0]], { tex: 0 }); }
-    if (D.warts && !A.small) for (const [x, y] of [[14.5, 34], [33.5, 33]]) A.dot(x, y, FUR[D.warts]()[1], 1.6);
-  },
-};
-// ---- render + cache ----
-function petPix(sp, view, size, breath) {
-  const A = petKit(sp, size, view, breath);
-  PET_FAMILY[A.D.fam](A);
-  A.p.outline(PI.ink[0]);
-  return A.p;
+// scale 2: the 64-pixel battle sprite. scale 1: the 32-pixel menu sprite.
+function petPolish(src, scale) {
+  const sd = src.getContext('2d').getImageData(0, 0, 32, 32).data, at = (x, y) => (x < 0 || y < 0 || x > 31 || y > 31 || sd[(y * 32 + x) * 4 + 3] < 128 ? -1 : (sd[(y * 32 + x) * 4] << 16) | (sd[(y * 32 + x) * 4 + 1] << 8) | sd[(y * 32 + x) * 4 + 2]);
+  const n = 32 * scale, p = new Pix(n, n), put = (x, y, v) => { if (v >= 0) p.d[y * n + x] = petColour(v); };
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+    const P = at(x, y);
+    if (scale === 1) { put(x, y, P); continue; }
+    const A = at(x, y - 1), B = at(x + 1, y), C = at(x - 1, y), D = at(x, y + 1);   // Scale2x: doubles the sprite and rounds off the stair-steps
+    put(x * 2, y * 2, C === A && C !== D && A !== B ? A : P); put(x * 2 + 1, y * 2, A === B && A !== C && B !== D ? B : P);
+    put(x * 2, y * 2 + 1, D === C && D !== B && C !== A ? C : P); put(x * 2 + 1, y * 2 + 1, B === D && B !== A && D !== C ? D : P);
+  }
+  // light from the upper left: a darker band inside the lower-right edge, a lighter one inside the upper-left edge, and a little fur grain
+  const out = p.d.slice(), solid = (x, y) => p.get(x, y) > 0, line = c => c === PI.ink[0] || c === PI.ink[1], R = scale === 2 ? [3, 5, 2, 3] : [1, 2, 1, 1];
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const c = p.get(x, y); if (!c || line(c)) continue;
+    let dr = 9, dl = 9;
+    for (let k = 1; k < 9; k++) { if (dr === 9 && (!solid(x + k, y) || !solid(x, y + k) || !solid(x + k, y + k))) dr = k; if (dl === 9 && (!solid(x - k, y) || !solid(x, y - k))) dl = k; }
+    if (dr <= R[0] || (dr <= R[1] && ((x + y) & 1))) out[y * n + x] = DARKER[c];
+    else if (dl <= R[2] || (dl <= R[3] && ((x + y) & 1))) out[y * n + x] = LIGHTER[c];
+    else if (scale === 2 && speckle(x, y, 9) > 0.9) out[y * n + x] = DARKER[c];
+  }
+  p.d = out;
+  return p;
 }
-const PET48 = {}, PET16 = {};   // PET48[sp] = { front: [frame0, frame1], back: [frame0, frame1] }
-const PET_TOP = new Map();      // canvas -> the y of the top of the head (for hats and bows)
+// The 16-pixel overworld sprite: each 2x2 block of the original becomes one pixel (its commonest fur colour, or outline).
+function petTiny(src) {
+  const sd = src.getContext('2d').getImageData(0, 0, 32, 32).data, p = new Pix(16, 16);
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    const tally = {}; let solid = 0;
+    for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) { const i = ((y * 2 + dy) * 32 + x * 2 + dx) * 4; if (sd[i + 3] < 128) continue; solid++; const c = petColour((sd[i] << 16) | (sd[i + 1] << 8) | sd[i + 2]); tally[c] = (tally[c] || 0) + 1; }
+    if (solid < 2) continue;
+    let best = PI.ink[0], bn = 0;
+    for (const c in tally) if (+c !== PI.ink[0] && tally[c] > bn) { bn = tally[c]; best = +c; }
+    p.set(x, y, bn >= 2 || bn === solid ? best : PI.ink[0]);
+  }
+  return p;
+}
 function buildPets2() {
-  for (const sp in PET_DEF) {
-    PET48[sp] = { front: [petPix(sp, 'front', 48, 0).toCanvas(), petPix(sp, 'front', 48, 1).toCanvas()], back: [petPix(sp, 'back', 48, 0).toCanvas(), petPix(sp, 'back', 48, 1).toCanvas()] };
-    PET_SPR[sp] = petPix(sp, 'front', 32, 0).toCanvas();
-    PET16[sp] = petPix(sp, 'front', 16, 0).toCanvas();
+  for (const sp in PET_SPR) {
+    const old = PET_OLD[sp] = PET_SPR[sp], big = petPolish(old, 2), breathe = new Pix(64, 64);
+    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) breathe.set(x, y, y > 44 ? big.get(x, y) : big.get(x, y - 1));   // idle frame: everything above the feet sinks one pixel
+    const front = [big.toCanvas(), breathe.toCanvas()];
+    PET_BIG[sp] = { front, back: [big.mirror().toCanvas(), breathe.mirror().toCanvas()] };   // your own pet faces the other way, as in the original game
+    PET_SPR[sp] = petPolish(old, 1).toCanvas();
+    PET16[sp] = petTiny(old).toCanvas();
   }
 }
+// The highest row with a pixel in the middle of the picture: where a hat sits.
 function petHeadTop(c) {
   if (!PET_TOP.has(c)) {
-    const px = c.pix, mid = c.width >> 1; let top = 4;
-    for (let y = 0; y < c.height; y++) { let hit = false; for (let x = mid - 2; x <= mid + 1; x++) if (px.get(x, y)) hit = true; if (hit) { top = y; break; } }
+    const px = c.pix, mid = c.width >> 1, w = c.width >> 4; let top = 4;
+    for (let y = 0; y < c.height; y++) { let hit = false; for (let x = mid - w; x < mid + w; x++) if (px.get(x, y)) hit = true; if (hit) { top = y; break; } }
     PET_TOP.set(c, top);
   }
   return PET_TOP.get(c);
 }
-// Which picture to draw for a requested size: s = 1 is the 32-pixel menu sprite; s = 2 is the 48-pixel battle sprite,
-// standing in the middle of the old 64-pixel space; s = 4 is the battle sprite doubled.
+// Which picture to draw for a requested size: s = 1 is the 32-pixel menu sprite, s = 2 the 64-pixel battle sprite, s = 4 that sprite doubled.
+// sc is how much an accessory (drawn for the 32-pixel sprite) is scaled to fit.
 function petImage(sp, s, opts) {
   if (s <= 1) return { img: PET_SPR[sp], w: 32, ox: 0, oy: 0, sc: 1 };
-  const set = PET48[sp][opts.back ? 'back' : 'front'], img = set[opts.still ? 0 : Math.floor(frame / 32) % 2];
-  return s >= 4 ? { img, w: 96, ox: 16, oy: 28, sc: 2 } : { img, w: 48, ox: 8, oy: 15, sc: 1 };
+  const set = PET_BIG[sp][opts.back ? 'back' : 'front'], img = set[opts.still ? 0 : Math.floor(frame / 32) % 2];
+  return s >= 4 ? { img, w: 128, ox: 0, oy: 0, sc: 4 } : { img, w: 64, ox: 0, oy: 0, sc: 2 };
 }
+// A 64-pixel pet standing where a 48-pixel one used to (scenes laid out for the smaller size): same feet, same centre.
+function drawBigPet(sp, f, x, y) { ctx.drawImage(PET_BIG[sp].front[f % 2], x - 8, y - 16); }
 // <<< GFX:pets
 
 // >>> GFX:battle
@@ -2966,7 +2750,7 @@ function drawDiorama(t, festive, pets) {
   (pets || []).forEach((it, k) => {
     const x = it.x, y = it.y + Math.round(Math.abs(Math.sin(t / 15 + k)) * -6);
     drawShadow(x + 24, it.y + 46, 30, 7);
-    if (it.pet) drawPet(it.pet, x - 8, y - 16, 2); else ctx.drawImage(PET48[it.sp].front[Math.floor(t / 30 + k) % 2], x, y);
+    if (it.pet) drawPet(it.pet, x - 8, y - 16, 2); else drawBigPet(it.sp, Math.floor(t / 30 + k), x, y);
   });
   if (festive) for (let k = 0; k < 46; k++) {   // confetti
     const x = (k * 53 + t * (0.6 + k % 3 * 0.3)) % W, y = (k * 31 + t * (0.5 + k % 4 * 0.35)) % (H - 12);
@@ -5726,8 +5510,8 @@ function fmtTime(sec) {
   sec = Math.floor(sec); const h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60;
   return h + 'h ' + (m < 10 ? '0' : '') + m + 'm';
 }
-// Draw a pet. s = 1: the 32-pixel menu sprite. s = 2: the 48-pixel battle sprite (opts.back for the view from behind).
-// s = 4: the battle sprite doubled. (x, y) is the corner of the old 32*s box, so every screen keeps its layout.
+// Draw a pet. s = 1: the 32-pixel menu sprite. s = 2: the 64-pixel battle sprite (opts.back: mirrored, for your own pet).
+// s = 4: the battle sprite doubled. (x, y) is the corner of the 32*s box.
 function drawPetSprite(sp, x, y, s = 1, opts = {}) {
   const im = petImage(sp, s, opts), img = opts.silhouette ? silhouette(im.img, opts.silhouette) : im.img, X = Math.round(x) + im.ox, Y = Math.round(y) + im.oy;
   ctx.save();
@@ -6687,8 +6471,8 @@ const INTRO = [
     for (let x = 0; x < W; x += 16) ctx.drawImage(TILES['T'][0], x, 64);
     introGround(80, '.'); for (let x = 0; x < W; x += 16) ctx.drawImage(TILES['='][0], x, 144);
     introBuilding(24, 64, 'R'); introBuilding(328, 64, 'K');
-    ctx.drawImage(PET48.buddy.front[Math.floor(t / 30) % 2], 130, 100 + bob(t, 0));
-    ctx.drawImage(PET48.mittens.front[Math.floor(t / 30) % 2], 250, 100 + bob(t, 1.5));
+    drawBigPet('buddy', Math.floor(t / 30), 130, 100 + bob(t, 0));
+    drawBigPet('mittens', Math.floor(t / 30), 250, 100 + bob(t, 1.5));
     drawPerson('player', 'right', Math.floor(t / 10) % 2, 190, 108, 2);
     drawPerson('lily', 'left', 0, 222, 108, 2);
   } },
@@ -6697,10 +6481,10 @@ const INTRO = [
     introGround(96, '.'); for (let x = 0; x < W; x += 16) { ctx.drawImage(TILES[','][0], x, 144); ctx.drawImage(TILES[','][0], x, 160); }
     for (let x = 0; x < W; x += 64) ctx.drawImage(TILES['f'][0], x + 20, 112);
     const kx = (t * 1.4) % (W + 80) - 70;
-    ctx.drawImage(PET48.kiwi.front[Math.floor(t / 30) % 2], kx, 22 + Math.round(Math.sin(t / 8) * 8));
-    ctx.drawImage(PET48.ziggy.front[Math.floor(t / 30) % 2], 40, 104);
-    ctx.drawImage(PET48.cookie.front[Math.floor(t / 30) % 2], 170, 104 + bob(t, 0, 10, 9));
-    ctx.drawImage(PET48.alvin.front[Math.floor(t / 30) % 2], 300, 106 + bob(t, 2, 4, 15));
+    drawBigPet('kiwi', Math.floor(t / 30), kx, 22 + Math.round(Math.sin(t / 8) * 8));
+    drawBigPet('ziggy', Math.floor(t / 30), 40, 104);
+    drawBigPet('cookie', Math.floor(t / 30), 170, 104 + bob(t, 0, 10, 9));
+    drawBigPet('alvin', Math.floor(t / 30), 300, 106 + bob(t, 2, 4, 15));
   } },
   { music: 'gizmo', text: 'But deep in Whisker Woods, a grumpy scientist named Dr. Gizmo is up to no good...', sfxAt: { 50: 'thunder', 190: 'laugh' }, draw(t) {
     introSky('#1d1840', '#1d1840');
@@ -6731,7 +6515,7 @@ const INTRO = [
     ctx.fillStyle = '#ffb36b'; ctx.fillRect(0, 0, W, 40); ctx.fillStyle = '#ffd29a'; ctx.fillRect(0, 40, W, 40); ctx.fillStyle = '#ffeccc'; ctx.fillRect(0, 80, W, 40);
     introGround(120, '.');
     drawPerson('player', 'down', 0, W / 2 - 32, 64, 4);
-    ['buddy', 'mittens', 'alvin', 'cookie'].forEach((sp, k) => ctx.drawImage(PET48[sp].front[Math.floor(t / 30 + k) % 2], [40, 110, 290, 360][k], 110 + bob(t, k)));
+    ['buddy', 'mittens', 'alvin', 'cookie'].forEach((sp, k) => drawBigPet(sp, Math.floor(t / 30 + k), [40, 110, 290, 360][k], 110 + bob(t, k)));
     if (t > 60) drawTextC('PET ADVENTURES', W / 2, 14, '#ffffff', 2, COL.border);
   } },
 ];
@@ -7751,19 +7535,19 @@ function runSelfTest() {
     if (d !== 'left' && fr[1].pix.d.join() === fr[3].pix.d.join()) grErr.push(k + ' ' + d + ' steps A and B are the same');
   }
   if (LOOK2.player.hat || !LOOK2.player.hood || !LOOK2.player.pack) grErr.push('the player wears a green hoodie and a backpack, no cap');
-  // Pets: every species has a 48px front and back view (2 frames each), a 32px menu sprite and a 16px overworld sprite.
+  // Pets: every species has a 64px battle sprite (2 frames, and mirrored for your own side), a 32px menu sprite and a 16px overworld sprite,
+  // all made from the original drawing and all in the master palette.
   for (const sp in SPECIES) {
-    const d = PET_DEF[sp], set = PET48[sp];
-    if (!d || !set) { grErr.push(sp + ' has no new art'); continue; }
-    for (const v of ['front', 'back']) if (set[v].length !== 2 || set[v].some(c => c.width !== 48 || c.height !== 48)) grErr.push(sp + ' ' + v + ' sprite');
-    if (set.front[0].pix.d.join() === set.back[0].pix.d.join()) grErr.push(sp + ' back view is the same as the front');
+    const set = PET_BIG[sp];
+    if (!set || !PET_OLD[sp]) { grErr.push(sp + ' has no art'); continue; }
+    for (const v of ['front', 'back']) if (set[v].length !== 2 || set[v].some(c => c.width !== 64 || c.height !== 64)) grErr.push(sp + ' ' + v + ' sprite');
     if (set.front[0].pix.d.join() === set.front[1].pix.d.join()) grErr.push(sp + ' has no idle frame');
     if (PET_SPR[sp].width !== 32 || PET16[sp].width !== 16) grErr.push(sp + ' menu/overworld sprite');
-    const filled = c => c.pix.d.filter(Boolean).length;
-    if (filled(set.front[0]) < 400 || filled(PET16[sp]) < 24) grErr.push(sp + ' sprite is nearly empty');
-    for (let x = 0; x < 48; x++) if (set.front[0].pix.get(x, 0) && set.front[0].pix.get(x, 0) !== PI.ink[0]) grErr.push(sp + ' is cut off at the top');
-    const evo = SPECIES[sp].evo || SPECIES[sp].machineEvo;
-    if (evo && PET_DEF[evo] && filled(PET48[evo].front[0]) <= filled(set.front[0])) grErr.push(evo + ' should be bigger than ' + sp);
+    const filled = c => c.pix.d.filter(Boolean).length, od = PET_OLD[sp].getContext('2d').getImageData(0, 0, 32, 32).data;
+    let oldFilled = 0; for (let i = 3; i < od.length; i += 4) if (od[i] >= 128) oldFilled++;
+    if (filled(PET_SPR[sp]) !== oldFilled || filled(set.front[0]) < oldFilled * 3.6) grErr.push(sp + ' does not keep the shape of the original drawing');
+    if (filled(PET16[sp]) < 24) grErr.push(sp + ' overworld sprite is nearly empty');
+    if (!set.front[0].pix.d.includes(PI.ink[0])) grErr.push(sp + ' has no outline');
   }
   for (const k in MAPS) if (!SCENE[k]) grErr.push(k + ' has no battle scene');
   for (const kind of new Set(Object.values(SCENE).concat(['gold']))) { const bd = battleBackdrop(kind, [[100, 150, 40, 8]]); if (bd.width !== W || bd.height !== BATTLE_H || bd.pix.d.some(c => !c)) grErr.push('battle scene ' + kind); }
@@ -7773,8 +7557,8 @@ function runSelfTest() {
   for (const kind of ['clinic', 'shop']) { const r = roomBackdrop(kind); if (r.width !== W || r.height !== H || r.pix.d.some(c => !c)) grErr.push(kind + ' interior'); }
   for (const fest of [false, true]) { const d = dioramaBackdrop(fest); if (d.width !== W || d.height !== H) grErr.push('diorama'); }
   { const lg = logoSprite('PET', 5, LOGO_CORAL()); if (lg.width > W || !lg.pix.d.includes(PI.ink[0])) grErr.push('logo'); if (logoSprite('ADVENTURES', 3, LOGO_WARM()).width > W) grErr.push('logo too wide'); }
-  for (const sp of TITLE_PETS) if (!PET48[sp]) grErr.push('title pet ' + sp);
-  check('Graphics: ground, trees, buildings, props, ' + Object.keys(LOOK2).length + ' characters, ' + Object.keys(PET_DEF).length + ' pets, battle scenes, light and title art all build, in palette, for all ' + Object.keys(MAPS).length + ' maps', !grErr.length, grErr.slice(0, 4).join('; '));
+  for (const sp of TITLE_PETS) if (!PET_BIG[sp]) grErr.push('title pet ' + sp);
+  check('Graphics: ground, trees, buildings, props, ' + Object.keys(LOOK2).length + ' characters, ' + Object.keys(PET_BIG).length + ' pets, battle scenes, light and title art all build, in palette, for all ' + Object.keys(MAPS).length + ' maps', !grErr.length, grErr.slice(0, 4).join('; '));
   // Tasks: every giver is a helpful (non-trainer) character, every lost item/pet sits on an open, reachable tile.
   const qErr = [], qSaved = G;
   G = { flags: END_FLAGS, quests: {}, party: [], pen: [] };
@@ -8285,15 +8069,15 @@ function devView(v) {
     const B = battleWith(createPet(foe || 'cream', 12)); push(new ActionMenu(B, () => {}));
     if (fxk === 'hit') { B.hitE = 12; battleImpact(B, 'E', 1); } else if (fxk === 'super') { B.hitE = 20; battleImpact(B, 'E', 2); B.flash = 7; } else if (fxk === 'caught') { B.caught = true; fxSpawn(B, EPOS.x + 32, EPOS.y + 36, 18, { cols: ['#ffffff', '#fff29a', '#ffd94a', '#f0689a'], kind: 'star', speed: 2.6, life: 26 }); }
   }
-  else if (v === 'petsheet') { const page = +(location.hash.split('&')[1] || 0); push({ opaque: true, update() {}, hint() { return 'pets ' + (page * 9 + 1) + '+ : front, back (48), menu (32), overworld (16)'; }, draw() {
-    ctx.fillStyle = PALETTE[PI.grass[1]]; ctx.fillRect(0, 0, W, 110); ctx.fillStyle = PALETTE[PI.water[0]]; ctx.fillRect(0, 110, W, 120);
-    Object.keys(PET_DEF).slice(page * 9, page * 9 + 9).forEach((k, i) => { const x = i * 48;
-      ctx.drawImage(PET48[k].front[0], x, 2); ctx.drawImage(PET48[k].back[0], x, 56); ctx.drawImage(PET_SPR[k], x + 8, 114); ctx.drawImage(PET16[k], x + 16, 150); ctx.drawImage(PET48[k].front[1], x, 170);
-      drawText(k.slice(0, 7), x + 2, 218, COL.ink); });
-  } }); }
-  else if (v === 'petzoom') { const names = (location.hash.split('&')[1] || 'buddy,rocky,mittens,shadow').split(','); push({ opaque: true, update() {}, hint() { return names.join(' '); }, draw() {
+  else if (v === 'petsheet') { const page = +(location.hash.split('&')[1] || 0); push({ opaque: true, update() {}, hint() { return 'pets ' + (page * 6 + 1) + '+ : battle (64), mirrored, menu (32), overworld (16), original'; }, draw() {
     ctx.fillStyle = PALETTE[PI.grass[1]]; ctx.fillRect(0, 0, W, H);
-    names.forEach((k, i) => { ctx.drawImage(PET48[k].front[0], i * 106 + 4, 4, 96, 96); ctx.drawImage(PET48[k].back[0], i * 106 + 4, 110, 96, 96); ctx.drawImage(PET_SPR[k], i * 106 + 36, 196); });
+    Object.keys(PET_BIG).slice(page * 6, page * 6 + 6).forEach((k, i) => { const x = 4 + i * 71;
+      ctx.drawImage(PET_BIG[k].front[0], x, 0); ctx.drawImage(PET_BIG[k].back[1], x, 62); ctx.drawImage(PET_SPR[k], x, 128); ctx.drawImage(PET16[k], x + 40, 140); ctx.drawImage(PET_OLD[k], x, 162, 64, 64);
+      drawText(k.slice(0, 9), x + 2, 160 - 6, COL.ink); });
+  } }); }
+  else if (v === 'petzoom') { const names = (location.hash.split('&')[1] || 'buddy,rocky,mittens,shadow').split(','); push({ opaque: true, update() {}, hint() { return names.join(' ') + ' (top: now, bottom: original)'; }, draw() {
+    ctx.fillStyle = PALETTE[PI.grass[1]]; ctx.fillRect(0, 0, W, H);
+    names.forEach((k, i) => { ctx.drawImage(PET_BIG[k].front[0], i * 106 + 4, 4, 96, 96); ctx.drawImage(PET_OLD[k], i * 106 + 4, 110, 96, 96); ctx.drawImage(PET_SPR[k], i * 106 + 36, 200); });
   } }); }
   else if (v === 'people') { push({ opaque: true, update() {}, hint() { return Object.keys(LOOK2).length + ' looks: stand, step A, mid, step B, idle (down) + up, right, left'; }, draw() {
     ctx.fillStyle = PALETTE[PI.grass[2]]; ctx.fillRect(0, 0, W, H);

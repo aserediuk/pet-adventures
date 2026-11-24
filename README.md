@@ -9,7 +9,7 @@ Its soundtrack is the showpiece: a complete music engine, written from scratch i
 
 ## Look
 
-The whole world is drawn in code, with no image files: a lush pixel diorama of mottled grass, soft dirt paths, layered forests, sparkling water and cosy buildings, lit by warm afternoon sun. Every map has its own mood, from fireflies in Whisker Woods to snowfall on Frosty Peak. All 33 pets have front and back battle sprites.
+The whole world is drawn in code, with no image files: a lush pixel diorama of mottled grass, soft dirt paths, layered forests, sparkling water and cosy buildings, lit by warm afternoon sun. Every map has its own mood, from fireflies in Whisker Woods to snowfall on Frosty Peak. The 33 pets keep their original hand-drawn look, with added light and shade.
 
 ## Play
 

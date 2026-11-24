@@ -59,6 +59,10 @@ The first version was called short on detail, with hard edges and overlaps. This
 - **Battles:** hazy far range, piled clouds, tree lines made of real crowns (forests show trunks and undergrowth), ground tufts, flowers and stones that grow toward the viewer, and standing patches that blend into the ground. The horizon moved up so the far pet's patch sits on the ground, not in the trees.
 - **Overlaps removed:** the title prompt no longer covers the shop, the win screen's score card sits in the sky and the team stands on the path, the pond no longer sits under the credit line, and bunting hangs only between roofs.
 
+## Pets: back to the original drawings
+
+The generated pets were rejected as too cute and not like the animals (the hamster most of all). After comparing three samples, the chosen style is the original hand-drawn sprites with shading added: the same shapes, doubled with smoothed edges for battles, moved onto the master palette and lit from the upper left. Your own pet in battle is shown mirrored, as in the original game, so there are no back views. The scorecard row for pets above describes the rejected version.
+
 ## Departures from the brief
 
 - **Screenshots** were taken with headless Chrome, not Playwright, which is not installed here.
