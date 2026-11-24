@@ -148,6 +148,11 @@ A top-down, turn-based pet-collecting RPG for kids. The whole game is **one self
   - Songs are 16–32 bars, at most 7 voices.
   - Every note and SFX fades in and out over at least 5 ms (`envelope`, `gateEnv`, `tone`, `noise` set `isEnv`).
   - Live audio nodes stay at about 40 at most (`NODES`, `roomFor` skips low-priority notes).
+- **Engine quality layer (don't remove without re-measuring):**
+  - **Loudness trims:** `SONG_TRIM[style][song]` sets each song's player gain so songs and styles match in level. The trims close 60% of each song's gap to the median, so calm songs stay a little quieter on purpose. After changing voices, styles or song data, re-measure with `python3 tools/cdp_probe.py "$F#view=loudness&raw" 45` (raw levels) and `#view=loudness` (with trims). The compressor absorbs part of a trim, so refine the trims against the measured result.
+  - **Stereo:** `PAN` values times the style's `width` (8-bit is 0, so it stays mono; Mix 0.6; 16-bit 1). Each song player gets 5 fixed panner nodes (`makeBuses`), which are not counted in the ~40-node note budget. The echo is ping-pong when width > 0.
+  - **Master stage (`makeMasterChain`):** mute gain → 28 Hz highpass → 4× oversampled soft clip (clean below 0.6) → limiter. `makeMusicChain` is shared by live playback and the offline probes.
+  - **M and N** fade with `smoothSet` (no clicks). Noise hits start at a random offset in a 2 s buffer.
 - **Scheduler:** `setInterval` every 25 ms schedules 120 ms ahead on the audio clock. A hidden tab skips missed steps instead of bursting. Songs crossfade over 400 ms between areas, battles start with a sting, and the victory jingle is a one-shot.
 - **Parrot Jungle is the user's favorite.** Its groove is the reference for the other songs, so don't change its patterns without asking.
 
@@ -180,6 +185,6 @@ F="file://$PWD/pet-adventures.html"
 
 ## Repo and workflow
 
-- GitHub: `aserediuk/pet-adventures` (private), branch `main`, tag `v0.1`. Commits use the user's real name and email. End commit messages with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- GitHub: `aserediuk/pet-adventures` (private), branch `main`, tag `v0.1`. Commits use the user's real name and email. End commit messages with the `Co-Authored-By` line the current session specifies.
 - Only commit or push when the user asks.
 - iOS needs the game served from a URL. A private repo can't use GitHub Pages without making the repo public or a paid plan.

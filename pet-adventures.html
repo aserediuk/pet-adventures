@@ -1061,29 +1061,62 @@ function buildAllSprites() {
 // 4. AUDIO (Web Audio: synthesized SFX + tiny step sequencer)
 // ---------------------------------------------------------------------
 const Snd = { ac: null, master: null, sfx: null, musicIn: null, musicBus: null, duck: null, muted: false, noiseBuf: null };
+// Soft clipper curve: perfectly clean below 0.6, then a smooth knee, so loud moments never clip harshly.
+function softClipCurve() {
+  const n = 2049, c = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1, a = Math.abs(x); c[i] = a <= 0.6 ? x : Math.sign(x) * (0.6 + 0.4 * Math.tanh((a - 0.6) / 0.4)); }
+  return c;
+}
+// Master stage: mute gain -> 28 Hz rumble filter -> 4x oversampled soft clip -> safety limiter -> speakers.
+function makeMasterChain(ac, out) {
+  const master = ac.createGain();
+  const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 28; hp.Q.value = 0.707;
+  const lim = ac.createDynamicsCompressor();
+  lim.threshold.value = -3; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.002; lim.release.value = 0.1;
+  master.connect(hp);
+  if (ac.createWaveShaper) { const sh = ac.createWaveShaper(); sh.curve = softClipCurve(); sh.oversample = '4x'; hp.connect(sh); sh.connect(lim); }
+  else hp.connect(lim);
+  lim.connect(out);
+  return master;
+}
+// Music chain: voices -> lowpass 11 kHz -> gentle compressor -> music gain 0.18.
+function makeMusicChain(ac) {
+  const input = ac.createGain();
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 11000;
+  const comp = ac.createDynamicsCompressor();
+  comp.threshold.value = -14; comp.knee.value = 10; comp.ratio.value = 3; comp.attack.value = 0.008; comp.release.value = 0.2;   // glue, but let attacks punch through
+  const bus = ac.createGain(); bus.gain.value = 0.18;
+  input.connect(lp); lp.connect(comp); comp.connect(bus);
+  return { input, bus };
+}
+// Two seconds of white noise; every drum hit starts at a random point so repeated hits are never identical copies.
+function makeNoiseBuffer(ac) {
+  const len = ac.sampleRate * 2, buf = ac.createBuffer(1, len, ac.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  return buf;
+}
+function noiseStart() { return Math.random() * 1.5; }
+function smoothSet(param, v) {   // fade over a few ms instead of jumping (no click on M / N)
+  const now = Snd.ac.currentTime;
+  param.cancelScheduledValues(now); param.setTargetAtTime(v, now, 0.012);
+}
 function audioUnlock() {
   try {
     if (!Snd.ac) {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;
-      Snd.ac = new AC();
+      try { Snd.ac = new AC({ latencyHint: 'interactive' }); } catch (e) { Snd.ac = new AC(); }
       const ac = Snd.ac;
-      Snd.master = ac.createGain(); Snd.master.gain.value = Snd.muted ? 0 : 1; Snd.master.connect(ac.destination);   // M mutes everything
+      Snd.master = makeMasterChain(ac, ac.destination); Snd.master.gain.value = Snd.muted ? 0 : 1;   // M mutes everything
       // 8-bit sound effects: square/noise blips with their own gentle 9 kHz lowpass
       const sfxLP = ac.createBiquadFilter(); sfxLP.type = 'lowpass'; sfxLP.frequency.value = 9000; sfxLP.connect(Snd.master);
       Snd.sfx = ac.createGain(); Snd.sfx.gain.value = 0.32; Snd.sfx.connect(sfxLP);
-      // 16-bit music: voices -> lowpass 11 kHz -> compressor -> gain 0.18 (N toggles) -> duck under SFX -> master
-      Snd.musicIn = ac.createGain();
-      const musLP = ac.createBiquadFilter(); musLP.type = 'lowpass'; musLP.frequency.value = 11000;
-      const comp = ac.createDynamicsCompressor();
-      comp.threshold.value = -14; comp.knee.value = 10; comp.ratio.value = 3; comp.attack.value = 0.008; comp.release.value = 0.2;   // glue, but let attacks punch through
-      Snd.musicBus = ac.createGain(); Snd.musicBus.gain.value = MUS.musicOn ? 0.18 : 0;
+      // Music: voices -> (per-song loudness trim, stereo buses, echo) -> music chain (N toggles its gain) -> duck under SFX -> master
+      const chain = makeMusicChain(ac);
+      Snd.musicIn = chain.input; Snd.musicBus = chain.bus; Snd.musicBus.gain.value = MUS.musicOn ? 0.18 : 0;
       Snd.duck = ac.createGain(); Snd.duck.gain.value = 1;
-      Snd.musicIn.connect(musLP); musLP.connect(comp); comp.connect(Snd.musicBus); Snd.musicBus.connect(Snd.duck); Snd.duck.connect(Snd.master);
-      const len = Snd.ac.sampleRate * 0.5;
-      Snd.noiseBuf = Snd.ac.createBuffer(1, len, Snd.ac.sampleRate);
-      const d = Snd.noiseBuf.getChannelData(0);
-      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      Snd.musicBus.connect(Snd.duck); Snd.duck.connect(Snd.master);
+      Snd.noiseBuf = makeNoiseBuffer(ac);
       startMusicEngine();
       if (MUS.want) switchSong(MUS.want, Snd.ac.currentTime);
     }
@@ -1092,7 +1125,7 @@ function audioUnlock() {
 }
 function toggleMute() {
   Snd.muted = !Snd.muted;
-  if (Snd.master) Snd.master.gain.value = Snd.muted ? 0 : 1;
+  if (Snd.master && Snd.ac) smoothSet(Snd.master.gain, Snd.muted ? 0 : 1);
 }
 function tone(freq, dur, type = 'square', vol = 0.3, when = 0, slideTo = 0, dest = null) {
   const ac = Snd.ac; if (!ac) return;
@@ -1117,7 +1150,7 @@ function noise(dur, vol = 0.3, when = 0, freq = 1800, dest = null) {
   const g = ac.createGain(), end = t + Math.max(dur, 0.012);
   g.gain.isEnv = true;
   g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.005); g.gain.linearRampToValueAtTime(0, end);
-  s.connect(f); f.connect(g); g.connect(dest || Snd.sfx); s.start(t); s.stop(end + 0.005);
+  s.connect(f); f.connect(g); g.connect(dest || Snd.sfx); s.start(t, noiseStart()); s.stop(end + 0.005);
   registerNodes(t, end + 0.005, [s, f, g], s);
 }
 const SFX = {
@@ -1612,6 +1645,7 @@ function prunePlayers(now) {
   MUS.players = MUS.players.filter(pl => {
     const dead = (pl.stopAt !== undefined && now > pl.stopAt + 0.25) || (pl.done && now > pl.next + 1.5);
     if (dead && pl.gain) { try { pl.gain.disconnect(); } catch (e) { /* already gone */ } }
+    if (dead && pl.fixed) pl.fixed.forEach(nd => { try { nd.disconnect(); } catch (e) { /* gone */ } });
     if (dead && pl.echo) { pl.echo.nodes.forEach(nd => { try { nd.disconnect(); } catch (e) { /* gone */ } }); pl.echo.entry.t1 = now; }
     return !dead;
   });
@@ -1668,11 +1702,28 @@ function fmRatio(layer) {
 // ---- Sound styles: pick the voices per channel. "Mix" keeps the 8-bit punch (pulse lead and tapping arps,
 // snappy noise drums) and adds the 16-bit fullness where it helps (FM bass, a sine kick, a light echo).
 const STYLES = {
-  '8bit':  { name: '8-bit', lead: 'pulse', arp: 'pulse', bass: 'tri', drums: 'chip', kick: 'tri',  pad: false, echo: 0 },
-  'mix':   { name: 'Mix',   lead: 'pulse', arp: 'pulse', bass: 'fm',  drums: 'chip', kick: 'sine', pad: false, echo: 0.6 },
-  '16bit': { name: '16-bit', lead: 'fm',   arp: 'fm',    bass: 'fm',  drums: 'gated', kick: 'sine', pad: true, echo: 1 },
+  '8bit':  { name: '8-bit', lead: 'pulse', arp: 'pulse', bass: 'tri', drums: 'chip', kick: 'tri',  pad: false, echo: 0, width: 0 },   // mono, like a real chip
+  'mix':   { name: 'Mix',   lead: 'pulse', arp: 'pulse', bass: 'fm',  drums: 'chip', kick: 'sine', pad: false, echo: 0.6, width: 0.6 },
+  '16bit': { name: '16-bit', lead: 'fm',   arp: 'fm',    bass: 'fm',  drums: 'gated', kick: 'sine', pad: true, echo: 1, width: 1 },
 };
 const STYLE_ORDER = ['8bit', 'mix', '16bit'];
+// Loudness trims, measured by rendering every song in every style offline (#view=loudness) so that
+// all songs and styles play at the same level. Re-measure after changing voices or song data.
+const SONG_TRIM = {
+  '8bit': { title: 0.962, town: 0.984, meadow: 0.907, woods: 0.796, interior: 1.694, battle: 0.813, champion: 0.832, victory: 1.015, marsh: 0.883, peak: 1.194, win: 1.023, lab: 1.243, desert: 1.135, jungle: 1.0, gizmo: 1.025 },
+  'mix': { title: 0.971, town: 1.0, meadow: 0.881, woods: 0.817, interior: 1.656, battle: 0.823, champion: 0.808, victory: 0.942, marsh: 0.85, peak: 1.325, win: 1.065, lab: 1.279, desert: 1.19, jungle: 1.022, gizmo: 1.034 },
+  '16bit': { title: 0.795, town: 0.881, meadow: 0.78, woods: 0.778, interior: 1.225, battle: 0.733, champion: 0.745, victory: 0.755, marsh: 0.788, peak: 1.09, win: 0.907, lab: 1.113, desert: 1.0, jungle: 0.887, gizmo: 0.913 },
+};
+function songTrim(name) { return (SONG_TRIM[MUS.style] || {})[name] || 1; }
+// Stereo placement (scaled by the style's width; 8-bit stays mono): arp left, lead slightly right,
+// hats right, pad saws spread wide. Bass, kick and snare stay in the centre for punch.
+const PAN = { p1: 0.12, p2: -0.3, hat: 0.28, padL: -0.55, padR: 0.55 };
+function makeBuses(pl, ac) {
+  pl.bus = {}; pl.fixed = [];
+  const w = (STYLES[MUS.style] || STYLES.mix).width || 0;
+  if (!w || !ac.createStereoPanner) return;
+  for (const k in PAN) { const pn = ac.createStereoPanner(); pn.pan.value = PAN[k] * w; pn.connect(pl.gain); pl.bus[k] = pn; pl.fixed.push(pn); }
+}
 MUS.style = 'mix';
 function setSoundStyle(k) {
   if (!STYLES[k]) return;
@@ -1738,7 +1789,7 @@ function playDrumChip(kind, t, acc, dest, kickWave) {
     g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol * acc, t + 0.005);
     g.gain.exponentialRampToValueAtTime(0.001, t + Math.max(dur, 0.012)); g.gain.linearRampToValueAtTime(0, t + Math.max(dur, 0.012) + 0.005);
     const end = t + Math.max(dur, 0.012) + 0.01;
-    s.connect(fl); fl.connect(g); g.connect(dest); s.start(t); s.stop(end);
+    s.connect(fl); fl.connect(g); g.connect(dest); s.start(t, noiseStart()); s.stop(end);
     registerNodes(t, end, [s, fl, g], s);
   };
   if (kind === 'k') {
@@ -1759,9 +1810,12 @@ function playDrumChip(kind, t, acc, dest, kickWave) {
 }
 function playChipEvent(layer, ev, t, sd, pl) {
   const ac = Snd.ac; if (!ac || !pl.gain) return;
-  const dest = pl.gain, S = STYLES[MUS.style] || STYLES.mix;
-  if (layer.voice === 'noise') return S.drums === 'gated' ? playDrum(ev.drum, t, ev.acc ? 1.3 : 1, dest) : playDrumChip(ev.drum, t, ev.acc ? 1.3 : 1, dest, S.kick);
-  if (layer.voice === 'pad') return S.pad ? playPad(ev, t, sd, dest) : undefined;
+  const bus = pl.bus || {}, dest = bus[layer.voice] || pl.gain, S = STYLES[MUS.style] || STYLES.mix;
+  if (layer.voice === 'noise') {
+    const dd = (ev.drum === 'h' || ev.drum === 'g') ? (bus.hat || pl.gain) : pl.gain;
+    return S.drums === 'gated' ? playDrum(ev.drum, t, ev.acc ? 1.3 : 1, dd) : playDrumChip(ev.drum, t, ev.acc ? 1.3 : 1, dd, S.kick);
+  }
+  if (layer.voice === 'pad') return S.pad ? playPad(ev, t, sd, pl.gain, bus) : undefined;
   if (layer.voice === 'tri' && S.bass === 'tri') return playTriangle(ev, t, sd, dest);
   if ((layer.voice === 'p1' && S.lead === 'pulse') || (layer.voice === 'p2' && S.arp === 'pulse')) return playPulse(layer, ev, t, sd, dest);
   return playFM(layer, ev, t, sd, dest);
@@ -1796,20 +1850,26 @@ function playFM(layer, ev, t, sd, dest) {
   registerNodes(t, end, nodes, car);
 }
 // PAD: two slightly detuned saws per chord note, through one soft lowpass. Chords use the ":xy" notation.
-function playPad(ev, t, sd, dest) {
+function playPad(ev, t, sd, dest, bus = {}) {
   const ac = Snd.ac, tones = ev.arp ? [0, ev.arp[1], ev.arp[2]] : [0];
-  if (!roomFor(t, tones.length * 2 + 2, false)) return;
-  const lp = ac.createBiquadFilter(), amp = ac.createGain();
-  lp.type = 'lowpass'; lp.frequency.value = 1300; lp.Q.value = 0.5;
-  const end = envelope(amp.gain, t, 0.06, (ev.hold ? ev.dur : 1) * sd, { attack: 0.25, release: 0.45 });
-  const nodes = [lp, amp];
-  let last = null;
-  for (const st of tones) for (const det of [-7, 7]) {
+  const sides = bus.padL ? [[-7, bus.padL], [7, bus.padR]] : null;      // stereo: the two detuned saws go left and right
+  if (!roomFor(t, tones.length * 2 + (sides ? 4 : 2), false)) return;
+  const len = (ev.hold ? ev.dur : 1) * sd, nodes = [];
+  let last = null, end = t;
+  const chain = (out, level) => {
+    const lp = ac.createBiquadFilter(), amp = ac.createGain();
+    lp.type = 'lowpass'; lp.frequency.value = 1300; lp.Q.value = 0.5;
+    end = envelope(amp.gain, t, level, len, { attack: 0.25, release: 0.45 });
+    lp.connect(amp); amp.connect(out); nodes.push(lp, amp);
+    return lp;
+  };
+  const saw = (st, det, lp) => {
     const o = ac.createOscillator(); o.type = 'sawtooth';
     o.frequency.setValueAtTime(ev.f * Math.pow(2, st / 12), t); o.detune.setValueAtTime(det, t);
     o.connect(lp); o.start(t); o.stop(end); nodes.push(o); last = o;
-  }
-  lp.connect(amp); amp.connect(dest);
+  };
+  if (sides) for (const [det, out] of sides) { const lp = chain(out, 0.085); for (const st of tones) saw(st, det, lp); }
+  else { const lp = chain(dest, 0.06); for (const st of tones) for (const det of [-7, 7]) saw(st, det, lp); }
   registerNodes(t, end, nodes, last);
 }
 function playDrum(kind, t, acc, dest) {
@@ -1819,7 +1879,7 @@ function playDrum(kind, t, acc, dest) {
     const s = ac.createBufferSource(); s.buffer = Snd.noiseBuf;
     const fl = ac.createBiquadFilter(); fl.type = type; fl.frequency.value = freq; if (q) fl.Q.value = q;
     const g = ac.createGain(), end = gateEnv(g.gain, t, vol * acc, hold);
-    s.connect(fl); fl.connect(g); g.connect(dest); s.start(t); s.stop(end);
+    s.connect(fl); fl.connect(g); g.connect(dest); s.start(t, noiseStart()); s.stop(end);
     registerNodes(t, end, [s, fl, g], s);
   };
   if (kind === 'k') {   // sine pitch-drop kick, gated
@@ -1836,12 +1896,23 @@ function playDrum(kind, t, acc, dest) {
 }
 // One feedback echo (~1/8 note, feedback 0.3, lowpassed) as a send, for the songs that ask for it.
 function addEcho(pl, ac, now) {
-  if (!pl.song.echo || !(STYLES[MUS.style] || STYLES.mix).echo) return;
+  const S = STYLES[MUS.style] || STYLES.mix;
+  if (!pl.song.echo || !S.echo) return;
   const send = ac.createGain(), dl = ac.createDelay(1), fb = ac.createGain(), lp = ac.createBiquadFilter();
-  send.gain.value = pl.song.echo * (STYLES[MUS.style] || STYLES.mix).echo; dl.delayTime.value = pl.song.sd; fb.gain.value = 0.3;
+  send.gain.value = pl.song.echo * S.echo; dl.delayTime.value = pl.song.sd; fb.gain.value = 0.3;
   lp.type = 'lowpass'; lp.frequency.value = 2600;
-  pl.gain.connect(send); send.connect(dl); dl.connect(lp); lp.connect(fb); fb.connect(dl); lp.connect(Snd.musicIn);
-  pl.echo = { nodes: [send, dl, fb, lp], entry: { t0: now, t1: Infinity, n: 4 } };
+  pl.gain.connect(send); send.connect(dl); dl.connect(lp);
+  const nodes = [send, dl, fb, lp];
+  if (S.width && ac.createStereoPanner) {
+    // Ping-pong: the first echo comes back on the left, the next on the right, each 0.3x quieter (same decay as the mono echo).
+    const dl2 = ac.createDelay(1), hop = ac.createGain(), pl1 = ac.createStereoPanner(), pr1 = ac.createStereoPanner();
+    dl2.delayTime.value = pl.song.sd; hop.gain.value = 0.3; pl1.pan.value = -0.7 * S.width; pr1.pan.value = 0.7 * S.width;
+    lp.connect(pl1); pl1.connect(Snd.musicIn);
+    lp.connect(hop); hop.connect(dl2); dl2.connect(pr1); pr1.connect(Snd.musicIn);
+    dl2.connect(fb); fb.connect(dl);
+    nodes.push(dl2, hop, pl1, pr1);
+  } else { lp.connect(fb); fb.connect(dl); lp.connect(Snd.musicIn); }
+  pl.echo = { nodes, entry: { t0: now, t1: Infinity, n: nodes.length } };
   NODES.list.push(pl.echo.entry);
 }
 function playSting(t) {
@@ -1855,8 +1926,10 @@ function musicTick() {
     if (!pl.gain) {
       pl.gain = ac.createGain();
       pl.gain.connect(Snd.musicIn);
-      if (pl.fadeIn) { pl.gain.gain.setValueAtTime(0, now); pl.gain.gain.linearRampToValueAtTime(1, now + 0.4); }
-      else { pl.gain.gain.setValueAtTime(0, now); pl.gain.gain.linearRampToValueAtTime(1, now + 0.01); }
+      const level = songTrim(pl.name);   // every song plays at the same loudness
+      if (pl.fadeIn) { pl.gain.gain.setValueAtTime(0, now); pl.gain.gain.linearRampToValueAtTime(level, now + 0.4); }
+      else { pl.gain.gain.setValueAtTime(0, now); pl.gain.gain.linearRampToValueAtTime(level, now + 0.01); }
+      makeBuses(pl, ac);
       addEcho(pl, ac, now);
     }
     pumpPlayer(pl, now, playChipEvent);
@@ -1882,7 +1955,7 @@ function stopMusic() {
 }
 function toggleMusic() {
   MUS.musicOn = !MUS.musicOn;
-  if (Snd.musicBus) Snd.musicBus.gain.value = MUS.musicOn ? 0.18 : 0;
+  if (Snd.musicBus && Snd.ac) smoothSet(Snd.musicBus.gain, MUS.musicOn ? 0.18 : 0);
 }
 // After a tab comes back: start cleanly from "now" (no burst of late notes).
 document.addEventListener('visibilitychange', () => {
@@ -5379,6 +5452,7 @@ function runSelfTest() {
   if (MUS.cur.step !== 0 || MUS.cur.formIdx !== 0) schErr.push('biome song does not restart');
   if (audiblePlayers(14.01).length !== 1) schErr.push('two songs after battle');
   const before = MUS.musicOn; toggleMusic(); const off = MUS.musicOn; toggleMusic();
+  { const c = softClipCurve(); if (Math.abs(c[1024]) > 1e-6 || Math.abs(c[1024 + 512] - 0.5) > 1e-3 || c[2048] > 1 || c[2048] < 0.85) schErr.push('soft clip curve'); }
   if (off === before || MUS.musicOn !== before) schErr.push('N toggle');
   MUS.players = savedMUS.players; MUS.cur = savedMUS.cur;
   // 16-bit FM engine on a fake audio context: every note and SFX fades in/out over >= 5 ms, and live nodes stay near 40.
@@ -5389,7 +5463,8 @@ function runSelfTest() {
     const node = (...names) => { const n = { connect() {}, disconnect() {}, start() {}, stop(t) { n.stopAt = t; } }; names.forEach(k => { n[k] = P(); }); return n; };
     const fake = { currentTime: 0, sampleRate: 44100, state: 'running',
       createPeriodicWave: () => ({}), createOscillator: () => Object.assign(node('frequency', 'detune'), { setPeriodicWave() {} }), createGain: () => node('gain'),
-      createBiquadFilter: () => node('frequency', 'Q'), createBufferSource: () => node('playbackRate'), createDelay: () => node('delayTime') };
+      createBiquadFilter: () => node('frequency', 'Q'), createBufferSource: () => node('playbackRate'), createDelay: () => node('delayTime'),
+      createStereoPanner: () => node('pan') };
     Snd.ac = fake; Snd.musicIn = node('gain'); Snd.noiseBuf = {};
     const checkEnv = (pr, who) => {
       const c = pr.calls;
@@ -5405,7 +5480,10 @@ function runSelfTest() {
     for (const st of STYLE_ORDER) for (const name in SONGS) {
       MUS.style = st; Object.keys(pulseWaves).forEach(k => delete pulseWaves[k]);
       params.length = 0; NODES.list = []; NODES.peak = 0; NODES.skipped = 0;
-      const pl = newPlayer(name, 0.05); pl.gain = node('gain'); addEcho(pl, fake, 0);
+      const pl = newPlayer(name, 0.05); pl.gain = node('gain'); makeBuses(pl, fake); addEcho(pl, fake, 0);
+      if (st === '8bit' && (Object.keys(pl.bus).length || (pl.echo && pl.echo.nodes.length > 4))) fmErr.push('8-bit must stay mono');
+      if (!(songTrim(name) >= 0.5 && songTrim(name) <= 2)) fmErr.push(st + ' ' + name + ' loudness trim ' + songTrim(name));
+      if (!(SONG_TRIM[st] || {})[name]) fmErr.push(st + ' ' + name + ' has no measured loudness trim');
       for (let t = 0; t < 40; t += 0.025) { fake.currentTime = t; pumpPlayer(pl, t, playChipEvent); pruneNodeList(t); if (pl.done) break; }
       params.filter(pr => pr.isEnv).forEach(pr => checkEnv(pr, st + ' ' + name));
       peaks.push(NODES.peak);
@@ -5592,6 +5670,32 @@ function devView(v) {
     G.party[0].nick = 'WWWWWWWWWW';
     push(new PartyScreen(() => {}, { title: 'Your pets' }));
   }
+  else if (v === 'loudness') { runScript(async () => {   // render every song in every style offline: loudness (RMS), peak, stereo width
+    const out = {}, saved = { ac: Snd.ac, musicIn: Snd.musicIn, nb: Snd.noiseBuf, style: MUS.style, nodes: NODES.list };
+    const raw = location.hash.includes('raw');   // raw = ignore the stored trims (used to measure new ones)
+    for (const st of STYLE_ORDER) {
+      out[st] = {};
+      for (const name in SONGS) {
+        MUS.style = st;
+        const song = compileSong(name), total = song.form.reduce((a, k) => a + song.parts[k].len, 0) * song.sd;
+        const sr = 44100, secs = song.oneShot ? total + 0.6 : Math.min(24, total), oc = new OfflineAudioContext(2, Math.ceil(sr * secs), sr);
+        const chain = makeMusicChain(oc); chain.bus.connect(oc.destination);
+        Snd.ac = oc; Snd.musicIn = chain.input; Snd.noiseBuf = makeNoiseBuffer(oc); NODES.list = [];
+        Object.keys(pulseWaves).forEach(k => delete pulseWaves[k]);
+        const pl = newPlayer(name, 0.05); pl.gain = oc.createGain(); pl.gain.gain.value = raw ? 1 : songTrim(name); pl.gain.connect(chain.input);
+        makeBuses(pl, oc); addEcho(pl, oc, 0);
+        for (let t = 0; t < secs; t += 0.025) { pumpPlayer(pl, t, playChipEvent); pruneNodeList(t); }
+        const buf = await oc.startRendering(), L = buf.getChannelData(0), R = buf.getChannelData(1);
+        let sum = 0, peak = 0, side = 0, n = 0;
+        for (let i = Math.floor(sr * 0.1); i < L.length; i++) { const m = (L[i] + R[i]) / 2, sd2 = (L[i] - R[i]) / 2; sum += L[i] * L[i] + R[i] * R[i]; side += sd2 * sd2; peak = Math.max(peak, Math.abs(L[i]), Math.abs(R[i])); n += 2; }
+        out[st][name] = { rms: +Math.sqrt(sum / n).toFixed(5), peak: +peak.toFixed(4), width: +(Math.sqrt(side * 2 / n) / (Math.sqrt(sum / n) || 1)).toFixed(3) };
+        document.getElementById('testout').textContent = 'working: ' + st + ' ' + name;
+      }
+    }
+    Object.assign(Snd, { ac: saved.ac, musicIn: saved.musicIn, noiseBuf: saved.nb }); MUS.style = saved.style; NODES.list = saved.nodes;
+    Object.keys(pulseWaves).forEach(k => delete pulseWaves[k]);
+    document.getElementById('testout').textContent = 'LOUDNESS ' + JSON.stringify(out);
+  }); }
   else if (v === 'clicktest') { runScript(async () => {   // render songs offline and measure clicks (sudden jumps) per voice
     const out = [];
     const only = (location.hash.split('&')[1] || '');
@@ -5599,7 +5703,7 @@ function devView(v) {
       const sr = 44100, secs = 6, oc = new OfflineAudioContext(1, sr * secs, sr);
       const saved = { ac: Snd.ac, bus: Snd.musicBus, nb: Snd.noiseBuf };
       Snd.ac = oc; Snd.musicBus = oc.createGain(); Snd.musicBus.gain.value = 0.18; Snd.musicBus.connect(oc.destination); const savedIn = Snd.musicIn; Snd.musicIn = Snd.musicBus;
-      Snd.noiseBuf = oc.createBuffer(1, sr / 2, sr); { const nd = Snd.noiseBuf.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1; }
+      Snd.noiseBuf = makeNoiseBuffer(oc);
       Object.keys(pulseWaves).forEach(k => delete pulseWaves[k]);
       const pl = newPlayer(name, 0.05); pl.gain = Snd.musicBus;
       for (let t = 0; t < secs - 0.3; t += 0.025) pumpPlayer(pl, t, (layer, ev, tt, sd, q) => { if (layer.voice === voice) playChipEvent(layer, ev, tt, sd, q); });
@@ -5630,8 +5734,8 @@ function devView(v) {
     log('after crossfades, players kept: ' + MUS.players.length);
     playMusic('victory', { cut: true }); await real(3500);
     log('victory done=' + (MUS.players.every(q => q.done || q.stopAt !== undefined)) + ' players=' + MUS.players.length);
-    toggleMusic(); log('N off -> bus gain ' + Snd.musicBus.gain.value); toggleMusic(); log('N on -> bus gain ' + Snd.musicBus.gain.value);
-    toggleMute(); log('M -> master ' + Snd.master.gain.value); toggleMute();
+    toggleMusic(); await real(150); log('N off -> bus gain ' + Snd.musicBus.gain.value.toFixed(3)); toggleMusic(); await real(150); log('N on -> bus gain ' + Snd.musicBus.gain.value.toFixed(3));
+    toggleMute(); await real(150); log('M -> master ' + Snd.master.gain.value.toFixed(3)); toggleMute(); await real(150);
     playMusic('town'); await real(400);
     await ac.suspend(); const before = MUS.cur.log.length; await real(1500); await ac.resume();
     for (const q of MUS.players) if (q.next < ac.currentTime) q.next = ac.currentTime + 0.05;

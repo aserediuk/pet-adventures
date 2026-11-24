@@ -70,6 +70,8 @@ Types come in loops (1.5× damage forward, 0.67× backward): **Dog > Cat > Hamst
 
 The soundtrack is "math-rock chiptune" with three sound styles you can switch in the Jukebox (Left/Right): **8-bit**, **Mix** (the default: punchy 8-bit lead, arps and drums with a fuller FM bass) and **16-bit**, an emulated FM sound chip with an FM lead, a glassy FM arp/bell, a growly FM bass, a soft detuned-saw pad for calm songs, gated kick/snare/hat, and a 1/8-note echo on the Title, Whisker Woods and Clinic/Shop songs (sound effects stay 8-bit), odd meters, polyrhythms, and a shared five-note theme quoted in every song. Listen to any song from the pause menu's **Jukebox**, or open `pet-adventures.html#music` for the Music Room: W/S to choose, Enter to play. It shows each layer's step pattern, so you can see the polyrhythms.
 
+The audio engine matches loudness across songs and styles, places Mix and 16-bit voices in subtle stereo (8-bit stays mono, like a real chip), and runs everything through a soft clipper and limiter so it never distorts.
+
 ## Tests
 
 - `pet-adventures.html#test` runs the self-test. It checks sprites, data, all 3 maps (shape, reachability, exits), 500 random battles, and that UI text fits.
