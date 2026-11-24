@@ -5,6 +5,8 @@ It needs no install, libraries, or internet connection.
 
 ## Play
 
+**On iPad or iPhone:** open the game in Safari. Touch controls appear automatically: a D-pad on the left, **A** (talk, confirm, hold for faster text) and **B** (back, menu) on the right, plus small Emote, Home, Music and Sound buttons. You can also tap menu choices, battle buttons and dialog boxes, and names are typed on an on-screen keyboard. Landscape gives the biggest screen. On iPhone, use Share, then **Add to Home Screen**, to play full screen. The game needs a web address to run on an iPhone or iPad (see below); opening the file from the Files app won't work.
+
 Double-click `pet-adventures.html`. It runs in Chrome or Safari.
 
 Press **Space** to begin. A short intro from *When Pets Attack Studio Productions* introduces the story and the evil Dr. Gizmo: **Space** skips it, **Enter** goes to the next scene.
@@ -20,6 +22,10 @@ Press **Space** to begin. A short intro from *When Pets Attack Studio Production
 | N | Music on/off (sound effects stay on) |
 | F | Fullscreen on/off |
 
+**Helpful characters** in every area give tips: what to do next (who to beat, where, and how strong your team should be) and how to battle better. You can leave any battle with Run; trainers stay unbeaten so you can come back stronger.
+
+**The road:** Pawsville → Meadow Path → Pebble Canyon → Whisker Woods → Misty Marsh → Frosty Peak → Gizmo's Lab. Gatekeepers block the canyon pass, the marsh bridge and the mountain pass until you beat them, and Champion Maple only battles trainers with all 4 **Trail Ribbons** (won from the guardians of Sunny Farm, Splash Lake, Sunny Dunes and Parrot Jungle).
+
 **The story:** pets are going missing from Pawsville, and someone in a white lab coat was seen sneaking into Whisker Woods. Choose your first pet, a puppy (Buddy) or a kitten (Mittens), then explore. Befriend wild pets with Treats and find the 8 treasure chests. Beat the Pet Champion to learn the truth, then get into Dr. Gizmo's lab and stop him from experimenting on the pets.
 
 **Places to explore.** Each pet lives where it would in real life:
@@ -31,7 +37,10 @@ Press **Space** to begin. A short intro from *When Pets Attack Studio Production
 | Splash Lake | west of town | turtles, goldfish, frogs and ducks in the reeds |
 | Meadow Path | north of town | bunnies, mice, hedgehogs (and water pets by the stream) |
 | Sunny Dunes | east of Meadow Path | gerbils, hamsters, lizards and desert hedgehogs in the dry brush |
-| Whisker Woods | north of Meadow Path | ferrets, hedgehogs, mice, bunnies and frogs |
+| Pebble Canyon | north of Meadow Path | lizards, hedgehogs, ferrets, mice, gerbils |
+| Whisker Woods | north of Pebble Canyon | ferrets, hedgehogs, mice, bunnies and frogs |
+| Misty Marsh | north of Whisker Woods | frogs, ducks, turtles, goldfish in the reeds; piglets in the mud |
+| Frosty Peak | north of Misty Marsh | snow bunnies, mice, ferrets, dogs and cats, plus the Champion at the summit |
 | Parrot Jungle | east of Whisker Woods | parrots, lizards and frogs |
 
 **32 pets**, each a baby that grows up at Lv 10: Buddy (dog), Mittens (cat), Alvin (hamster), Cookie (gerbil), Ziggy (lizard), Kiwi (parrot), Clover (rabbit), Nibbles (mouse), Noodle (ferret), Prickle (hedgehog), Shelly (turtle), Bubbles (goldfish), Ribbit (frog), Daisy (pony), Puddles (duckling) and Truffle (piglet). Water pets hide in the reeds by the pond and the stream.

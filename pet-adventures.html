@@ -3,21 +3,58 @@
 <head>
 <meta charset="utf-8">
 <title>Pet Adventures</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pet Adventures">
+<meta name="theme-color" content="#14121e">
 <style>
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #14121e; }
-  body { display: flex; align-items: center; justify-content: center; }
+  /* Touch devices: no scrolling, rubber-banding, zooming, text selection or long-press menus. */
+  html, body { position: fixed; inset: 0; touch-action: none; overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
   canvas {
+    position: absolute; touch-action: none;
     display: block;
     image-rendering: -webkit-optimize-contrast;
     image-rendering: crisp-edges;
     image-rendering: pixelated;
   }
   #testout { display: none; }
+  #safe { position: fixed; visibility: hidden; pointer-events: none;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  #touch { position: absolute; inset: 0; pointer-events: none; display: none; }
+  #touch.on { display: block; }
+  #touch div { position: absolute; pointer-events: auto; touch-action: none; box-sizing: border-box;
+    display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,0.85);
+    font: bold 15px -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  #dpad { pointer-events: auto; }
+  #dpad .arm { background: rgba(255,255,255,0.14); border: 3px solid rgba(255,255,255,0.32); border-radius: 10px; font-size: 18px; }
+  #dpad .hub { background: rgba(255,255,255,0.10); border-radius: 4px; pointer-events: none; }
+  #dpad .arm.down, .tb.down { background: rgba(255,216,74,0.55); }
+  .tb { border-radius: 50%; border: 3px solid rgba(255,255,255,0.35); font-size: 24px !important; }
+  #btnA { background: rgba(255,122,89,0.45); }
+  #btnB { background: rgba(90,130,240,0.42); }
+  .tb.small { border-radius: 10px; font-size: 12px !important; background: rgba(255,255,255,0.12); }
+  #rotateTip { position: fixed; left: 50%; transform: translateX(-50%); bottom: 18px; padding: 8px 14px; border-radius: 10px;
+    background: rgba(0,0,0,0.7); color: #fff; font: 14px -apple-system, Helvetica, sans-serif; display: none; pointer-events: none; }
 </style>
 </head>
 <body>
 <canvas id="game" width="432" height="240"></canvas>
+<div id="touch">
+  <div id="dpad"><div class="arm" data-d="up">&#9650;</div><div class="arm" data-d="down">&#9660;</div><div class="arm" data-d="left">&#9664;</div><div class="arm" data-d="right">&#9654;</div><div class="hub"></div></div>
+  <div class="tb" id="btnA">A</div>
+  <div class="tb" id="btnB">B</div>
+  <div class="tb small" id="btnEmote">Emote</div>
+  <div class="tb small" id="btnHome">Home</div>
+  <div class="tb small" id="btnMusic">Music</div>
+  <div class="tb small" id="btnSound">Sound</div>
+  <div class="tb small" id="btnFull">Full</div>
+</div>
+<div id="safe"></div>
+<div id="rotateTip">Turn sideways for a bigger screen</div>
 <pre id="testout"></pre>
 <script>
 'use strict';
@@ -49,19 +86,67 @@ const TYPE_COL = { Dog: '#e0873a', Cat: '#9b6ad8', Hamster: '#d39a14', Gerbil: '
   Frog: '#7ab02a', Pony: '#b07a2a', Duck: '#c09a00', Pig: '#e8608a', Normal: '#8f8f9f' };
 
 let scale = 1;
+// Touch mode turns on automatically on iPad/iPhone (or the first time a finger touches the screen).
+let touchUI = false;
+const FORCE_TOUCH = /[#&]touch\b/.test(location.hash);
+function safeInsets() {
+  const s = getComputedStyle(document.getElementById('safe'));
+  return { t: parseFloat(s.paddingTop) || 0, r: parseFloat(s.paddingRight) || 0, b: parseFloat(s.paddingBottom) || 0, l: parseFloat(s.paddingLeft) || 0 };
+}
+function place(id, x, y, w, h) {
+  const el = document.getElementById(id); if (!el) return;
+  Object.assign(el.style, { left: Math.round(x) + 'px', top: Math.round(y) + 'px', width: Math.round(w) + 'px', height: Math.round(h) + 'px' });
+}
 function fitCanvas() {
   const vw = window.innerWidth || W, vh = window.innerHeight || H;
-  scale = Math.max(1, Math.floor(Math.min(vw / W, vh / H)));
-  canvas.style.width = (W * scale) + 'px';
-  canvas.style.height = (H * scale) + 'px';
+  let gw, gh, gx, gy;
+  if (!touchUI) {
+    scale = Math.max(1, Math.floor(Math.min(vw / W, vh / H)));   // crisp whole-number pixels on a computer
+    gw = W * scale; gh = H * scale; gx = (vw - gw) / 2; gy = (vh - gh) / 2;
+  } else {
+    const ins = safeInsets(), aw = vw - ins.l - ins.r, ah = vh - ins.t - ins.b;
+    const land = aw >= ah;
+    // D-pad on the left, A/B on the right, small buttons in the top corners (landscape) or a row (portrait).
+    const D = land ? clamp(ah * 0.34, 104, 170) : clamp(aw * 0.36, 112, 170);
+    const B = D * 0.44, side = Math.max(D, B * 2.2) + 22;          // room each control column needs
+    let s = land ? Math.min(ah / H, (aw - 2 * side) / W) : Math.min(aw / W, ah * 0.58 / H);
+    const whole = Math.floor(s + 0.25);                            // snap up to whole pixels if it still fits (iPad)
+    if (whole >= 2 && whole * H <= ah && whole * W <= (land ? aw - 1.4 * side : aw)) s = whole;
+    s = Math.max(0.5, s);
+    scale = s; gw = W * s; gh = H * s;
+    gx = ins.l + (aw - gw) / 2; gy = land ? ins.t + (ah - gh) / 2 : ins.t + 6;
+    const ctrlTop = land ? vh - ins.b - D - 14 : gy + gh + Math.max(54, (vh - ins.b - (gy + gh) - D) / 2);
+    place('dpad', ins.l + 14, ctrlTop, D, D);
+    const ax = vw - ins.r - B - 16, ay = ctrlTop + D * 0.12;
+    place('btnA', ax, ay, B, B);
+    place('btnB', ax - B * 1.12, ay + B * 0.78, B, B);
+    const sw = 56, sh = 30, gap = 6;
+    if (land) {
+      place('btnEmote', ins.l + 10, ins.t + 10, sw, sh); place('btnHome', ins.l + 10, ins.t + 10 + sh + gap, sw, sh);
+      place('btnMusic', vw - ins.r - sw - 10, ins.t + 10, sw, sh); place('btnSound', vw - ins.r - sw - 10, ins.t + 10 + sh + gap, sw, sh);
+      place('btnFull', vw - ins.r - sw - 10, ins.t + 10 + 2 * (sh + gap), sw, sh);
+    } else {
+      const ids = ['btnEmote', 'btnHome', 'btnMusic', 'btnSound', 'btnFull'].filter(id => document.getElementById(id).style.display !== 'none');
+      const rowW = ids.length * sw + (ids.length - 1) * gap, y = gy + gh + 12;
+      ids.forEach((id, k) => place(id, ins.l + (aw - rowW) / 2 + k * (sw + gap), y, sw, sh));
+    }
+    const arms = { up: [1, 0], down: [1, 2], left: [0, 1], right: [2, 1] };
+    document.querySelectorAll('#dpad .arm').forEach(a => { const [c, r] = arms[a.dataset.d]; Object.assign(a.style, { left: c * D / 3 + 'px', top: r * D / 3 + 'px', width: D / 3 + 'px', height: D / 3 + 'px' }); });
+    const hub = document.querySelector('#dpad .hub'); Object.assign(hub.style, { left: D / 3 + 'px', top: D / 3 + 'px', width: D / 3 + 'px', height: D / 3 + 'px' });
+    document.getElementById('rotateTip').style.display = (!land && aw < 600) ? 'block' : 'none';
+  }
+  Object.assign(canvas.style, { width: gw + 'px', height: gh + 'px', left: Math.round(gx) + 'px', top: Math.round(gy) + 'px' });
   ctx.imageSmoothingEnabled = false;
 }
 window.addEventListener('resize', fitCanvas);
+window.addEventListener('orientationchange', () => setTimeout(fitCanvas, 250));
+if (window.visualViewport) window.visualViewport.addEventListener('resize', fitCanvas);
 document.addEventListener('fullscreenchange', fitCanvas);
 document.addEventListener('webkitfullscreenchange', fitCanvas);
 fitCanvas();
 
 function isFullscreen() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+function canFullscreen() { return !!(document.fullscreenEnabled || document.webkitFullscreenEnabled); }   // iPad yes, iPhone no
 function toggleFullscreen() {
   try {
     const el = document.documentElement;
@@ -384,6 +469,10 @@ const ROCK = shapeTile(rockIn, (x, y) => (y < 7 && x < 9) ? '3' : ((x + y) % 7 =
 const MUD = genRows((x, y) => ((x * 3 + y * 7) % 11 === 0) ? '2' : (((x + 2) * (y + 5)) % 13 === 0 ? '3' : '1'));
 const FENCE = genRows((x, y) => ((y === 5 || y === 6 || y === 10 || y === 11) || (x >= 6 && x <= 9 && y >= 3 && y <= 13))
   ? ((y === 6 || y === 11 || x === 9) ? '4' : '3') : GRASS[y][x]);
+const SNOW = genRows((x, y) => ((x * 5 + y * 11) % 19 === 0) ? 'b' : ((x * 7 + y * 3) % 29 === 0 ? 'd' : 'a'));
+const pineIn = (x, y) => (x >= 7 && x <= 8 && y >= 12 && y <= 14) || (y >= 1 && y <= 12 && Math.abs(x - 7.5) <= 1 + ((y - 1) % 4) * 0.9 + Math.floor((y - 1) / 4) * 1.1);
+const PINE = shapeTile(pineIn, (x, y) => (y >= 12 ? '4' : ((y - 1) % 4 === 0 ? '3' : ((x + y) % 5 === 0 ? '1' : '2'))), SNOW);
+const SNOWROCK = shapeTile(rockIn, (x, y) => (y < 7 ? '3' : ((x + y) % 7 === 0 ? '4' : '2')), SNOW);
 function shiftRows(rows, n) { return rows.map(r => r.slice(n) + r.slice(0, n)); }
 
 const TILE_INFO = {
@@ -415,6 +504,10 @@ const TILE_INFO = {
   '|': { name: 'fence',   walk: false },
   'J': { name: 'jungletree', walk: false },
   'j': { name: 'junglegrass', walk: true, grass: true },
+  '*': { name: 'snow',    walk: true },
+  '^': { name: 'snowshrub', walk: true, grass: true },
+  'Y': { name: 'pine',    walk: false },
+  'q': { name: 'snowrock', walk: false },
 };
 const TILES = {};
 function buildTiles() {
@@ -455,6 +548,11 @@ function buildTiles() {
   TILES['|'] = [buildSprite('fence', FENCE, { 1: '#7ccf5a', 2: '#5fb447', 3: '#b8844a', 4: '#7a5428' })];
   TILES['J'] = [buildSprite('jungletree', TREE, { g: '#3f9a3a', o: '#0e3a1a', 1: '#1f7a3a', 2: '#3fae4a', 3: '#6a4a26', 4: '#2f7a2a' })];
   TILES['j'] = [buildSprite('junglegrass', TALL, { 1: '#3f9a3a', 2: '#0e5a2a', 3: '#2a8a3a' })];
+  const snow = { a: '#f4f8ff', b: '#dce8f8', d: '#ffffff' };
+  TILES['*'] = [buildSprite('snow', SNOW, snow)];
+  TILES['^'] = [buildSprite('snowshrub', TALL, { 1: '#f4f8ff', 2: '#5a7a9a', 3: '#9ab8d0' })];
+  TILES['Y'] = [buildSprite('pine', PINE, Object.assign({ o: '#103a2a', 1: '#2a6a4a', 2: '#1f5a3a', 3: '#ffffff', 4: '#6a4a26' }, snow))];
+  TILES['q'] = [buildSprite('snowrock', SNOWROCK, Object.assign({ o: '#4a5060', 2: '#a8b0c0', 3: '#ffffff', 4: '#8a90a0' }, snow))];
   SPR_CAGE_BARS = buildSprite('cage_bars', CAGE_BARS, cg);
   SPR_CAGE_OPEN = buildSprite('cage_open', CAGE_OPEN, cg);
 }
@@ -1063,7 +1161,10 @@ function sfx(name) { try { if (SFX[name]) { SFX[name](); duckMusic(); } } catch 
 // Step strings: notes like "C4", "F#5", "Bb3"; "." = rest;
 //   "-" suffix = hold (rings until the layer's next note), "+" suffix = quarter-tone up (50 cents sharp),
 //   "/" suffix = short bend up into the note (from 50 cents below), "~" suffix = vibrato, ">" prefix = accent.
-//   Drums use k (kick), s (snare), h (hat). "|" is only a visual bar line and is ignored.
+//   ":xy" = tracker arpeggio (like 0xy): the note flips between root, +x and +y semitones every 32nd note,
+//   so one pulse voice "taps" a whole chord like a math-rock guitarist, e.g. "C5:47-" = C major shimmer.
+//   Drums use k (kick: fast pitch drop on a triangle), s (snare), h (hat), g (ghost note), r (rimshot).
+//   "|" is only a visual bar line and is ignored.
 // Each layer loops at its own loopLength, so a 5-step riff over an 8-step drum loop phases naturally.
 // A song is a list of parts; every part is at most 8 bars and all layers restart together at the start
 // of each part, so every song fully realigns within 8 bars.
@@ -1074,85 +1175,85 @@ function sfx(name) { try { if (SFX[name]) { SFX[name](); duckMusic(); } } catch 
 const L = (voice, steps, loopLength, opts = {}) => Object.assign({ voice, steps, loopLength }, opts);
 const SONGS = {
   title: {
-    title: 'Title Theme', bpm: 112, spb: 2, barSteps: 7, meter: '7/8 (2+2+3)',
+    title: 'Title Theme', bpm: 118, spb: 2, barSteps: 7, meter: '7/8 (2+2+3)',
     form: 'A B A B',
     parts: {
       A: { bars: 4, layers: [
-        L('noise', '>k h s h k h s', 7),
-        L('tri', 'C3 . G2 . A2 . . | F2 . C3 . G2 . .', 14),
+        L('noise', '>k g s h k k r | k h s k g s h', 14),
+        L('tri', 'C3 . G2 C3 A2 . A3 | F2 . C3 F3 G2 . G3', 14),
         L('p2', 'C5 E5 G5 C6 G5 E5 G5 | F5 A5 C6 F5 C6 A5 C6', 14),
         L('p1', 'E5 . G5 . D5 . A5- | . . G5- . . . . | C6 . A5 . G5 . E5 | D5- . . . . . .', 28),
       ] },
       B: { bars: 4, layers: [
-        L('noise', '>k h s h k h s', 7),
-        L('tri', 'A2 . E3 . F2 . . | G2 . D3 . G2 . .', 14),
+        L('noise', '>k g s h k k r | k h s k g s h', 14),
+        L('tri', 'A2 . E3 A2 F2 . F3 | G2 . D3 G2 G2 . D3', 14),
         L('p2', 'A4 C5 E5 A5 E5 C5 E5 | G4 B4 D5 G5 D5 B4 D5', 14),
         L('p1', 'A5 . C6 . G5 . E5- | . . D5 . E5 . G5 | A5 . G5 . E5 . D5 | G5- . . . . . .', 28),
       ] },
     },
   },
   town: {
-    title: 'Pawsville', bpm: 108, spb: 2, barSteps: 8, meter: '4/4, arpeggio in 3 against 4 (F lydian)',
+    title: 'Pawsville', bpm: 114, spb: 2, barSteps: 8, meter: '4/4, arpeggio in 3 against 4 (F lydian)',
     form: 'A B A B',
     parts: {
       A: { bars: 6, layers: [
-        L('noise', 'k . h . s . h .', 8),
-        L('tri', 'F2 . F2 . C3 . A2 . | G2 . G2 . D3 . B2 .', 16),
+        L('noise', '>k g h k s g h . | k . h k r h h g', 16),
+        L('tri', 'F2 . F2 C3 . F2 . C3 | G2 . G2 D3 . G2 . B2', 16),
         L('p2', 'A4 C5 E5', 3),
-        L('p1', 'A4 . C5 . G4 . D5- . | . . C5- . . . . . | F5 . E5 . D5 . C5 . | B4 . C5 . D5- . . . | E5 . D5 . C5 . A4 . | G4- . . . . . . .', 48, { duty: 0.5 }),
+        L('p1', 'A4 . C5 . G4 . D5- . | . . C5- . . . . . | F5 . E5 . D5 . C5 . | B4 . C5 . D5- . . . | E5 . D5 . C5 . A4 . | G4- . . . . . . .', 48, { duty: 0.25 }),
       ] },
       B: { bars: 6, layers: [
-        L('noise', 'k . h . s . h .', 8),
-        L('tri', 'D3 . D3 . A2 . F2 . | C3 . C3 . G2 . E2 .', 16),
+        L('noise', '>k g h k s g h . | k . h k r h h g', 16),
+        L('tri', 'D3 . D3 A2 . D3 . A2 | C3 . C3 G2 . C3 . E3', 16),
         L('p2', 'F4 A4 C5', 3),
-        L('p1', 'D5 . F5 . E5 . C5 . | D5- . . . A4 . C5 . | C5 . E5 . G5 . E5 . | D5 . C5 . G4- . . . | A4 . C5 . G4 . D5 . | C5- . . . . . . .', 48, { duty: 0.5 }),
+        L('p1', 'D5 . F5 . E5 . C5 . | D5- . . . A4 . C5 . | C5 . E5 . G5 . E5 . | D5 . C5 . G4- . . . | A4 . C5 . G4 . D5 . | C5- . . . . . . .', 48, { duty: 0.25 }),
       ] },
     },
   },
   meadow: {
-    title: 'Meadow Path', bpm: 124, spb: 2, barSteps: 6, meter: '6/8 bass, lead in 2s (hemiola), 5-step chime (G mixolydian)',
+    title: 'Meadow Path', bpm: 128, spb: 2, barSteps: 6, meter: '6/8 bass, lead in 2s (hemiola), 5-step chime (G mixolydian)',
     form: 'A B A B',
     parts: {
       A: { bars: 8, layers: [
-        L('noise', 'k . h k . h', 6),
-        L('tri', 'G2 . D3 G2 . D3 | F2 . C3 F2 . C3', 12),
+        L('noise', '>k g h k h s | k h g k r h', 12),
+        L('tri', 'G2 . D3 G2 D3 G3 | F2 . C3 F2 C3 F3', 12),
         L('p2', 'D6 B5 G5 A5 B5', 5),
         L('p1', 'B4 . D5 . A4 . | E5 . D5- . . . | G5 . F5 . D5 . | C5 . D5- . . . | B4 . G4 . A4 . | B4 . C5 . D5 . | F5 . E5 . C5 . | D5- . . . . .', 48),
       ] },
       B: { bars: 8, layers: [
-        L('noise', 'k . h k . h', 6),
-        L('tri', 'C3 . G2 C3 . G2 | D3 . A2 D3 . A2', 12),
+        L('noise', '>k g h k h s | k h g k r h', 12),
+        L('tri', 'C3 . G2 C3 G2 C4 | D3 . A2 D3 A2 D4', 12),
         L('p2', 'C6 A5 F5 G5 A5', 5),
         L('p1', 'E5 . G5 . C6 . | B5 . A5- . . . | F5 . A5 . D6 . | C6 . A5- . . . | G5 . E5 . C5 . | D5 . E5 . F5 . | A5 . G5 . F5 . | G5- . . . . .', 48),
       ] },
     },
   },
   woods: {
-    title: 'Whisker Woods', bpm: 96, spb: 2, barSteps: 12, cycleBars: 2, meter: '5/8 + 7/8 (12-pulse cycle), D dorian',
+    title: 'Whisker Woods', bpm: 100, spb: 2, barSteps: 12, cycleBars: 2, meter: '5/8 + 7/8 (12-pulse cycle), D dorian',
     form: 'A B C D',
     parts: {
       A: { bars: 4, layers: [
-        L('noise', '>k . h . . | k . . s . h .', 12),
+        L('noise', '>k . h g h | k . h s . h g', 12),
         L('tri', 'D2 A2 D3 C3 A2 | D2 F2 G2 A2 C3 A2 G2', 12),
-        L('p2', 'F4 . A4 . . | E4 . . G4 . . . | F4 . C5 . . | E4 . . A4 . . .', 24),
+        L('p2', 'F4:47 . A4:37 . . | E4:37 . . G4:47 . . . | F4:47 . C5:47 . . | E4:37 . . A4:37 . . .', 24),
       ] },
       B: { bars: 4, layers: [
-        L('noise', '>k . h . . | k . . s . h .', 12),
+        L('noise', '>k . h g h | k . h s . h g', 12),
         L('tri', 'D2 A2 D3 C3 A2 | D2 F2 G2 A2 C3 A2 E2', 12),
-        L('p2', 'F4 . A4 . . | E4 . . G4 . . . | F4 . C5 . . | E4 . . A4 . . .', 24),
-        L('p1', 'F4 . A4 . E4 | B4- . . A4- . . . | D5 . C5 . A4 | G4 . A4/ . . . . | F4 . G4 . A4 | C5 . B4 . A4- . . | G4 . F4 . E4+ | D4- . . . . . .', 48),
+        L('p2', 'F4:47 . A4:37 . . | E4:37 . . G4:47 . . . | F4:47 . C5:47 . . | E4:37 . . A4:37 . . .', 24),
+        L('p1', 'F4 . A4 . E4 | B4- . . A4- . . . | D5 . C5 . A4 | G4 . A4/ . . . . | F4 . G4 . A4 | C5 . B4 . A4- . . | G4 . F4 . E4/ | D4- . . . . . .', 48),
       ] },
       C: { bars: 4, layers: [
-        L('noise', '>k . h . . | k . . s . h .', 12),
+        L('noise', '>k . h g h | k . h s . h g', 12),
         L('tri', 'D2 A2 E3 C3 A2 | D2 F2 G2 A2 C3 A2 E2', 12),
-        L('p2', 'F4 . A4 . . | E4 . . G4 . . . | F4 . C5 . . | E4 . . A4 . . .', 24),
-        L('p1', 'F4 . A4 . E4 | B4- . . A4- . . . | D5 . C5 . A4 | G4 . A4/ . . . . | F4 . G4 . A4 | C5 . B4 . A4- . . | G4 . F4 . E4+ | D4- . . . . . .', 48),
+        L('p2', 'F4:47 . A4:37 . . | E4:37 . . G4:47 . . . | F4:47 . C5:47 . . | E4:37 . . A4:37 . . .', 24),
+        L('p1', 'F4 . A4 . E4 | B4- . . A4- . . . | D5 . C5 . A4 | G4 . A4/ . . . . | F4 . G4 . A4 | C5 . B4 . A4- . . | G4 . F4 . E4/ | D4- . . . . . .', 48),
       ] },
       D: { bars: 4, layers: [
-        L('noise', '>k . h . h | k . h s . h h', 12),
+        L('noise', '>k h g k h | k g h s k h r', 12),
         L('tri', 'D2 A2 E3 C3 A2 | D2 F2 G2 B2 C3 A2 E2', 12),
-        L('p2', 'F4 . A4 . . | E4 . . G4 . . . | F4 . C5 . . | E4 . . A4 . . .', 24),
-        L('p1', 'A4 . C5 . G4 | D5- . . C5- . . . | F5 . E5 . C5 | B4 . C5/ . . . . | A4 . B4 . C5 | E5 . D5 . C5- . . | B4 . A4 . G4+ | A4- . . . . . .', 48),
+        L('p2', 'F4:47 . A4:37 . . | E4:37 . . G4:47 . . . | F4:47 . C5:47 . . | E4:37 . . A4:37 . . .', 24),
+        L('p1', 'A4 . C5 . G4 | D5- . . C5- . . . | F5 . E5 . C5 | B4 . C5/ . . . . | A4 . B4 . C5 | E5 . D5 . C5- . . | B4 . A4 . G4/ | A4- . . . . . .', 48),
       ] },
     },
   },
@@ -1162,12 +1263,12 @@ const SONGS = {
     parts: {
       A: { bars: 8, layers: [
         L('tri', 'C3 . . . . . | G2 . . . . .', 12),
-        L('p2', 'C5 . . G4 . .', 6, { duty: 0.25 }),
+        L('p2', 'C5 . . G4 . .', 6, { duty: 0.5 }),
         L('p1', 'E5 . G5 . D5 . | A5 . G5- . . . | C6 . B5 . G5 . | A5 . E5- . . .', 24, { duty: 0.125 }),
       ] },
       B: { bars: 8, layers: [
         L('tri', 'F2 . . . . . | G2 . . . . .', 12),
-        L('p2', 'F4 . . A4 . . | G4 . . B4 . .', 12, { duty: 0.25 }),
+        L('p2', 'F4 . . A4 . . | G4 . . B4 . .', 12, { duty: 0.5 }),
         L('p1', 'F5 . A5 . E5 . | D5 . C5- . . . | B4 . D5 . G5 . | E5- . . . . .', 24, { duty: 0.125 }),
       ] },
     },
@@ -1177,14 +1278,14 @@ const SONGS = {
     form: 'A A B B',
     parts: {
       A: { bars: 2, layers: [
-        L('noise', '>k h h >s h h >k h h | >k h h >s h h >k h | >k h >s h >k h s', 24),
+        L('noise', '>k h g >s h g >k h h | >k h g >s h g >k h | >k g >s h >k h r', 24),
         L('tri', 'A3 A3 C4 A3 A3 D4 A3 E4 D4 | A3 A3 C4 A3 G3 A3 C4 D4 | E4 D4 C4 A3 G3 A3 B3', 24, { tr: -12 }),
         L('p1', 'A4 A4 C5 A4 A4 D5 A4 E5 D5 | A4 A4 C5 A4 G4 A4 C5 D5 | E5 D5 C5 A4 G4 A4 B4', 24),
       ] },
       B: { bars: 2, layers: [
-        L('noise', '>k h h >s h h >k h h | >k h h >s h h >k h | >k h >s h >k h s', 24),
+        L('noise', '>k h g >s h g >k h h | >k h g >s h g >k h | >k g >s h >k h r', 24),
         L('tri', 'A3 A3 C4 A3 A3 D4 A3 E4 D4 | A3 A3 C4 A3 G3 A3 C4 D4 | E4 D4 C4 A3 G3 A3 B3', 24, { tr: -12 }),
-        L('p2', 'A4 . . C5 . . A4 . . | G4 . . B4 . . G4 . | E4 . G4 . B4 . .', 24),
+        L('p2', 'A4:37- . . C5:47- . . A4:37 . . | G4:47- . . B4:37- . . G4:47 . | E4:37- . G4:47- . B4:37- . .', 24, { duty: 0.125 }),
         L('p1', 'C5 . E5 . B4 . F#5- . . | E5- . . . . . A5 . | G5 . E5 . D5 . C5 | D5 . E5 . G5 . A5- . . | G5 . E5 . D5 . C5 . | B4- . . . . . .', 48),
       ] },
     },
@@ -1194,26 +1295,26 @@ const SONGS = {
     form: 'A B C D',
     parts: {
       A: { bars: 4, layers: [
-        L('noise', '>k . h . s . h . | k . h . s . h h | k . h . s . h . | k . h k s . s s', 32),
+        L('noise', '>k . h g s . h . | k g h . s . h h | k . h g s g h . | k . h k r . s s', 32),
         L('tri', '>E2 E2 G2 E2 A2 E2 B2', 7),
         L('p1', '>E5 G5 D5 A5 G5', 5),
       ] },
       B: { bars: 4, layers: [
-        L('noise', '>k . h . s . h . | k . h . s . h h | k . h . s . h . | k . h k s . s s', 32),
+        L('noise', '>k . h g s . h . | k g h . s . h h | k . h g s g h . | k . h k r . s s', 32),
         L('tri', '>E2 E2 G2 E2 A2 E2 B2', 7),
-        L('p2', 'B4 . . B4 . . A4 .', 8),
+        L('p2', 'B4:37- . . B4:37- . . A4:47 .', 8, { duty: 0.125 }),
         L('p1', '>E5 G5 D5 A5 G5', 5),
       ] },
       C: { bars: 4, layers: [
-        L('noise', '>k . h . s . h . | k . h . s . h h | k . h . s . h . | k . h k s . s s', 32),
+        L('noise', '>k . h g s . h . | k g h . s . h h | k . h g s g h . | k . h k r . s s', 32),
         L('tri', '>E2 E2 G2 E2 A2 E2 B2', 7),
-        L('p2', 'E5 . D5 . B4 . D5 .', 8),
+        L('p2', 'E5:37 . D5:47 . B4:37 . D5:47 .', 8, { duty: 0.125 }),
         L('p1', '>E5 G5 D5 A5 G5 | E5 G5 D5 B5 A5', 10),
       ] },
       D: { bars: 4, layers: [
-        L('noise', '>k . h . s . h . | k . h . s . h h | k . h k s . h . | >k . s s >s s >s >s', 32),
+        L('noise', '>k . h g s . h . | k g h . s . h h | k . h k s g h . | >k . s s >s s >s >s', 32),
         L('tri', '>E2 E2 G2 E2 A2 E2 B2', 7),
-        L('p2', 'G4 . . G4 . . F#4 .', 8),
+        L('p2', 'G4:47- . . G4:47- . . F#4:37 .', 8, { duty: 0.125 }),
         L('p1', '>E5 G5 D5 A5 G5 E5 G5 D5 | A5 G5 E5 G5 D5 A5 G5 E5 | B5 . A5 . G5 . A5 . | B5- . . . A5+ A5 G5+ G5', 32),
       ] },
     },
@@ -1225,18 +1326,54 @@ const SONGS = {
       A: { bars: 3, layers: [
         L('noise', 'k h s h k | k h s k s | >k . . . .', 15),
         L('tri', 'C3 . G2 . C3 | G2 . G2 . B2 | >C3- . . . .', 15),
-        L('p2', '. . . . . | G5 . A5 . B5 | >G5- . . . .', 15),
+        L('p2', '. . . . . | G5 . A5 . B5 | >G5- . . . .', 15, { duty: 0.5 }),
         L('p1', 'E5 G5 D5 A5 G5 | C6 E6 G5 C6 D6 | >E6- . . . .', 15),
       ] },
     },
   },
+  marsh: {
+    title: 'Misty Marsh', bpm: 102, spb: 2, barSteps: 6, meter: '6/8 swamp shuffle, 5-step tapping arpeggio (A minor)',
+    form: 'A B A B',
+    parts: {
+      A: { bars: 8, layers: [
+        L('noise', '>k . g k h s | k g h k r h', 12),
+        L('tri', 'A2 . E2 A2 C3 E3 | G2 . D2 G2 B2 D3', 12),
+        L('p2', 'A4:37 . E4:37 . .', 5),
+        L('p1', 'C5 . E5 . B4 . | F#5- . . E5- . . | D5 . C5 . A4 . | B4- . . . . . | E5 . G5 . D5 . | A5- . . G5 . . | F5 . E5 . D5 . | E5- . . . . .', 48),
+      ] },
+      B: { bars: 8, layers: [
+        L('noise', '>k . g k h s | k g h k r h', 12),
+        L('tri', 'F2 . C3 F2 A2 C3 | E2 . B2 E2 G#2 B2', 12),
+        L('p2', 'C5:47 . A4:37 . .', 5),
+        L('p1', 'A4 . C5 . E5 . | D5- . . C5 . . | B4 . G#4 . E4 . | A4- . . . . . | C5 . E5 . A5 . | G#5- . . E5 . . | F5 . D5 . B4 . | A4- . . . . .', 48),
+      ] },
+    },
+  },
+  peak: {
+    title: 'Frosty Peak', bpm: 120, spb: 2, barSteps: 10, meter: '5/4 (3+3+2+2), D major',
+    form: 'A B A B',
+    parts: {
+      A: { bars: 4, layers: [
+        L('noise', '>k h g k h g s h r h', 10),
+        L('tri', 'D2 . . A2 . . D3 . C3 . | G2 . . D3 . . G2 . A2 .', 20),
+        L('p2', 'F#5:37 A5 D6 A5 F#5 E5', 6),
+        L('p1', 'F#5 . A5 . E5 . B5- . . . | A5- . . . . . . . . . | D6 . C#6 . A5 . F#5 . G5 . | A5- . . . . . . . . .', 40),
+      ] },
+      B: { bars: 4, layers: [
+        L('noise', '>k h g k h g s h r h', 10),
+        L('tri', 'B2 . . F#2 . . B2 . A2 . | G2 . . D3 . . E2 . A2 .', 20),
+        L('p2', 'D5:47 F#5 B5 F#5 D5 C#5', 6),
+        L('p1', 'B5 . A5 . F#5 . E5 . D5 . | E5- . . . . . . . . . | G5 . F#5 . E5 . D5 . C#5 . | D5- . . . . . . . . .', 40),
+      ] },
+    },
+  },
   win: {
-    title: 'Win Screen Anthem', bpm: 116, spb: 2, barSteps: 8, meter: '4/4, then 7/8, then 4/4',
+    title: 'Win Screen Anthem', bpm: 120, spb: 2, barSteps: 8, meter: '4/4, then 7/8, then 4/4',
     form: 'A B C C',
     parts: {
       A: { bars: 4, layers: [
-        L('noise', 'k . h . s . h .', 8),
-        L('tri', 'C3 . C3 . G2 . G2 . | F2 . F2 . G2 . G2 .', 16),
+        L('noise', '>k g h k s g h . | k . h k r h h g', 16),
+        L('tri', 'C3 . C3 G2 . C3 . G2 | F2 . F2 C3 . G2 . G2', 16),
         L('p2', 'C5 E5 G5 E5 C5 E5 G5 E5 | A4 C5 F5 C5 B4 D5 G5 D5', 16),
         L('p1', 'E5 . G5 . D5 . A5 . | G5- . . . . . . . | C6 . A5 . G5 . E5 . | D5- . . . . . . .', 32),
       ] },
@@ -1247,25 +1384,25 @@ const SONGS = {
         L('p1', 'E5 . G5 . D5 . A5 | G5- . . . . . . | C6 . A5 . G5 . E5 | D5- . . . . . .', 28),
       ] },
       C: { bars: 4, layers: [
-        L('noise', '>k . h k s . h h', 8),
-        L('tri', 'C3 C3 G2 G2 A2 A2 E2 E2 | F2 F2 C3 C3 G2 G2 G2 G2', 16),
-        L('p2', 'E5 G5 C6 G5 E5 G5 C6 G5 | F5 A5 C6 A5 D5 G5 B5 G5', 16),
+        L('noise', '>k g h k s g h k | g h k . r h s s', 16),
+        L('tri', 'C3 . C3 G2 . C3 A2 . | F2 . F2 C3 . G2 G3 G2', 16),
+        L('p2', 'C5:47- . . . C5:47- . G5:47- . | F5:47- . . . G5:47- . . .', 16, { duty: 0.125 }),
         L('p1', 'C6 . G5 . E5 . G5 . | A5 . G5 . E5 . D5 . | E5 . G5 . D5 . A5 . | >C6- . . . . . . .', 32),
       ] },
     },
   },
   lab: {
-    title: 'Gizmo\'s Lab', bpm: 88, spb: 2, barSteps: 8, meter: '4/4 with a 5-step beeper (E minor)',
+    title: 'Gizmo\'s Lab', bpm: 94, spb: 2, barSteps: 8, meter: '4/4 with a 5-step beeper (E minor)',
     form: 'A B A B',
     parts: {
       A: { bars: 4, layers: [
-        L('noise', 'k . . . s . . .', 8),
+        L('noise', 'k . g k s . . h | k . h g r . k .', 16),
         L('tri', 'E2 . . E2 . . F2 .', 8),
         L('p2', 'B4 . . D#5 .', 5, { duty: 0.125 }),
         L('p1', 'E5 . G5 . D5 . A5 . | G5- . . . F#5 . D#5 . | E5 . . . B4 . . . | C5- . . . B4- . . .', 32),
       ] },
       B: { bars: 4, layers: [
-        L('noise', 'k . . . s . . .', 8),
+        L('noise', 'k . g k s . . h | k . h g r . k .', 16),
         L('tri', 'C3 . . C3 . . B2 .', 8),
         L('p2', 'G4 . . B4 .', 5, { duty: 0.125 }),
         L('p1', 'C5 . E5 . B4 . F5 . | E5- . . . D#5 . B4 . | C5 . . . G4 . . . | B4- . . . . . . .', 32),
@@ -1273,17 +1410,17 @@ const SONGS = {
     },
   },
   desert: {
-    title: 'Sunny Dunes', bpm: 104, spb: 2, barSteps: 7, meter: '7/8 (3+2+2), riff in 4 (E phrygian dominant)',
+    title: 'Sunny Dunes', bpm: 110, spb: 2, barSteps: 7, meter: '7/8 (3+2+2), riff in 4 (E phrygian dominant)',
     form: 'A A B A',
     parts: {
       A: { bars: 4, layers: [
-        L('noise', '>k . h k . s .', 7),
+        L('noise', '>k g h k h s h | k h g k . r h', 14),
         L('tri', 'E2 . . E2 . B2 . | F2 . . F2 . C3 .', 14),
         L('p2', 'E5 G#5 B5 G#5', 4),
         L('p1', 'E5 . G#5 . D5 . A5- | . . G#5- . . . . | F5 . E5 . D5 . C5 | B4- . . . . . .', 28),
       ] },
       B: { bars: 4, layers: [
-        L('noise', '>k . h k . s .', 7),
+        L('noise', '>k g h k h s h | k h g k . r h', 14),
         L('tri', 'A2 . . A2 . E3 . | G#2 . . G#2 . E2 .', 14),
         L('p2', 'C5 E5 A5 E5', 4),
         L('p1', 'A5 . G#5 . F5 . E5 | D5- . . . . . . | C5 . D5 . E5 . F5 | E5- . . . . . .', 28),
@@ -1309,17 +1446,17 @@ const SONGS = {
     },
   },
   gizmo: {
-    title: 'Dr. Gizmo\'s Theme', bpm: 108, spb: 2, barSteps: 5, meter: '5/8 (3+2), 3-step creep (C minor)',
+    title: 'Dr. Gizmo\'s Theme', bpm: 112, spb: 2, barSteps: 5, meter: '5/8 (3+2), 3-step creep (C minor)',
     form: 'A B A B',
     parts: {
       A: { bars: 6, layers: [
-        L('noise', 'k . h s .', 5),
+        L('noise', 'k g h s . | k h k r h', 10),
         L('tri', 'C2 . G2 C2 . | Ab1 . Eb2 Ab1 .', 10),
         L('p2', 'G4 . Eb4', 3),
         L('p1', 'Eb5 . G5 . D5 | Ab5- . . . G5 | . . . . . | C5 . Eb5 . F5 | F#5 . G5- . . | . . . . .', 30),
       ] },
       B: { bars: 6, layers: [
-        L('noise', 'k . h s .', 5),
+        L('noise', 'k g h s . | k h k r h', 10),
         L('tri', 'F2 . C3 F2 . | G2 . D3 G2 .', 10),
         L('p2', 'Ab4 . F4', 3),
         L('p1', 'F5 . Ab5 . C6 | B5- . . . G5 | . . . . . | Ab5 . G5 . F5 | Eb5 . D5- . . | . . . . .', 30),
@@ -1333,8 +1470,8 @@ const STING = ['E5', 'G5', 'D6'];   // the first three motif notes, used as the 
 
 // ---- parsing / compiling (pure, no audio) ----
 const NOTE_BASE = { C: -9, D: -7, E: -5, F: -4, G: -2, A: 0, B: 2 };
-const NOTE_RE = /^(>?)([A-G])([#b]?)(\d)(\+?)([-~\/]*)$/;
-const DRUM_RE = /^(>?)([ksh])$/;
+const NOTE_RE = /^(>?)([A-G])([#b]?)(\d)(\+?)(?::([0-9a-c])([0-9a-c]))?([-~\/]*)$/;
+const DRUM_RE = /^(>?)([kshgr])$/;
 function noteFreq(n) {
   const m = /^([A-G])([#b]?)(\d)$/.exec(n); if (!m) return 0;
   const semi = NOTE_BASE[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + (parseInt(m[3], 10) - 4) * 12;
@@ -1358,10 +1495,13 @@ function compileLayer(layer) {
     let f = noteFreq(m[2] + m[3] + m[4]) * Math.pow(2, (layer.tr || 0) / 12);
     if (m[5]) f *= Math.pow(2, 0.5 / 12);
     if (!Number.isFinite(f) || f <= 0) { errors.push('NaN note "' + t + '"'); return; }
-    const hold = m[6].includes('-');
+    const fx = m[8] || '';
+    const hold = fx.includes('-');
     let dur = 1;
     if (hold) while (i + dur < toks.length && toks[i + dur] === '.') dur++;
-    ev[i] = { f, acc: !!m[1], dur, hold, quarter: !!m[5], bend: m[6].includes('/'), vib: m[6].includes('~') };
+    const arp = m[6] ? [0, parseInt(m[6], 16), parseInt(m[7], 16)] : null;
+    if (arp && layer.voice !== 'p1' && layer.voice !== 'p2') errors.push('arpeggio on ' + layer.voice);
+    ev[i] = { f, acc: !!m[1], dur, hold, arp, quarter: !!m[5], bend: fx.includes('/'), vib: fx.includes('~') };
   });
   return { ev, errors };
 }
@@ -1472,11 +1612,15 @@ function playChipEvent(layer, ev, t, sd, pl) {
   if (layer.voice === 'noise') return playDrum(ev.drum, t, acc, dest);
   const len = ev.hold ? ev.dur * sd * 0.96 : sd * 0.72;
   const o = ac.createOscillator(), g = ac.createGain();
-  const v = VOICE_VOL[layer.voice] * acc;
+  const v = VOICE_VOL[layer.voice] * (layer.voice === 'tri' ? 1 : acc);   // like real chips, the triangle has no velocity
   if (layer.voice === 'tri') {
     o.type = 'triangle';
-    g.gain.setValueAtTime(v, t);            // the triangle channel is simply on or off
-    g.gain.setValueAtTime(0, t + len);
+    // On/off like a real triangle channel, but with a 3-5 ms edge so a note never stops
+    // halfway through a wave (an instant cut there makes an audible pop on low bass notes).
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(v, t + 0.003);
+    g.gain.setValueAtTime(v, t + len);
+    g.gain.linearRampToValueAtTime(0, t + len + 0.005);
   } else {
     o.setPeriodicWave(pulseWave(layer.duty || (layer.voice === 'p1' ? 0.25 : 0.125)));
     g.gain.setValueAtTime(0, t);
@@ -1486,6 +1630,7 @@ function playChipEvent(layer, ev, t, sd, pl) {
     g.gain.linearRampToValueAtTime(0, t + len + 0.02);
   }
   o.frequency.setValueAtTime(ev.bend ? ev.f * Math.pow(2, -0.5 / 12) : ev.f, t);
+  if (ev.arp) for (let k = 1, tt = t + sd / 4; tt < t + len; k++, tt += sd / 4) o.frequency.setValueAtTime(ev.f * Math.pow(2, ev.arp[k % 3] / 12), tt);
   if (ev.bend) o.frequency.linearRampToValueAtTime(ev.f, t + Math.min(0.09, len * 0.6));
   if (ev.vib && layer.voice === 'p1') {
     const lfo = ac.createOscillator(), lg = ac.createGain();
@@ -1503,13 +1648,15 @@ function playDrum(kind, t, acc, dest) {
     const g = ac.createGain(); g.gain.setValueAtTime(vol * acc, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
     s.connect(f); f.connect(g); g.connect(dest); s.start(t); s.stop(t + dur + 0.02);
   };
-  if (kind === 'k') {
+  if (kind === 'k') {   // punchy chip kick: a very fast pitch drop on a triangle wave, plus a low noise thump
     const o = ac.createOscillator(), g = ac.createGain();
-    o.type = 'sine'; o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.07);
+    o.type = 'triangle'; o.frequency.setValueAtTime(190, t); o.frequency.exponentialRampToValueAtTime(46, t + 0.05);
     g.gain.setValueAtTime(0.9 * acc, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
     o.connect(g); g.connect(dest); o.start(t); o.stop(t + 0.15);
     burst(0.03, 0.35, 'lowpass', 500);
   } else if (kind === 's') burst(0.11, 0.42, 'highpass', 1200);
+  else if (kind === 'g') burst(0.018, 0.07, 'highpass', 6500);         // ghost note: a tiny snappy tick
+  else if (kind === 'r') burst(0.028, 0.32, 'bandpass', 3600);         // rimshot: short, high and crisp
   else burst(0.03, 0.14, 'highpass', 7000);
 }
 function playSting(t) {
@@ -1561,6 +1708,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // ---- #music: the jukebox / music test room ----
+// (tap a song in the list to play it)
 const VOICE_LABEL = { p1: 'PULSE 1', p2: 'PULSE 2', tri: 'TRIANGLE', noise: 'NOISE' };
 class MusicRoomScreen {
   constructor(resolve) { this.opaque = true; this.i = 0; this.names = Object.keys(SONGS); this.t = 0; this.resolve = resolve || null; }
@@ -1607,10 +1755,14 @@ class MusicRoomScreen {
       const show = Math.min(n, 32), first = n > 32 ? Math.floor(at / 32) * 32 : 0;
       for (let c = 0; c < show && first + c < n; c++) {
         const ev = layer.ev[first + c], x = 148 + c * 8;
-        ctx.fillStyle = first + c === at ? '#ffd84a' : ev ? (ev.quarter ? '#ff7a59' : '#5a8ad8') : '#2e2c44';
+        ctx.fillStyle = first + c === at ? '#ffd84a' : ev ? (ev.quarter || ev.bend ? '#ff7a59' : ev.arp ? '#b07ad0' : ev.drum === 'g' ? '#3e4a78' : '#5a8ad8') : '#2e2c44';
         ctx.fillRect(x, y + 11, 7, ev && ev.acc ? 10 : 7);
       }
     });
+  }
+  tap(x, y) {
+    const k = Math.floor((y - 25) / 14);
+    if (x < 136 && k >= 0 && k < this.names.length) { this.i = k; playMusic(this.names[k], { cut: true, restart: true }); }
   }
   hint() { return 'W/S: choose   Enter: play   ' + hintKeys() + ': ' + (this.resolve ? 'back to game' : 'title') + '   N: music   M: mute'; }
 }
@@ -1781,7 +1933,7 @@ function petType(p) { return SPECIES[p.sp].type; }
 function learnsetOf(sp) { return LEARNSETS[SPECIES[sp].fam]; }
 function toNext(lv) { return 10 * lv * lv; }
 // Kid-friendly difficulty: enemies hit softer, pets learn faster.
-const ENEMY_DAMAGE = 0.75, XP_BONUS = 1.25;
+const ENEMY_DAMAGE = 0.85, XP_BONUS = 1.25;
 function xpReward(enemyLv, trainer) { return Math.floor((5 * enemyLv * enemyLv + 10) * (trainer ? 1.5 : 1) * XP_BONUS); }
 function createPet(sp, lv) {
   lv = clamp(lv, 1, MAX_LV);
@@ -1952,12 +2104,13 @@ const MAPS = {
     spawn: { x: 21, y: 26, dir: 'up' },
     exits: [
       { x: 21, y: 27, w: 2, h: 1, to: 'pawsville', tx: 15, ty: 1, dir: 'down' },
-      { x: 8, y: 0, w: 2, h: 1, to: 'woods', tx: 8, ty: 30, dir: 'up' },
+      { x: 8, y: 0, w: 2, h: 1, to: 'canyon', tx: 19, ty: 28, dir: 'up' },
       { x: 43, y: 26, w: 1, h: 1, to: 'dunes', tx: 1, ty: 12, dir: 'right' },
     ],
     doors: [],
     labels: [{ tx: 40.5, ty: 25.1, text: 'DUNES >' }],
     npcs: [
+      { id: 'pat', look: 'waddle', name: 'Picnic Pat', x: 30, y: 9, dir: 'down', lines: ['Lovely day for a picnic! Bunnies, mice and hedgehogs keep trying to steal my sandwiches.'] },
       { id: 'pip', look: 'pip', name: 'Scout Pip', x: 15, y: 18, dir: 'down',
         trainer: { team: [['clover', 3], ['kiwi', 4], ['mittens', 5]] },
         lines: ['Hey! You have a pet too? Let\'s have a friendly battle!'],
@@ -2015,23 +2168,18 @@ const MAPS = {
     ],
     spawn: { x: 8, y: 30, dir: 'up' },
     exits: [
-      { x: 8, y: 31, w: 2, h: 1, to: 'meadow', tx: 8, ty: 1, dir: 'down' },
-      { x: 24, y: 0, w: 1, h: 1, to: 'lab', tx: 11, ty: 14, dir: 'up' },
+      { x: 8, y: 31, w: 2, h: 1, to: 'canyon', tx: 19, ty: 1, dir: 'down' },
+      { x: 24, y: 0, w: 1, h: 1, to: 'marsh', tx: 19, ty: 28, dir: 'up' },
       { x: 47, y: 14, w: 1, h: 1, to: 'jungle', tx: 1, ty: 14, dir: 'right' },
     ],
     doors: [],
     labels: [{ tx: 43, ty: 13.1, text: 'JUNGLE >' }],
     npcs: [
+      { id: 'wren', look: 'granny', name: 'Birdwatcher Wren', x: 13, y: 7, dir: 'down', lines: ['Shh! I\'m listening for owls. These woods are full of ferrets and hedgehogs too.'] },
       { id: 'moss', look: 'moss', name: 'Forester Moss', x: 14, y: 23, dir: 'down',
-        trainer: { team: [['noodle', 7], ['ziggy', 7], ['buddy', 8]] },
+        trainer: { team: [['noodle', 10], ['ziggy', 10], ['buddy', 11]] },
         lines: ['Whisker Woods is full of strong pets. Show me you\'re ready!'],
-        after: ['You\'re ready. The Pet Champion waits where the path ends. Strange zapping noises come from past her clearing...'] },
-      { id: 'maple', look: 'champion', name: 'Champion Maple', x: 24, y: 1, dir: 'down', champion: true, onWin: 'champion', music: 'champion',
-        moveTo: { x: 22, y: 1, dir: 'right' },
-        trainer: { team: [['thunder', 10], ['mango', 11], ['rocky', 12]] },
-        lines: ['You made it all the way through Whisker Woods!', 'I\'m Maple, the Pet Champion. Something bad is going on, but first I need to know you\'re strong. Let\'s battle!'],
-        after: ['Dr. Gizmo\'s lab is just north of here. Be brave!'],
-        final: ['You saved them all! You\'re the greatest Pet Champion ever!'] },
+        after: ['You\'re strong! North of here is Misty Marsh, then Frosty Peak, where the Champion waits. Strange zapping noises come from past the summit...'] },
     ],
     chests: [
       { id: 'woo1', x: 2, y: 17, item: 'bugs', qty: 5 },
@@ -2040,10 +2188,10 @@ const MAPS = {
     ],
     wild: [
       // forest: ferrets, hedgehogs, mice, bunnies and frogs
-      { sp: 'noodle', min: 5, max: 10, w: 15 }, { sp: 'prickle', min: 5, max: 10, w: 15 }, { sp: 'nibbles', min: 5, max: 10, w: 15 },
-      { sp: 'clover', min: 5, max: 10, w: 15 }, { sp: 'ribbit', min: 5, max: 10, w: 15 },
-      { sp: 'bandit', min: 9, max: 11, w: 2 }, { sp: 'thistle', min: 9, max: 11, w: 2 }, { sp: 'squeakers', min: 9, max: 11, w: 2 },
-      { sp: 'hopscotch', min: 9, max: 11, w: 2 }, { sp: 'croaker', min: 9, max: 11, w: 2 },
+      { sp: 'noodle', min: 8, max: 12, w: 15 }, { sp: 'prickle', min: 8, max: 12, w: 15 }, { sp: 'nibbles', min: 8, max: 12, w: 15 },
+      { sp: 'clover', min: 8, max: 12, w: 15 }, { sp: 'ribbit', min: 8, max: 12, w: 15 },
+      { sp: 'bandit', min: 11, max: 13, w: 2 }, { sp: 'thistle', min: 11, max: 13, w: 2 }, { sp: 'squeakers', min: 11, max: 13, w: 2 },
+      { sp: 'hopscotch', min: 11, max: 13, w: 2 }, { sp: 'croaker', min: 11, max: 13, w: 2 },
     ],
   },
 };
@@ -2068,18 +2216,18 @@ MAPS.lab = {
     'MMMMMMMMMMMLLMMMMMMMMMMM',
   ],
   spawn: { x: 11, y: 14, dir: 'up' },
-  exits: [{ x: 11, y: 15, w: 2, h: 1, to: 'woods', tx: 24, ty: 1, dir: 'down' }],
+  exits: [{ x: 11, y: 15, w: 2, h: 1, to: 'peak', tx: 19, ty: 1, dir: 'down' }],
   doors: [],
   labels: [],
   npcs: [
     { id: 'bolt', look: 'bolt', name: 'Lab Helper Bolt', x: 11, y: 10, dir: 'down',
       moveTo: { x: 9, y: 11, dir: 'right' },
-      trainer: { team: [['bandit', 11], ['nugget', 12]] },
+      trainer: { team: [['bandit', 17], ['nugget', 18]] },
       lines: ['Halt! Dr. Gizmo said NO visitors! He\'s very busy doing... science-y things to pets.', 'You want to get past? Then you\'ll have to beat me!'],
       after: ['Okay, okay, you can go in. Honestly? I only took this job because I like pets.'],
       final: ['I\'m going to apply at the Pet Shop now. Wish me luck!'] },
     { id: 'gizmo', look: 'gizmo', name: 'Dr. Gizmo', x: 11, y: 3, dir: 'down', onWin: 'gizmo', music: 'boss',
-      trainer: { team: [['tank', 12], ['spike', 13], ['rocky', 14]] },
+      trainer: { team: [['tank', 20], ['spike', 20], ['croaker', 20], ['rocky', 20]] },
       lines: [
         'Well, well! A child with pets. How delightful... for my EXPERIMENTS!',
         'I am Dr. Gizmo! With my Mega-Zapper, I\'ll turn every pet in Pawsville into my obedient Robo-Pets!',
@@ -2124,6 +2272,10 @@ MAPS.farm = {
       'Howdy, {name}! Welcome to Sunny Farm.',
       'Puppies, kittens, ponies and bunnies play in the wheat. Piglets roll around in the mud pen, and ducklings paddle in the pond.',
       'Farm animals love Carrots and Apples. Puppies want a Bone and kittens want Fish!'] },
+    { id: 'dale', look: 'farmer', name: 'Rancher Dale', x: 24, y: 9, dir: 'down', ribbon: 'Farm Ribbon', onWin: 'ribbon',
+      trainer: { team: [['daisy', 9], ['truffle', 9], ['thunder', 10]] },
+      lines: ['I\'m the guardian of Sunny Farm. Win my Farm Ribbon and the Champion will know you\'re serious!'],
+      after: ['Take good care of that Farm Ribbon, partner!'] },
   ],
   chests: [{ id: 'farm1', x: 29, y: 19, item: 'apple', qty: 3 }],
   wild: null,
@@ -2169,6 +2321,10 @@ MAPS.lake = {
       'Ahoy, {name}! Splash Lake is home to turtles, goldfish, frogs and ducks. They hide in the reeds by the water.',
       'Goldfish love Fish Flakes. Turtles munch Lettuce and Bugs, and ducks like Lettuce or Seeds.',
       'See that little island? I bet there\'s treasure on it. Try the bridge on the south shore!'] },
+    { id: 'coral', look: 'fisher', name: 'Captain Coral', x: 25, y: 18, dir: 'left', ribbon: 'Lake Ribbon', onWin: 'ribbon',
+      trainer: { team: [['shelly', 10], ['goldie', 11], ['quackers', 11]] },
+      lines: ['Ahoy! I guard Splash Lake. Beat my water pets to earn the Lake Ribbon!'],
+      after: ['That Lake Ribbon shines like the water. Well sailed!'] },
   ],
   chests: [{ id: 'lake1', x: 14, y: 10, item: 'flakes', qty: 3 }],
   wild: null,
@@ -2214,11 +2370,15 @@ MAPS.dunes = {
       'Phew, it\'s hot! Welcome to Sunny Dunes, {name}.',
       'Gerbils, hamsters, lizards and desert hedgehogs hide in the dry brush. Frogs and ducklings cool off at the oasis.',
       'Gerbils and hamsters love Seeds. Lizards and hedgehogs go crazy for Bugs!'] },
+    { id: 'sandy', look: 'explorer', name: 'Ranger Sandy', x: 30, y: 12, dir: 'left', ribbon: 'Dunes Ribbon', onWin: 'ribbon',
+      trainer: { team: [['cookie', 11], ['alvin', 11], ['spike', 12]] },
+      lines: ['The desert sun makes pets tough. I\'m the guardian of Sunny Dunes. Want my Dunes Ribbon? Battle me!'],
+      after: ['Keep that Dunes Ribbon out of the sand!'] },
   ],
   chests: [{ id: 'dune1', x: 33, y: 21, coins: 120 }],
   wild: [
-    { sp: 'cookie', min: 4, max: 8, w: 6 }, { sp: 'alvin', min: 4, max: 8, w: 6 }, { sp: 'ziggy', min: 4, max: 8, w: 6 }, { sp: 'prickle', min: 4, max: 8, w: 4 },
-    { sp: 'cream', min: 9, max: 10, w: 1 }, { sp: 'nugget', min: 9, max: 10, w: 1 }, { sp: 'spike', min: 9, max: 10, w: 1 },
+    { sp: 'cookie', min: 6, max: 10, w: 6 }, { sp: 'alvin', min: 6, max: 10, w: 6 }, { sp: 'ziggy', min: 6, max: 10, w: 6 }, { sp: 'prickle', min: 6, max: 10, w: 4 },
+    { sp: 'cream', min: 10, max: 12, w: 1 }, { sp: 'nugget', min: 10, max: 12, w: 1 }, { sp: 'spike', min: 10, max: 12, w: 1 },
   ],
   pond: [{ sp: 'ribbit', min: 4, max: 7, w: 1 }, { sp: 'puddles', min: 4, max: 7, w: 1 }],
 };
@@ -2259,13 +2419,193 @@ MAPS.jungle = {
       'Welcome to Parrot Jungle, {name}! Colorful parrots fly through the treetops, and lizards and frogs hide in the leaves.',
       'Parrots love Apples and Seeds. Frogs and lizards want Bugs!',
       'Cross the bridge over the river to explore the north side.'] },
+    { id: 'kai', look: 'champion', name: 'Keeper Kai', x: 30, y: 6, dir: 'down', ribbon: 'Jungle Ribbon', onWin: 'ribbon',
+      trainer: { team: [['kiwi', 12], ['ziggy', 12], ['mango', 13]] },
+      lines: ['I keep watch over Parrot Jungle. Only the bravest trainers earn the Jungle Ribbon!'],
+      after: ['The parrots will sing about you. Enjoy that Jungle Ribbon!'] },
   ],
   chests: [{ id: 'jung1', x: 34, y: 21, item: 'big', qty: 1 }],
   wild: [
-    { sp: 'kiwi', min: 7, max: 11, w: 8 }, { sp: 'ziggy', min: 7, max: 11, w: 5 }, { sp: 'ribbit', min: 7, max: 11, w: 4 },
-    { sp: 'mango', min: 10, max: 12, w: 2 }, { sp: 'spike', min: 10, max: 12, w: 1 }, { sp: 'croaker', min: 10, max: 12, w: 1 },
+    { sp: 'kiwi', min: 9, max: 13, w: 8 }, { sp: 'ziggy', min: 9, max: 13, w: 5 }, { sp: 'ribbit', min: 9, max: 13, w: 4 },
+    { sp: 'mango', min: 12, max: 14, w: 2 }, { sp: 'spike', min: 12, max: 14, w: 1 }, { sp: 'croaker', min: 12, max: 14, w: 1 },
   ],
   pond: [{ sp: 'ribbit', min: 7, max: 10, w: 1 }, { sp: 'bubbles', min: 7, max: 10, w: 1 }],
+};
+MAPS.canyon = {
+  name: 'Pebble Canyon', music: 'desert', bsky: '#ffd8a8', bground: '#d8a868', bg: '#a8784a',
+  rows: [
+    'rrrrrrrrrrrrrrrrrrr__rrrrrrrrrrrrrrrrrrr',
+    'r______________________________________r',
+    'r___;;;;;;;;___________;;;;;;;;;;______r',
+    'r___;;;;;;;;___rr______;;;;;;;;;;______r',
+    'r___;;;;;;;;___________;;;;;;;;;;______r',
+    'r___;;;;;;;;___________;;;;;;;;;;______r',
+    'rrrr________________rrrr_______________r',
+    'r______________________________________r',
+    'r______________________________________r',
+    'r;;;;;;__________________________;;;;;;r',
+    'r;;;;;;__________________________;;;;;;r',
+    'rrrrrrrrrrrrrrrrrrr_rrrrrrrrrrrrrrrrrrrr',
+    'rrrrrrrrrrrrrrrrr_____rrrrrrrrrrrrrrrrrr',
+    'rrrrrrrrrrrrrrr__________rrrrrrrrrrrrrrr',
+    'r______________________________________r',
+    'r;;;;;;;;;;__________________;;;;;;;;;;r',
+    'r;;;;;;;;;;____c________c____;;;;;;;;;;r',
+    'r;;;;;;;;;;__________________;;;;;;;;;;r',
+    'r______________rrr____rrr______________r',
+    'r______________________________________r',
+    'r__rrrr;;;;;;;;;;;;______;;;;;;;;;;;;rrr',
+    'r______;;;;;;;;;;;;______;;;;;;;;;;;;__r',
+    'r______;;;;;;;;;;;;______;;;;;;;;;;;;__r',
+    'r______________________________________r',
+    'r___c______________________________c___r',
+    'r______________________________________r',
+    'r______________________________________r',
+    'r______________________________________r',
+    'r______________________________________r',
+    'rrrrrrrrrrrrrrrrrrr__rrrrrrrrrrrrrrrrrrr',
+  ],
+  spawn: { x: 19, y: 28, dir: 'up' },
+  exits: [
+    { x: 19, y: 29, w: 2, h: 1, to: 'meadow', tx: 8, ty: 1, dir: 'down' },
+    { x: 19, y: 0, w: 2, h: 1, to: 'woods', tx: 8, ty: 30, dir: 'up' },
+  ],
+  doors: [],
+  labels: [],
+  npcs: [
+    { id: 'hazel', look: 'explorer', name: 'Hiker Hazel', x: 30, y: 26, dir: 'left', lines: ['Phew, what a climb! Lizards love to sunbathe on these warm canyon rocks.'] },
+    { id: 'rex', look: 'explorer', name: 'Climber Rex', x: 19, y: 11, dir: 'down', moveTo: { x: 21, y: 12, dir: 'left' },
+      trainer: { team: [['prickle', 10], ['cookie', 10], ['ziggy', 11]] },
+      lines: ['Whoa there! This canyon pass is narrow and the woods beyond are wild.', 'Only trainers who can beat me get to climb past. Ready?'],
+      after: ['Nice climbing! The woods are up ahead. Watch out for ferrets, they\'re sneaky!'] },
+  ],
+  chests: [{ id: 'cany1', x: 2, y: 5, item: 'bugs', qty: 3 }, { id: 'cany2', x: 37, y: 27, item: 'bandage', qty: 3 }],
+  wild: [
+    { sp: 'ziggy', min: 6, max: 10, w: 6 }, { sp: 'prickle', min: 6, max: 10, w: 6 }, { sp: 'noodle', min: 6, max: 10, w: 5 },
+    { sp: 'nibbles', min: 6, max: 10, w: 5 }, { sp: 'cookie', min: 6, max: 10, w: 5 },
+    { sp: 'spike', min: 10, max: 11, w: 1 }, { sp: 'thistle', min: 10, max: 11, w: 1 }, { sp: 'bandit', min: 10, max: 11, w: 1 },
+  ],
+};
+MAPS.marsh = {
+  name: 'Misty Marsh', music: 'marsh', dark: true, bg: '#1a3a2a', bsky: '#a8c8b8', bground: '#5a8a5a',
+  rows: [
+    'TTTTTTTTTTTTTTTTTTT=TTTTTTTTTTTTTTTTTTTT',
+    'T,,,,,,,,,,,,,,,,,,=,,,,,,,,,,,,,,,,,,,T',
+    'T,,,,,,,,TT,,,,,,,,=,,,,,,,,,,,,,,,,,,,T',
+    'T,,~~~~~,TT,,,,,,,,=,TT,,,,,,,,,,,,,,,,T',
+    'T,,~~~~~,,,,,,,,,,,=,TT,,,,,~~~~~~~,,,,T',
+    'T,,~~~~~,,,,,,,,,,,=,,,,,,,,~~~~~~~,,,,T',
+    'T,,~~~~~,,,,,~~~,,,=,,,,,,,,~~~~~~~,,,,T',
+    'T,,,,,,,,,,,,~~~,,,=,,,,,,,,~~~~~~~,,,,T',
+    'T,,,,,,,,,,,,~~~,,,=,,,,,,,,,,,,,,,,,,,T',
+    'T,,,,,,,,,,,,,,,,,,=,,,,,,,,,,,,,,,,,,,T',
+    'T,mmmm,,,,,,,,,,,,,=,,,,,,,,,,mmmmm,,,,T',
+    'T,mmmm,,,,,,,,,,,,,=,,,,,,,,,,mmmmm,,,,T',
+    'T~~~~~~~~~~~~~~~~~~b~~~~~~~~~~~~~~~~~~~T',
+    'T~~~~~~~~~~~~~~~~~~b~~~~~~~~~~~~~~~~~~~T',
+    'T~~~~~~~~~~~~~~~~~~b~~~~~~~~~~~~~~~~~~~T',
+    'T,TTT,,,,,,,,,,,,,,=,,,,,,,,,,,,,TT,,,,T',
+    'TTTTTTTTTTTTTTTTTTT=TTTTTTTTTTTTTTTTTTTT',
+    'T,,,,,,,,,,,,,,,,,,=,,,,~~~~,,,,,,,,,,,T',
+    'T,,,,,,,,,,mmmmm,,,=,,,,~~~~,,,,,,,,,,,T',
+    'T,,,,,,,,,,mmmmm,,,=,,,,,,,,,,,,,,,,,,,T',
+    'T,,,,~~~~~~mmmmm,,,=,,,,,,,,,,,,,,,,,,,T',
+    'T,,,,~~~~~~,,,,,,,,=,,,,,,,~~~~~~~~,,,,T',
+    'T,,,,~~~~~~,,,,,,,,=,,,,,,,~~~~~~~~,,,,T',
+    'T,,,,~~~~~~,,,,,TT,=,,,,,,,~~~~~~~~,,,,T',
+    'T,,,,,,,,,,,,,,,TT,=,,,,,,,~~~~~~~~,,,,T',
+    'T,,,,,,,,,,,,,,,TT,=,,,,,,,,,,,,,,,,,,,T',
+    'T,,,,,,,,,,,,,,,,,,=,,,,,,,,,,,,,,,,,,,T',
+    'T,,,,,,,,,,,,,,,,,,=,,,,,,,,,,,,,,,,,,,T',
+    'T,,,,,,,,,,,,,,,,,,=,,,,,,,,,,,,,,,,,,,T',
+    'TTTTTTTTTTTTTTTTTTT=TTTTTTTTTTTTTTTTTTTT',
+  ],
+  spawn: { x: 19, y: 28, dir: 'up' },
+  exits: [
+    { x: 19, y: 29, w: 1, h: 1, to: 'woods', tx: 24, ty: 1, dir: 'down' },
+    { x: 19, y: 0, w: 1, h: 1, to: 'peak', tx: 19, ty: 30, dir: 'up' },
+  ],
+  doors: [],
+  labels: [],
+  npcs: [
+    { id: 'bea', look: 'lily', name: 'Botanist Bea', x: 21, y: 27, dir: 'left', lines: ['I study marsh plants! Watch your step, frogs and ducks hide in every reed.'] },
+    { id: 'fen', look: 'fisher', name: 'Warden Fen', x: 19, y: 16, dir: 'down', moveTo: { x: 18, y: 15, dir: 'right' },
+      trainer: { team: [['croaker', 14], ['quackers', 14], ['tank', 14]] },
+      lines: ['Halt! The bridge over Misty Marsh is only for strong trainers.', 'The mountain past here is cold and the pets are tough. Show me what you\'ve got!'],
+      after: ['You can cross. Frosty Peak is straight north. Bundle up!'] },
+  ],
+  chests: [{ id: 'mars1', x: 2, y: 1, item: 'big', qty: 2 }, { id: 'mars2', x: 37, y: 27, coins: 200 }],
+  wild: [
+    { sp: 'noodle', min: 10, max: 14, w: 4 }, { sp: 'ribbit', min: 10, max: 13, w: 4 },
+    { sp: 'bandit', min: 11, max: 14, w: 2 }, { sp: 'croaker', min: 12, max: 14, w: 2 },
+  ],
+  pond: [
+    { sp: 'croaker', min: 11, max: 14, w: 3 }, { sp: 'quackers', min: 11, max: 14, w: 3 }, { sp: 'tank', min: 11, max: 14, w: 2 },
+    { sp: 'goldie', min: 11, max: 14, w: 2 }, { sp: 'puddles', min: 10, max: 12, w: 2 }, { sp: 'shelly', min: 10, max: 12, w: 2 },
+  ],
+  byTile: { m: [{ sp: 'truffle', min: 10, max: 13, w: 2 }, { sp: 'hamlet', min: 12, max: 14, w: 1 }] },
+};
+MAPS.peak = {
+  name: 'Frosty Peak', music: 'peak', bg: '#dce8f8', bsky: '#dceeff', bground: '#f4f8ff',
+  rows: [
+    'YYYYYYYYYYYYYYYYYYY*YYYYYYYYYYYYYYYYYYYY',
+    'YYYYYYYYYYYYYYY**********YYYYYYYYYYYYYYY',
+    'YYYYYYYYYYYYYYY**********YYYYYYYYYYYYYYY',
+    'YYYYYYYYYYYYYYY**********YYYYYYYYYYYYYYY',
+    'YYYYYYYYYYYYYYY**********YYYYYYYYYYYYYYY',
+    'Y**************************************Y',
+    'Y**************************************Y',
+    'Y*****q*********YYY*YYYY*********q*****Y',
+    'Y***************YYY*YYYY***************Y',
+    'Y**^^^^^^^^^^**************^^^^^^^^^^**Y',
+    'Y**^^^^^^^^^^**************^^^^^^^^^^**Y',
+    'Y**^^^^^^^^^^**************^^^^^^^^^^**Y',
+    'Y**^^^^^^^^^^**************^^^^^^^^^^**Y',
+    'Y**^^^^^^^^^^*^^^^****^^^^*^^^^^^^^^^**Y',
+    'Y**^^^^^^^^^^*^^^^****^^^^*^^^^^^^^^^**Y',
+    'Y**^^^^^^^^^^*^^^^****^^^^*^^^^^^^^^^**Y',
+    'Y**^^^^^^^^^^**************^^^^^^^^^^**Y',
+    'Y**************************************Y',
+    'YYYYYYYYY**********************YYYYYYYYY',
+    'YYYYYYYYY**********************YYYYYYYYY',
+    'Yqqqqqqqqqqqqqqqqqq*qqqqqqqqqqqqqqqqqqqY',
+    'Y**************************************Y',
+    'Y**************************************Y',
+    'Y**^^^^^^^^^^^^*********^^^^^^^^^^^^***Y',
+    'Y**^^^^^^^^^^^^*********^^^^^^^^^^^^***Y',
+    'Y**^^^^^^^^^^^^*********^^^^^^^^^^^^***Y',
+    'Y**^^^^^^^^^^^^***q**q**^^^^^^^^^^^^***Y',
+    'Y**^^^^^^^^^^^^*********^^^^^^^^^^^^***Y',
+    'Y*********q*******************q********Y',
+    'Y**************************************Y',
+    'Y**************************************Y',
+    'YYYYYYYYYYYYYYYYYYY*YYYYYYYYYYYYYYYYYYYY',
+  ],
+  spawn: { x: 19, y: 30, dir: 'up' },
+  exits: [
+    { x: 19, y: 31, w: 1, h: 1, to: 'marsh', tx: 19, ty: 1, dir: 'down' },
+    { x: 19, y: 0, w: 1, h: 1, to: 'lab', tx: 11, ty: 14, dir: 'up' },
+  ],
+  doors: [],
+  labels: [{ tx: 19.5, ty: 5.1, text: 'SUMMIT' }],
+  npcs: [
+    { id: 'sam', look: 'milo', name: 'Snow Scout Sam', x: 21, y: 29, dir: 'left', lines: ['Brr! Snow bunnies blend right in up here. You can only spot them by their noses!'] },
+    { id: 'bo', look: 'farmer', name: 'Mountaineer Bo', x: 19, y: 20, dir: 'down', moveTo: { x: 21, y: 21, dir: 'left' },
+      trainer: { team: [['hopscotch', 16], ['bandit', 16], ['rocky', 16]] },
+      lines: ['Brrr! The summit is just above this pass, but the cold is no joke.', 'Prove your pets are tough enough for the top of the mountain!'],
+      after: ['Go on up. The Champion is waiting at the summit.'] },
+      { id: 'maple', look: 'champion', name: 'Champion Maple', x: 19, y: 1, dir: 'down', needsRibbons: 4, champion: true, onWin: 'champion', music: 'champion',
+        moveTo: { x: 17, y: 1, dir: 'right' },
+        trainer: { team: [['thunder', 17], ['mango', 18], ['shadow', 18], ['rocky', 19]] },
+        lines: ['You made it all the way up Frosty Peak, {name}!', 'I\'m Maple, the Pet Champion. Something bad is going on, but first I need to know you\'re strong. Let\'s battle!'],
+        after: ['Dr. Gizmo\'s lab is just north of here. Be brave!'],
+        final: ['You saved them all! You\'re the greatest Pet Champion ever!'] },
+  ],
+  chests: [{ id: 'peak1', x: 1, y: 29, item: 'big', qty: 2 }, { id: 'peak2', x: 24, y: 2, coins: 300 }],
+  wild: [
+    { sp: 'hopscotch', min: 13, max: 17, w: 4 }, { sp: 'squeakers', min: 13, max: 17, w: 3 }, { sp: 'bandit', min: 13, max: 17, w: 3 },
+    { sp: 'rocky', min: 14, max: 17, w: 3 }, { sp: 'shadow', min: 14, max: 17, w: 3 }, { sp: 'clover', min: 13, max: 15, w: 2 }, { sp: 'nibbles', min: 13, max: 15, w: 2 },
+  ],
 };
 const ALL_CHESTS = [];
 for (const k in MAPS) for (const c of MAPS[k].chests) ALL_CHESTS.push(c.id);
@@ -2321,7 +2661,8 @@ const STORY = {
     'But lately, something strange is happening. Pets have been going missing all over town!',
     'People say they saw a grumpy man in a white lab coat sneaking toward Whisker Woods with a big net...',
     'Mom packed your bag with snacks for all kinds of pets, 2 Bandages and 100 coins. The Pet Clinic heals your pets for free.',
-    'Train with your pets and head north. The Pet Champion in Whisker Woods may know what\'s going on!',
+    'Train with your pets and head north. The Pet Champion at the top of Frosty Peak may know what\'s going on!',
+    'But the Champion only battles trainers who earn all 4 Trail Ribbons from the guardians of the Farm, the Lake, the Dunes and the Jungle.',
     'Different pets live in different places: try Sunny Farm to the east and Splash Lake to the west!',
   ],
   championWin: [
@@ -2344,8 +2685,10 @@ const STORY = {
 function goalText() {
   if (!G) return '';
   if (G.flags.gizmo) return 'Goal: You saved the pets! Visit the Farm, Lake, Dunes and Jungle to find every pet.';
-  if (G.flags.maple) return 'Goal: Stop Dr. Gizmo! His lab is just north of the Champion.';
-  return 'Goal: Find out who is taking the pets. Head north to Whisker Woods.';
+  if (G.flags.maple) return 'Goal: Stop Dr. Gizmo! His lab is just past the summit of Frosty Peak.';
+  const r = ribbonCount();
+  if (r < 4) return 'Goal: Win the 4 Trail Ribbons (' + r + '/4) from the Farm, Lake, Dunes and Jungle guardians.';
+  return 'Goal: Climb north through Misty Marsh to Frosty Peak and battle Champion Maple.';
 }
 
 // ---------------------------------------------------------------------
@@ -2449,7 +2792,105 @@ window.addEventListener('keydown', e => {
   if (e.code === 'Space' && !e.repeat) inputQueue.push('space');
 });
 window.addEventListener('keyup', e => { const a = KEYMAP[e.code]; if (a) held[a] = false; });
-function clearInput() { for (const k in held) held[k] = false; inputQueue = []; lastDir = null; }
+function clearInput() { for (const k in held) held[k] = false; inputQueue = []; lastDir = null; releaseTouch(); }
+
+// ---------------------------------------------------------------------
+// 9b. TOUCH CONTROLS (iPad / iPhone): on-screen D-pad, A/B buttons, tap-to-choose
+// Pointer Events (iOS 13+) track each finger separately, so you can hold the D-pad and press A.
+// ---------------------------------------------------------------------
+const tpad = { id: null, dir: null, rep: 0 };
+const touchEls = { dpad: document.getElementById('dpad'), touch: document.getElementById('touch') };
+function enableTouchUI() {
+  if (touchUI) return;
+  touchUI = true;
+  touchEls.touch.classList.add('on');
+  if (!canFullscreen() || navigator.standalone) document.getElementById('btnFull').style.display = 'none';
+  fitCanvas();
+}
+function setPadDir(d) {
+  if (d === tpad.dir) return;
+  if (tpad.dir) held[tpad.dir] = false;
+  tpad.dir = d;
+  document.querySelectorAll('#dpad .arm').forEach(a => a.classList.toggle('down', a.dataset.d === d));
+  if (d) { held[d] = true; lastDir = d; inputQueue.push(d); tpad.rep = performance.now() + 330; }
+}
+function padFromPoint(x, y) {
+  const r = touchEls.dpad.getBoundingClientRect(), dx = x - (r.left + r.width / 2), dy = y - (r.top + r.height / 2);
+  if (Math.hypot(dx, dy) < r.width * 0.12) return null;                 // dead zone in the middle
+  return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+}
+function releaseTouch() {
+  if (tpad.dir) held[tpad.dir] = false;
+  tpad.id = null; tpad.dir = null;
+  document.querySelectorAll('#touch .down').forEach(el => el.classList.remove('down'));
+  held.ok = false;
+}
+// Holding a D-pad arrow repeats it in menus, like holding an arrow key.
+function touchRepeat() {
+  if (tpad.dir && performance.now() > tpad.rep) { inputQueue.push(tpad.dir); tpad.rep = performance.now() + 110; }
+}
+touchEls.dpad.addEventListener('pointerdown', e => {
+  e.preventDefault(); enableTouchUI(); audioUnlock();
+  tpad.id = e.pointerId;
+  try { touchEls.dpad.setPointerCapture(e.pointerId); } catch (err) { /* older iOS */ }
+  setPadDir(padFromPoint(e.clientX, e.clientY));
+});
+// Listen on window too: iOS doesn't always send captured moves outside the element.
+window.addEventListener('pointermove', e => { if (e.pointerId === tpad.id) setPadDir(padFromPoint(e.clientX, e.clientY)); });
+['pointerup', 'pointercancel'].forEach(t => window.addEventListener(t, e => { if (e.pointerId === tpad.id) { setPadDir(null); tpad.id = null; } }));
+function bindTouchButton(id, down, up) {
+  const el = document.getElementById(id);
+  let pid = null;
+  el.addEventListener('pointerdown', e => { e.preventDefault(); enableTouchUI(); audioUnlock(); pid = e.pointerId; el.classList.add('down'); down(); });
+  const end = e => { if (e.pointerId !== pid) return; pid = null; el.classList.remove('down'); if (up) up(); };
+  window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end);
+}
+bindTouchButton('btnA', () => { held.ok = true; inputQueue.push('ok'); }, () => { held.ok = false; });
+bindTouchButton('btnB', () => { inputQueue.push('back'); });
+bindTouchButton('btnEmote', () => doEmote());
+bindTouchButton('btnHome', () => inputQueue.push('home'));
+bindTouchButton('btnMusic', () => { toggleMusic(); updateTouchLabels(); });
+bindTouchButton('btnSound', () => { toggleMute(); updateTouchLabels(); });
+bindTouchButton('btnFull', () => toggleFullscreen());
+function updateTouchLabels() {
+  document.getElementById('btnMusic').textContent = MUS.musicOn ? 'Music' : 'Music off';
+  document.getElementById('btnSound').textContent = Snd.muted ? 'Sound off' : 'Sound';
+}
+// Tapping the game itself: choose menu options, advance dialog, pick letters, and so on.
+function canvasPoint(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height };
+}
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  if (e.pointerType === 'touch') enableTouchUI();
+  audioUnlock();
+  const t = stack[stack.length - 1];
+  if (!t || (fade.a > 0 && fade.target > 0)) return;
+  const { x, y } = canvasPoint(e);
+  if (t.tap) t.tap(x, y);
+  else if (t.tapOk) inputQueue.push('ok');
+});
+// iOS: sound may only start from a finished tap, and pinch/double-tap zoom must be blocked by hand.
+['touchend', 'pointerup', 'click'].forEach(t => document.addEventListener(t, () => audioUnlock(), { passive: true }));
+document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('dblclick', e => e.preventDefault());
+document.addEventListener('contextmenu', e => e.preventDefault());
+let lastTouchEnd = 0;
+document.addEventListener('touchend', e => { const now = Date.now(); if (now - lastTouchEnd < 350) e.preventDefault(); lastTouchEnd = now; }, { passive: false });
+if (FORCE_TOUCH || (navigator.maxTouchPoints > 0 && window.matchMedia && matchMedia('(pointer: coarse)').matches)) enableTouchUI();
+// Hint bar wording for touch: keys become D-pad / A / B, and the small buttons replace M/N/V/H/F.
+const TOUCH_WORDS = [
+  ['Arrows/WASD Move', 'D-pad Move'], ['WASD Move', 'D-pad Move'], ['Arrows/WASD', 'D-pad'], ['Arrows', 'D-pad'],
+  ['Up/Down', 'D-pad'], ['Left/Right', 'D-pad'], ['W/S', 'D-pad'], ['Enter/Space/E', 'A'], ['E/Enter', 'A'], ['E Talk', 'A Talk'],
+  ['Enter', 'A'], ['SPACE: skip intro', 'B: skip intro'], ['SPACE: begin', 'Tap or A: begin'], ['Backspace', 'B'],
+  ['Type a name', 'Tap letters'], ['(hold to speed up)', '(hold A = faster)'], ['(hold = faster)', '(hold A = faster)'],
+];
+function touchHint(s) {
+  for (const [a, b] of TOUCH_WORDS) s = s.split(a).join(b);
+  return s.replace(/\b(V Emote|H Home|M Mute|M Sound on|F Full|N: music|M: mute|M: sound|F: fullscreen|V: emote)\b/g, '').replace(/\s{3,}/g, '   ').trim();
+}
 window.addEventListener('blur', clearInput);
 document.addEventListener('visibilitychange', clearInput);
 function heldDir() {
@@ -2536,8 +2977,8 @@ function drawPetSprite(sp, x, y, s = 1, opts = {}) {
   else ctx.drawImage(img, Math.round(x), Math.round(y), 32 * s, 32 * s);
   ctx.restore();
 }
-function hintKeys() { return isFullscreen() ? 'Q' : 'Q/Esc'; }
-function soundHint() { return Snd.muted ? 'M Sound on' : 'M Mute'; }
+function hintKeys() { return touchUI ? 'B' : isFullscreen() ? 'Q' : 'Q/Esc'; }
+function soundHint() { return touchUI ? '' : Snd.muted ? 'M Sound on' : 'M Mute'; }
 
 // ---------------------------------------------------------------------
 // 12. MESSAGE + CHOICE SCREENS (promise based)
@@ -2579,6 +3020,7 @@ class MessageScreen {
     if (this.shown >= this.pageLen() && Math.floor(frame / 20) % 2 === 0) drawText('▼', DLG.x + DLG.w - 14, DLG.y + DLG.h - 14, COL.accent);
   }
   hint() { return 'Enter/Space/E: next (hold = faster)   V: emote   ' + soundHint(); }
+  tap() { inputQueue.push('ok'); }
 }
 function fillName(text) { return String(text).replace(/\{name\}/g, G && G.name ? G.name : 'friend'); }
 function say(text, name) { return new Promise(r => push(new MessageScreen(fillName(text), r, name))); }
@@ -2634,6 +3076,13 @@ class ChoiceScreen {
   }
   hint() { return 'Up/Down: choose   Enter: OK' + (this.o.cancel !== undefined ? '   ' + hintKeys() + ': back' : '') + '   ' + soundHint(); }
 }
+ChoiceScreen.prototype.tap = function (x, y) {
+  if (x >= this.x && x < this.x + this.w && y >= this.y + 4 && y < this.y + this.h - 4) {
+    const k = clamp(Math.floor((y - this.y - 5) / this.rowH), 0, this.opts.length - 1);
+    if (this.opts[k].disabled) { sfx('bump'); return; }
+    this.i = k; inputQueue.push('ok');
+  } else if (this.promptLines || this.o.info) { /* tapping the text box does nothing */ }
+};
 function choose(options, o = {}) { return new Promise(r => push(new ChoiceScreen(options, r, o))); }
 async function yesNo(prompt) { return (await choose(['Yes', 'No'], { prompt, cancel: 1 })) === 0; }
 
@@ -2655,7 +3104,7 @@ async function goHome() {
   saveGame();
   return true;
 }
-const AMBIENT = { pawsville: 'chirp', meadow: 'chirp', woods: 'hoot', lab: 'hum', farm: 'chirp', lake: 'chirp', jungle: 'chirp' };
+const AMBIENT = { pawsville: 'chirp', meadow: 'chirp', woods: 'hoot', lab: 'hum', farm: 'chirp', lake: 'chirp', jungle: 'chirp', marsh: 'hoot' };
 function enterMap(id, x, y, dir) {
   const m = MAPS[id] || MAPS.pawsville;
   world.map = m; world.mapId = MAPS[id] ? id : 'pawsville';
@@ -2767,6 +3216,11 @@ const OPPOSITE = { up: 'down', down: 'up', left: 'right', right: 'left' };
 async function talkTo(npc) {
   world.npcDir[npc.id] = OPPOSITE[G.dir];
   sfx('confirm');
+  if (npc.trainer && !G.flags[npc.id] && npc.needsRibbons && ribbonCount() < npc.needsRibbons) {
+    await say('Hello, {name}. I only battle trainers who have earned all 4 Trail Ribbons.', npc.name);
+    await say('Beat the guardians of Sunny Farm, Splash Lake, Sunny Dunes and Parrot Jungle. You have ' + ribbonCount() + ' of 4 so far.', npc.name);
+    return;
+  }
   if (npc.trainer && !G.flags[npc.id]) {
     for (const l of npc.lines) await say(l, npc.name);
     const enemies = npc.trainer.team.map(([sp, lv]) => createPet(sp, lv));
@@ -2783,7 +3237,14 @@ async function talkTo(npc) {
     return;
   }
   const lines = (G.flags.gizmo && npc.final) ? npc.final : (npc.trainer ? npc.after : npc.lines);
-  for (const l of lines) await say(l, npc.name);
+  if (npc.trainer) { for (const l of lines) await say(l, npc.name); return; }
+  // Helpful characters: their story the first time (or after the big rescue), then always a tip.
+  if (!G.flags['met_' + npc.id] || (G.flags.gizmo && npc.final && !G.flags['final_' + npc.id])) {
+    for (const l of lines) await say(l, npc.name);
+    G.flags['met_' + npc.id] = true;
+    if (G.flags.gizmo) G.flags['final_' + npc.id] = true;
+  }
+  await say(nextTip(), npc.name);
 }
 async function stepAside(npc) {
   await fadeTo(1, 8);
@@ -2791,7 +3252,61 @@ async function stepAside(npc) {
   delete world.npcDir[npc.id];
   await fadeTo(0, 8);
 }
+const RIBBON_IDS = ['dale', 'coral', 'sandy', 'kai'];
+const RIBBON_INFO = {
+  dale: ['Farm Ribbon', 'Rancher Dale', 'Sunny Farm, east of Pawsville', 10],
+  coral: ['Lake Ribbon', 'Captain Coral', 'Splash Lake, west of Pawsville', 11],
+  sandy: ['Dunes Ribbon', 'Ranger Sandy', 'Sunny Dunes, east of Meadow Path', 12],
+  kai: ['Jungle Ribbon', 'Keeper Kai', 'Parrot Jungle, east of Whisker Woods', 13],
+};
+const BATTLE_TIPS = [
+  'In the Fight menu, a green ▲ next to a move means it is super effective against that pet!',
+  'Faster pets attack first. If your pet is slow, pick a strong move so it hits hard when it gets a turn.',
+  'Switching pets uses your turn. Switch to a pet that is strong against your foe\'s type.',
+  'Pets that sit out still get half the XP when you win, so your whole team grows.',
+  'At Lv 10 your pets grow up into a bigger form with much better stats.',
+  'Pets learn new moves at Lv 7, 9, 13 and 17. The Lv 9 move helps against the type that beats them!',
+  'Bandages heal 20 HP. Big Bandages heal all the way, and they even wake up tired pets.',
+  'The Pet Clinic in Pawsville heals your whole team for free. Your house heals them too!',
+  'Wild pets only make friends with treats they love. In battle, your Bag shows their favorite with a ♥.',
+  'The more tired a wild pet is, the more likely it is to become your friend.',
+  'You can leave any battle with Run. Train a bit and come back stronger!',
+  'Wild pets hide in tall grass, reeds and mud. Paths and sand are safe to walk on.',
+  'Lost? Choose Go Home in the menu to zip back to your house in Pawsville.',
+  'Each type beats some types and loses to others. A pet\'s Summary shows what it\'s strong and weak against.',
+];
+function strongestLevel() { return G ? Math.max(...G.party.map(q => q.lv)) : 1; }
+function levelAdvice(want) {
+  const lv = strongestLevel();
+  return lv < want ? ' Your strongest pet is Lv ' + lv + ', so train until your team is about Lv ' + want + ' first.' : ' Your team looks ready!';
+}
+// The tip that helps the player take the next step of the adventure.
+function progressTip() {
+  const missing = RIBBON_IDS.filter(id => !G.flags[id]);
+  if (!G.flags.rex) return 'Tip: North of Meadow Path is Pebble Canyon. Climber Rex blocks the pass with Lv 10-11 pets.' + levelAdvice(9);
+  if (missing.length && (G.tipN % 4 === 1 || G.flags.bo)) {
+    const [rib, who, where, want] = RIBBON_INFO[missing[0]];
+    return 'Tip: You have ' + ribbonCount() + ' of 4 Trail Ribbons. ' + who + ' gives the ' + rib + ' in ' + where + '.' + levelAdvice(want);
+  }
+  if (!G.flags.fen) return 'Tip: Warden Fen guards the bridge in Misty Marsh, north of Whisker Woods. His pets are Lv 14.' + levelAdvice(13);
+  if (!G.flags.bo) return 'Tip: Mountaineer Bo blocks the pass on Frosty Peak with Lv 16 pets.' + levelAdvice(15);
+  if (!G.flags.maple) return 'Tip: Champion Maple waits at the summit of Frosty Peak with four pets up to Lv 19. Bring your best team!' + levelAdvice(17);
+  if (!G.flags.gizmo) return 'Tip: Dr. Gizmo\'s lab is past the summit. His pets are all Lv 20, so heal up and bring six pets!' + levelAdvice(19);
+  return 'Tip: You saved the pets! There are 32 kinds of pets. How many have you befriended? You have ' + G.stats.caught + ' so far.';
+}
+function nextTip() {
+  G.tipN = (G.tipN || 0) + 1;
+  return G.tipN % 2 === 1 ? progressTip() : 'Battle tip: ' + BATTLE_TIPS[Math.floor(G.tipN / 2) % BATTLE_TIPS.length];
+}
+function ribbonCount() { return G ? RIBBON_IDS.filter(id => G.flags[id]).length : 0; }
 const STORY_SCRIPTS = {
+  async ribbon(npc) {
+    await say(npc.after[0], npc.name);
+    G.flags[npc.id] = true;
+    sfx('levelUp');
+    await say('You earned the ' + npc.ribbon + '! (' + ribbonCount() + ' of 4 Trail Ribbons)');
+    if (ribbonCount() === 4) await say('You have all 4 Trail Ribbons! Champion Maple will battle you now. She waits at the top of Frosty Peak.');
+  },
   async champion(npc) {
     for (const l of STORY.championWin) await say(l, npc.name);
     for (const p of G.party) healPet(p);
@@ -2939,7 +3454,7 @@ async function pauseMenu() {
   for (;;) {
     const i = await choose(['Pets', 'Bag', 'Go Home', 'Your Name', 'Jukebox', 'Save', 'Controls', 'Close'], {
       x: W - 96, y: 22, minW: 90, cancel: 7, start, title: G.coins + ' coins',
-      info: () => goalText() + '\nPets caught: ' + G.stats.caught + '   Chests: ' + Object.keys(G.chests).length + '/' + ALL_CHESTS.length + '   Time: ' + fmtTime(G.stats.time),
+      info: () => goalText() + '\nRibbons: ' + ribbonCount() + '/4   Pets caught: ' + G.stats.caught + '   Chests: ' + Object.keys(G.chests).length + '/' + ALL_CHESTS.length + '   Time: ' + fmtTime(G.stats.time),
     });
     start = i;
     if (i === 0) await petsMenu();
@@ -2964,6 +3479,13 @@ function openJukebox() {
   });
 }
 async function showControls() {
+  if (touchUI) {
+    await say('D-pad: walk and move the cursor.\nA: talk, open, confirm (hold A to make text go faster).\nB: back, or open this menu.');
+    await say('You can also tap menu choices, battle buttons and text boxes right on the screen!');
+    await say('Small buttons: Emote, Home (go home, it asks first), Music on/off, Sound on/off' + (canFullscreen() ? ', Full (fullscreen).' : '.'));
+    await say('Tip for iPhone: in Safari, tap Share, then "Add to Home Screen" to play full screen like an app.');
+    return;
+  }
   await say('Arrows or WASD: walk and move the cursor.\nEnter, Space or E: talk, open, confirm.\nQ or Esc: back, open this menu.');
   await say('V: emote! Show a heart, star, music note or happy face. In battle your pet celebrates.\nH: go home (it asks first).');
   await say('M: mute everything.  N: music on/off (sound effects stay on).\nF: fullscreen on/off.');
@@ -2971,7 +3493,7 @@ async function showControls() {
 }
 // Party grid. mode: {title, filter(p)->string|null (null = allowed)}. Returns index or -1.
 class PartyScreen {
-  constructor(resolve, o = {}) { this.resolve = resolve; this.o = o; this.i = 0; this.opaque = true; }
+  constructor(resolve, o = {}) { this.resolve = resolve; this.o = o; this.i = clamp(o.start || 0, 0, Math.max(0, G.party.length - 1)); this.opaque = true; }
   update(inp) {
     const n = G.party.length;
     for (const a of inp) {
@@ -3007,6 +3529,12 @@ class PartyScreen {
   }
   hint() { return 'Arrows: choose   Enter: select' + (this.o.forced ? '' : '   ' + hintKeys() + ': back') + '   ' + soundHint(); }
 }
+PartyScreen.prototype.tap = function (x, y) {
+  for (let k = 0; k < G.party.length; k++) {
+    const cx = 6 + (k % 2) * 212, cy = 26 + Math.floor(k / 2) * 66;
+    if (x >= cx && x < cx + 208 && y >= cy && y < cy + 62) { this.i = k; inputQueue.push('ok'); return; }
+  }
+};
 function choosePet(o) { return new Promise(r => push(new PartyScreen(r, o))); }
 class SummaryScreen {
   constructor(p, resolve) { this.p = p; this.resolve = resolve; this.opaque = true; }
@@ -3043,6 +3571,7 @@ class SummaryScreen {
   }
   hint() { return 'Enter or ' + hintKeys() + ': back'; }
 }
+SummaryScreen.prototype.tapOk = true;
 function showSummary(p) { return new Promise(r => push(new SummaryScreen(p, r))); }
 async function petsMenu() {
   for (;;) {
@@ -3233,6 +3762,12 @@ class PenScreen {
   }
   hint() { return 'Arrows: move   Enter: pick   ' + hintKeys() + ': ' + (this.mark ? 'unpick' : 'leave') + '   ' + soundHint(); }
 }
+PenScreen.prototype.tap = function (x, y) {
+  const ci = x < 216 ? 0 : 1, vis = ci === 1 ? 9 : 6, rh = ci === 0 ? 20 : 14, start = ci === 1 ? this.scroll : 0;
+  const r = Math.floor((y - 43) / rh) + start;
+  if (y < 43 || r < start || r >= Math.min(this.rows(ci), start + vis)) return;
+  this.col = ci; this.row = r; this.select();
+};
 function openPen() { return new Promise(r => push(new PenScreen(r))); }
 async function shopScript() {
   const bg = topScreen();
@@ -3287,6 +3822,7 @@ class TitleScreen {
     if (this.phase === 'press' && Math.floor(this.t / 30) % 2 === 0) drawTextC('Press ENTER to start', W / 2, 116, COL.ink, 1);
   }
   hint() { return 'Enter: start   M: sound   F: fullscreen'; }
+  tap() { inputQueue.push('ok'); }
 }
 // ---- Splash -> studio card -> story intro -> title ----
 class SplashScreen {
@@ -3301,6 +3837,7 @@ class SplashScreen {
     if (Math.floor(this.t / 30) % 2 === 0) drawTextC('Press SPACE to begin', W / 2, 112, COL.white, 2);
   }
   hint() { return 'SPACE: begin   M: sound   F: fullscreen'; }
+  tap() { inputQueue.push('ok'); }
 }
 function drawPerson(look, dir, f, x, y, s) { ctx.drawImage(PEOPLE[look][dir][f], Math.round(x), Math.round(y), 16 * s, 16 * s); }
 function introSky(top, bottom) { ctx.fillStyle = top; ctx.fillRect(0, 0, W, 90); ctx.fillStyle = bottom; ctx.fillRect(0, 90, W, 90); }
@@ -3397,7 +3934,7 @@ class IntroScreen {
     if (s.sfxAt && s.sfxAt[this.t]) sfx(s.sfxAt[this.t]);
     if (s.sfxEvery && this.t % s.sfxEvery[0] === 0) sfx(s.sfxEvery[1]);
     if (s.text && this.t * 1.5 < s.text.length && this.t % 4 === 0) sfx('blip');
-    if (inp.includes('space')) { this.finish(); return; }
+    if (inp.includes('space') || inp.includes('back')) { this.finish(); return; }
     if (inp.includes('ok')) {
       if (s.text && this.t * 1.5 < s.text.length) this.t = Math.ceil(s.text.length / 1.5);
       else this.next();
@@ -3422,6 +3959,7 @@ class IntroScreen {
     if (s.text) for (let k = 1; k < INTRO.length; k++) { ctx.fillStyle = k === this.i ? COL.accent : 'rgba(255,255,255,0.5)'; ctx.fillRect(W / 2 - INTRO.length * 6 + k * 12, 168, 6, 4); }
   }
   hint() { return 'SPACE: skip intro   ENTER: next scene   ' + soundHint(); }
+  tap() { inputQueue.push('ok'); }
 }
 // ---- Emotes (V): your character in the overworld, your pet in battle ----
 let emoteIdx = 0;
@@ -3457,9 +3995,48 @@ function drawEmote(em, x, y) {
   }
 }
 // ---- Typing a name (player or pet). While this screen is open, letter keys type instead of acting as controls. ----
+const NAME_KEYS = [
+  ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'],
+  ['K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T'],
+  ['U', 'V', 'W', 'X', 'Y', 'Z', '-', "'", '.', '1'],
+  ['SPACE', 'SPACE', 'SPACE', 'DEL', 'DEL', 'DEL', 'OK', 'OK', 'OK', 'OK'],
+];
+const NK = { x0: 86, y0: 84, w: 26, h: 19 };
 class NameEntryScreen {
-  constructor(resolve, o) { this.resolve = resolve; this.o = o; this.text = cleanName(o.initial || ''); this.t = 0; this.err = ''; this.opaque = true; this.shake = 0; }
+  constructor(resolve, o) { this.resolve = resolve; this.o = o; this.text = cleanName(o.initial || ''); this.t = 0; this.err = ''; this.opaque = true; this.shake = 0; this.gr = 0; this.gc = 0; }
+  addChar(ch) {
+    if (this.text.length >= NAME_MAX) { sfx('bump'); this.err = 'Names can have up to ' + NAME_MAX + ' letters.'; this.shake = 10; return; }
+    if (ch === ' ' && (!this.text || this.text.endsWith(' '))) return;
+    this.text += this.text ? ch.toLowerCase() : ch.toUpperCase();
+    sfx('blip'); this.err = '';
+  }
+  backspace() {
+    if (!this.text && this.o.cancel) { sfx('cancel'); pop(this); this.resolve(null); return; }
+    this.text = this.text.slice(0, -1); sfx('move'); this.err = '';
+  }
+  pressKey(k) {
+    if (k === 'OK') this.confirm();
+    else if (k === 'DEL') this.backspace();
+    else this.addChar(k === 'SPACE' ? ' ' : k);
+  }
+  moveCursor(d) {
+    const cur = NAME_KEYS[this.gr][this.gc];
+    if (d === 'left' || d === 'right') {
+      const step = d === 'left' ? -1 : 1;
+      let c = this.gc; do { c = (c + step + 10) % 10; } while (NAME_KEYS[this.gr][c] === cur && this.gr === 3 && c !== this.gc);
+      this.gc = c;
+      if (this.gr === 3) { const k = NAME_KEYS[3][this.gc]; this.gc = NAME_KEYS[3].indexOf(k); }
+    } else { this.gr = (this.gr + (d === 'up' ? 3 : 1)) % 4; if (this.gr === 3) this.gc = NAME_KEYS[3].indexOf(NAME_KEYS[3][this.gc]); }
+    sfx('move');
+  }
+  tap(x, y) {
+    const c = Math.floor((x - NK.x0) / NK.w), r = Math.floor((y - NK.y0) / NK.h);
+    if (r < 0 || r > 3 || c < 0 || c > 9) return;
+    this.gr = r; this.gc = NAME_KEYS[r].indexOf(NAME_KEYS[r][c]);
+    this.pressKey(NAME_KEYS[r][c]);
+  }
   key(e) {
+    if (e.key && e.key.startsWith('Arrow')) { this.moveCursor(e.key.slice(5).toLowerCase()); return; }
     if (e.key === 'Enter' || e.key === 'NumpadEnter') return this.confirm();
     if (e.key === 'Escape') { if (this.o.cancel) { sfx('cancel'); pop(this); this.resolve(null); } return; }
     if (e.key === 'Backspace' || e.key === 'Delete') { this.text = this.text.slice(0, -1); sfx('move'); this.err = ''; return; }
@@ -3475,21 +4052,44 @@ class NameEntryScreen {
     if (!name && !this.o.allowEmpty) { sfx('bump'); this.err = 'Please type a name first!'; this.shake = 10; return; }
     sfx('confirm'); pop(this); this.resolve(name);
   }
-  update() { this.t++; if (this.shake > 0) this.shake--; }
+  update(inp) {   // D-pad / A / B (touch or controller); a real keyboard types through key() instead
+    this.t++; if (this.shake > 0) this.shake--;
+    for (const a of inp) {
+      if (DIR_KEYS.includes(a)) this.moveCursor(a);
+      else if (a === 'ok') this.pressKey(NAME_KEYS[this.gr][this.gc]);
+      else if (a === 'back') this.backspace();
+      if (!stack.includes(this)) return;
+    }
+  }
   draw() {
     drawSky(this.t);
-    if (this.o.pet) drawPet(this.o.pet, W / 2 - 32, 20, 2);
-    const top = this.o.pet ? 92 : 56;
-    box(40, top, W - 80, 74, COL.paper);
-    drawTextC(this.o.title, W / 2, top + 10, COL.ink);
-    const bx = W / 2 - 80 + (this.shake ? (this.shake % 4 < 2 ? 3 : -3) : 0);
-    box(bx, top + 26, 160, 22, COL.white);
-    drawText(this.text, bx + 10, top + 33, COL.ink, 1);
-    if (Math.floor(this.t / 20) % 2 === 0 && this.text.length < NAME_MAX) { ctx.fillStyle = COL.accent; ctx.fillRect(bx + 10 + this.text.length * FW, top + 41, 5, 2); }
-    drawTextR(this.text.length + '/' + NAME_MAX, bx + 154, top + 33, COL.dim);
-    drawTextC(this.err || this.o.help || 'Type with your keyboard, then press Enter.', W / 2, top + 56, this.err ? COL.red : COL.dim);
+    const bxL = this.o.pet ? 96 : 56, bwid = this.o.pet ? 320 : 320;
+    if (this.o.pet) drawPet(this.o.pet, 22, 8, 2);
+    box(bxL, 8, bwid, 66, COL.paper);
+    drawTextC(this.o.title, bxL + bwid / 2, 16, COL.ink);
+    const bx = bxL + bwid / 2 - 80 + (this.shake ? (this.shake % 4 < 2 ? 3 : -3) : 0);
+    box(bx, 30, 160, 22, COL.white);
+    drawText(this.text, bx + 10, 37, COL.ink, 1);
+    if (Math.floor(this.t / 20) % 2 === 0 && this.text.length < NAME_MAX) { ctx.fillStyle = COL.accent; ctx.fillRect(bx + 10 + this.text.length * FW, 45, 5, 2); }
+    drawTextR(this.text.length + '/' + NAME_MAX, bx + 154, 37, COL.dim);
+    drawTextC(this.err || this.o.help || 'Type, or tap the letters below.', bxL + bwid / 2, 59, this.err ? COL.red : COL.dim);
+    // the on-screen keyboard
+    box(NK.x0 - 6, NK.y0 - 6, NK.w * 10 + 12, NK.h * 4 + 12, '#fff8e6');
+    NAME_KEYS.forEach((row, r) => {
+      for (let c = 0; c < 10; c++) {
+        const k = row[c];
+        if (c > 0 && row[c - 1] === k) continue;
+        let span = 1; while (c + span < 10 && row[c + span] === k) span++;
+        const x = NK.x0 + c * NK.w, y = NK.y0 + r * NK.h, sel = r === this.gr && NAME_KEYS[r].indexOf(k) === NAME_KEYS[this.gr].indexOf(NAME_KEYS[this.gr][this.gc]);
+        ctx.fillStyle = sel ? COL.sel : (k === 'OK' ? '#c8f0c8' : k === 'DEL' ? '#f8d0c8' : COL.white);
+        ctx.fillRect(x + 1, y + 1, span * NK.w - 2, NK.h - 2);
+        ctx.fillStyle = sel ? COL.accent : '#d8d0b8'; ctx.fillRect(x + 1, y + NK.h - 3, span * NK.w - 2, 2);
+        const label = k.length === 1 && this.text ? k.toLowerCase() : k;
+        drawTextC(label, x + span * NK.w / 2, y + 5, COL.ink);
+      }
+    });
   }
-  hint() { return 'Type a name   Enter: OK   Backspace: delete' + (this.o.cancel ? '   Esc: cancel' : ''); }
+  hint() { return touchUI ? 'Tap letters (or D-pad + A)   B: delete' + (this.o.cancel ? ' / cancel' : '') : 'Type a name   Enter: OK   Backspace: delete' + (this.o.cancel ? '   Esc: cancel' : ''); }
 }
 function enterName(o) { return new Promise(r => push(new NameEntryScreen(r, o))); }
 async function nicknamePet(p, ask = true) {
@@ -3542,6 +4142,13 @@ class CustomizeScreen {
   }
   hint() { return 'Up/Down: pick   Left/Right: change   Enter: done   ' + hintKeys() + ': cancel'; }
 }
+CustomizeScreen.prototype.tap = function (x, y) {
+  for (let k = 0; k < 2; k++) {
+    const ry = 54 + k * 40;
+    if (y >= ry - 8 && y < ry + 22 && x >= 186) { this.row = k; inputQueue.push(x < 350 ? 'left' : 'right'); return; }
+  }
+  if (x < 172 && y > 30 && y < 180) inputQueue.push('ok');   // tap the pet to keep the look
+};
 function customizePet(p) { return new Promise(r => push(new CustomizeScreen(p, r))); }
 let pendingName = null;
 async function titleMenu(title) {
@@ -3569,6 +4176,13 @@ async function titleMenu(title) {
   }
 }
 class StarterScreen {
+  tap(x, y) {
+    if (this.locked) return;
+    STARTERS.forEach((sp, k) => {
+      const cx = Math.round(W / 2 - (STARTERS.length * 100 - 8) / 2) + k * 100;
+      if (x >= cx && x < cx + 92 && y >= 40 && y < 152) { if (k === this.i) inputQueue.push('ok'); else { this.i = k; sfx('move'); } }
+    });
+  }
   constructor() { this.opaque = true; this.i = 0; this.t = 0; this.locked = false; }
   update(inp) {
     this.t++;
@@ -3646,6 +4260,7 @@ class WinScreen {
     if (this.t >= 60 && Math.floor(this.t / 30) % 2 === 0) drawTextC('Press ENTER to keep exploring', W / 2, 210, COL.white);
   }
   hint() { return 'Enter: keep exploring'; }
+  tap() { inputQueue.push('ok'); }
 }
 async function showWin() {
   playMusic('win');
@@ -3820,6 +4435,19 @@ class MoveMenu {
   }
   hint() { return 'Arrows: choose move   Enter: use   ' + hintKeys() + ': back   ▲ = super effective'; }
 }
+ActionMenu.prototype.tap = function (x, y) {
+  const mx = DLG.x + DLG.w - 190;
+  for (let k = 0; k < 4; k++) {
+    const bx = mx + 8 + (k % 2) * 90, by = DLG.y + 6 + Math.floor(k / 2) * 18;
+    if (x >= bx && x < bx + 88 && y >= by && y < by + 18) { this.i = k; inputQueue.push('ok'); return; }
+  }
+};
+MoveMenu.prototype.tap = function (x, y) {
+  for (let k = 0; k < this.B.player.moves.length; k++) {
+    const bx = DLG.x + 6 + (k % 2) * 210, by = DLG.y + 6 + Math.floor(k / 2) * 18;
+    if (x >= bx && x < bx + 206 && y >= by && y < by + 18) { this.i = k; inputQueue.push('ok'); return; }
+  }
+};
 function actionMenu(B) { return new Promise(r => push(new ActionMenu(B, r))); }
 function moveMenu(B) { return new Promise(r => push(new MoveMenu(B, r))); }
 
@@ -3907,7 +4535,7 @@ async function checkPlayerKO(B) {
   await bsay(petName(B.player) + ' is tired out!');
   if (!G.party.some(p => !isTired(p))) { await bsay('All of your pets are tired out!'); return 'lose'; }
   for (;;) {
-    const i = await choosePet({ title: 'Who will battle next?', forced: true });
+    const i = await choosePet({ title: 'Who will battle next?', forced: true, start: Math.max(0, G.party.findIndex(q => !isTired(q))) });
     const p = G.party[i];
     if (!p || isTired(p)) { await say((p ? petName(p) : 'That pet') + ' is too tired to battle!'); continue; }
     B.setPlayer(p);
@@ -3957,8 +4585,10 @@ async function throwTreat(B, key) {
 async function battleTurn(B) {
   const act = await chooseAction(B);
   if (act.kind === 'run') {
-    if (!B.wild) { await say('You can\'t run away from a trainer battle!'); return null; }
-    sfx('run'); await bsay('You got away safely!'); return 'run';
+    sfx('run');
+    if (B.wild) await bsay('You got away safely!');
+    else await bsay('You left the battle. ' + B.o.trainer.name + ' says: "Come back and try again any time!"');
+    return 'run';
   }
   if (act.kind === 'switch') {
     sfx('switch');
@@ -4096,6 +4726,7 @@ const STEP_MS = 1000 / 60;
 let lastT = 0, acc = 0;
 function update() {
   frame++;
+  if (touchUI) touchRepeat();
   for (let i = timers.length - 1; i >= 0; i--) {
     if (--timers[i].n <= 0) { const t = timers[i]; timers.splice(i, 1); t.r(); }
   }
@@ -4111,7 +4742,7 @@ function drawHintBar() {
   for (let i = stack.length - 1; i >= 0; i--) { const h = stack[i].hint ? stack[i].hint() : ''; if (h) { s = h; break; } }
   if (stack[stack.length - 1] === overworld && busy) s = soundHint();
   ctx.fillStyle = COL.bar; ctx.fillRect(0, HINT_Y, W, H - HINT_Y);
-  drawText(s, 4, HINT_Y + 1, COL.barText);
+  drawText(touchUI ? touchHint(s) : s, 4, HINT_Y + 1, COL.barText);
 }
 function render() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -4341,6 +4972,8 @@ function runSelfTest() {
           if (!Number.isFinite(ev.f) || ev.f < 20 || ev.f > 4200) mErr2.push(name + ' bad frequency ' + ev.f);
           if ((ev.quarter || ev.bend) && !QUARTER_TONE_SONGS.includes(name)) mErr2.push(name + ' has a quarter-tone');
           if ((ev.quarter || ev.bend) && ev.hold) mErr2.push(name + ' holds a quarter-tone');
+          if (ev.arp && (ev.quarter || ev.bend || ev.arp.some(x => x > 12))) mErr2.push(name + ' bad arpeggio');
+          if (l.voice === 'p1' && !ev.arp && (l.duty || 0.25) > 0.25) mErr2.push(name + ' lead is not a thin pulse');
         });
         if (name === 'woods' && l.voice === 'p1') for (let b = 0; b < c.ev.length; b += 12) {
           const halves = [c.ev.slice(b, b + 5), c.ev.slice(b + 5, b + 12)];
@@ -4414,6 +5047,34 @@ function runSelfTest() {
   for (const k in SPECIES) { const q = createPet(k, 8); q.hp = 1; for (const tk of TREAT_KEYS) if (likesTreat(q, tk) ? treatChance(q, tk) < catchChance(q) : treatChance(q, tk) >= catchChance(q) * 0.5) trErr.push(k + '/' + tk); }
   check(TREAT_KEYS.length + ' kinds of treats: every pet has a favorite and the wrong snack rarely works', !trErr.length, trErr.slice(0, 4).join('; '));
   check(Object.keys(SPECIES).length + ' pets, ' + TYPES.length + ' types, ' + Object.keys(MOVES).length + ' moves', Object.keys(SPECIES).length === 32, 'expected 32 pets');
+  // Difficulty curve: a typical team at the expected level should usually (but not always) win each big fight.
+  const simTeams = (team, foes) => {
+    let a = 0, b = 0;
+    for (let turn = 0; turn < 400 && a < team.length && b < foes.length; turn++) {
+      const me = team[a], foe = foes[b];
+      const best = me.moves.reduce((x, m) => MOVES[m].power * typeMult(MOVES[m].type, petType(foe)) > MOVES[x].power * typeMult(MOVES[x].type, petType(foe)) ? m : x);
+      const hitFoe = () => { foe.hp = Math.max(0, foe.hp - calcDamage(me, foe, best).dmg); };
+      const hitMe = () => { me.hp = Math.max(0, me.hp - Math.max(1, Math.floor(calcDamage(foe, me, enemyChooseMove(foe, me)).dmg * ENEMY_DAMAGE))); };
+      if (petStats(me).spd >= petStats(foe).spd) { hitFoe(); if (!isTired(foe)) hitMe(); } else { hitMe(); if (!isTired(me)) hitFoe(); }
+      if (isTired(foe)) b++; if (isTired(me)) a++;
+    }
+    return b >= foes.length;
+  };
+  const allSp = Object.keys(SPECIES), curve = [];
+  const fights = [['rex', 3, 9, 'canyon'], ['fen', 3, 13, 'marsh'], ['bo', 3, 15, 'peak'], ['maple', 4, 17, 'peak'], ['gizmo', 4, 19, 'lab']];   // team size + level a player usually has
+  let curveOK = true;
+  for (const [id, size, lv, mapId] of fights) {
+    const npc = MAPS[mapId].npcs.find(n => n.id === id);
+    let wins = 0;
+    for (let i = 0; i < 300; i++) {
+      const team = Array.from({ length: size }, () => { let sp = pick(allSp); if (lv >= 10 && SPECIES[sp].evo) sp = SPECIES[sp].evo; return createPet(sp, lv); });   // grown up by Lv 10
+      if (simTeams(team, npc.trainer.team.map(([sp, l]) => createPet(sp, l)))) wins++;
+    }
+    const pct = Math.round(wins / 3);
+    curve.push(npc.name.split(' ').pop() + ' ' + pct + '%');
+    if (pct < 45 || pct > 92) curveOK = false;   // not a wall, not a walkover
+  }
+  check('Harder but fair: a typical team wins ' + curve.join(', '), curveOK, curve.join(', '));
   check('Every type beats at least one type and loses to at least one', TYPES.every(t => BEATS[t].length > 0 && weakTo(t).length > 0) && typeMult('Parrot', 'Lizard') === 1.5 && typeMult('Lizard', 'Cat') === 1.5 && typeMult('Cat', 'Parrot') === 1.5, 'unbalanced chart');
   check('Type chart produces super-effective hits', superCount > 0 && typeMult('Dog', 'Cat') === 1.5 && typeMult('Cat', 'Dog') === 0.67 && typeMult('Dog', 'Hamster') === 1 && typeMult('Normal', 'Cat') === 1, 'type chart wrong');
 
@@ -4431,6 +5092,11 @@ function runSelfTest() {
   for (const k in ITEMS) if (textW(ITEMS[k].name) > 110) uErr.push('item ' + k);
   const texts = [];
   for (const k in STORY) texts.push(...[].concat(STORY[k]));
+  { const savedG2 = G; G = newGame('buddy'); G.party[0].lv = 1;
+    for (const t of BATTLE_TIPS) texts.push('Battle tip: ' + t);
+    const steps = [[], ['rex'], ['rex', 'fen'], ['rex', 'fen', 'bo'], ['rex', 'fen', 'bo', 'dale', 'coral', 'sandy', 'kai'], ['rex', 'fen', 'bo', 'dale', 'coral', 'sandy', 'kai', 'maple'], ['rex', 'fen', 'bo', 'dale', 'coral', 'sandy', 'kai', 'maple', 'gizmo']];
+    for (const s of steps) { G.flags = {}; s.forEach(id => { G.flags[id] = true; }); for (let n = 0; n < 4; n++) { G.tipN = n; texts.push(progressTip()); } }
+    G = savedG2; }
   for (const s of INTRO) { texts.push(s.text); if (wrapText(s.text, DLG.w - 20).length > 3) uErr.push('intro text too long'); }
   texts.push(goalText.toString().match(/'Goal:[^']*'/g).join(' '));
   for (const k in MAPS) for (const n of MAPS[k].npcs) { texts.push(...n.lines, ...(n.after || []), ...(n.final || [])); if (textW(n.name) + 10 > DLG.w) uErr.push('name tag ' + n.name); }
@@ -4458,7 +5124,9 @@ function runSelfTest() {
   world.map = MAPS.pawsville;
   const hints = [overworld.hint(), new MessageScreen('x', () => {}).hint(), new ChoiceScreen(['a'], () => {}, { cancel: 0 }).hint(),
     new PartyScreen(() => {}, {}).hint(), new PenScreen(() => {}).hint(), new NameEntryScreen(() => {}, { title: 'x', cancel: true }).hint(), new StarterScreen().hint(), new TitleScreen().hint()];
-  for (const h of hints) if (textW(h) > W - 8) uErr.push('hint too long: ' + h);
+  for (const h of hints) { if (textW(h) > W - 8) uErr.push('hint too long: ' + h); if (textW(touchHint(h)) > W - 8) uErr.push('touch hint too long: ' + h); }
+  for (const row of NAME_KEYS) if (row.length !== 10) uErr.push('keyboard row');
+  if (NK.x0 + NK.w * 10 > W || NK.y0 + NK.h * 4 > HINT_Y) uErr.push('on-screen keyboard does not fit');
   G = null;
   check('All UI text fits its box at 432x240 (longest dialog: ' + maxPages + ' pages)', !uErr.length, uErr.slice(0, 4).join('; '));
 
@@ -4529,6 +5197,28 @@ function devView(v) {
     G.party[0].nick = 'WWWWWWWWWW';
     push(new PartyScreen(() => {}, { title: 'Your pets' }));
   }
+  else if (v === 'clicktest') { runScript(async () => {   // render songs offline and measure clicks (sudden jumps) per voice
+    const out = [];
+    const only = (location.hash.split('&')[1] || '');
+    for (const name of (only === 'tri' ? Object.keys(SONGS) : ['woods', 'town', 'battle'])) for (const voice of (only === 'tri' ? ['tri'] : ['tri', 'p1', 'p2'])) {
+      const sr = 44100, secs = 6, oc = new OfflineAudioContext(1, sr * secs, sr);
+      const saved = { ac: Snd.ac, bus: Snd.musicBus, nb: Snd.noiseBuf };
+      Snd.ac = oc; Snd.musicBus = oc.createGain(); Snd.musicBus.gain.value = 0.18; Snd.musicBus.connect(oc.destination);
+      Object.keys(pulseWaves).forEach(k => delete pulseWaves[k]);
+      const pl = newPlayer(name, 0.05); pl.gain = Snd.musicBus;
+      for (let t = 0; t < secs - 0.3; t += 0.025) pumpPlayer(pl, t, (layer, ev, tt, sd, q) => { if (layer.voice === voice) playChipEvent(layer, ev, tt, sd, q); });
+      const buf = await oc.startRendering(), d = buf.getChannelData(0);
+      let peak = 0, jump = 0, clicks = 0;
+      for (let i = 1; i < d.length; i++) { peak = Math.max(peak, Math.abs(d[i])); const j = Math.abs(d[i] - d[i - 1]); jump = Math.max(jump, j); }
+      // a "click" = a jump much bigger than the steepest a smooth triangle at this level could move
+      for (let i = 1; i < d.length; i++) if (Math.abs(d[i] - d[i - 1]) > peak * 0.25) clicks++;
+      Object.assign(Snd, { ac: saved.ac, musicBus: saved.bus, noiseBuf: saved.nb });
+      Object.keys(pulseWaves).forEach(k => delete pulseWaves[k]);
+      out.push(name + ' ' + voice + ': peak ' + peak.toFixed(3) + '  biggest jump ' + jump.toFixed(3) + '  clicks ' + clicks);
+      document.getElementById('testout').textContent = out.join('\n');
+    }
+    out.push('done'); document.getElementById('testout').textContent = out.join('\n');
+  }); }
   else if (v === 'jukebox') { const s = push(new MusicRoomScreen()); audioUnlock(); s.i = s.names.indexOf('champion'); playMusic('champion', { cut: true }); }
   else if (v === 'audioprobe') { push(new MusicRoomScreen()); runScript(async () => {   // real Web Audio check (needs autoplay allowed)
     const out = []; const log = s => { out.push(s); document.getElementById('testout').textContent = out.join('\n'); };
@@ -4637,6 +5327,70 @@ async function runSmoke() {
     await mash(idle, 40);
     ok('Saying Yes teleports you home', G.map === 'pawsville' && G.x === HOME.x && G.y === HOME.y);
     G.party[0].nick = undefined; G.party[0].acc = null;
+    // Touch controls (iPad / iPhone): D-pad, A/B buttons and tapping the screen.
+    { enableTouchUI();
+      const tpd = (el, x, y, id, type = 'pointerdown') => (type === 'pointerdown' ? el : window).dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', clientX: x, clientY: y, bubbles: true, cancelable: true }));
+      const centerOf = el => { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2, r]; };
+      ok('Touch controls appear on a touch screen', document.getElementById('touch').classList.contains('on') && document.getElementById('dpad').getBoundingClientRect().width > 50);
+      enterMap('pawsville', HOME.x, HOME.y, 'down'); await wait(5);
+      const [dcx, dcy, dr] = centerOf(document.getElementById('dpad'));
+      const x0 = G.x;
+      tpd(touchEls.dpad, dcx + dr.width * 0.4, dcy, 11); await wait(40); tpd(touchEls.dpad, dcx + dr.width * 0.4, dcy, 11, 'pointerup'); await wait(20);
+      ok('Holding the D-pad right walks right (x ' + x0 + ' -> ' + G.x + ')', G.x > x0 + 1 && !held.right);
+      const [bx, by] = centerOf(document.getElementById('btnB'));
+      tpd(document.getElementById('btnB'), bx, by, 12); tpd(document.getElementById('btnB'), bx, by, 12, 'pointerup'); await wait(5);
+      ok('B opens the menu', topScreen() instanceof ChoiceScreen);
+      const menu = topScreen(), cr = canvas.getBoundingClientRect();
+      const toClient = (gx, gy) => [cr.left + gx * cr.width / W, cr.top + gy * cr.height / H];
+      const [px, py] = toClient(menu.x + 20, menu.y + 7 + 6 * menu.rowH + 3);   // tap "Controls"
+      tpd(canvas, px, py, 13); tpd(canvas, px, py, 13, 'pointerup'); await wait(5);
+      ok('Tapping a menu choice picks it', topScreen() instanceof MessageScreen && topScreen().pages[0].join(' ').includes('D-pad'));
+      const [ax, ay] = centerOf(document.getElementById('btnA'));
+      for (let i = 0; i < 30 && !(topScreen() instanceof ChoiceScreen); i++) { tpd(document.getElementById('btnA'), ax, ay, 14); tpd(document.getElementById('btnA'), ax, ay, 14, 'pointerup'); await wait(4); }
+      ok('A advances text', topScreen() instanceof ChoiceScreen);
+      tpd(document.getElementById('btnB'), bx, by, 15); tpd(document.getElementById('btnB'), bx, by, 15, 'pointerup');
+      await mash(idle, 10);
+      runScript(() => enterName({ title: 'Test', cancel: true }).then(n => { touchName = n; })); await wait(5);
+      let touchName;
+      const tapKey = async (r, c) => { const [kx, ky] = toClient(NK.x0 + c * NK.w + 5, NK.y0 + r * NK.h + 5); tpd(canvas, kx, ky, 16); tpd(canvas, kx, ky, 16, 'pointerup'); await wait(2); };
+      await tapKey(1, 5); await tapKey(0, 8); await tapKey(1, 5); await tapKey(3, 7);   // P, i, p, OK
+      await wait(5);
+      ok('The on-screen keyboard types a name by tapping (' + touchName + ')', touchName === 'Pip');
+      ok('Hints use D-pad / A / B words on touch screens', touchHint(overworld.hint()).includes('D-pad') && !touchHint(overworld.hint()).includes('Esc'));
+      touchUI = false; document.getElementById('touch').classList.remove('on'); fitCanvas(); await mash(idle, 10);
+    }
+    // The longer road: Meadow -> Pebble Canyon (gatekeeper) -> Whisker Woods -> Misty Marsh (gatekeeper) -> Frosty Peak.
+    { const rex = MAPS.canyon.npcs[0];
+      enterMap('meadow', 8, 1, 'up'); await wait(5);
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', key: 'w' })); await wait(20);
+      window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW', key: 'w' })); await wait(40);
+      ok('North of Meadow Path is Pebble Canyon', G.map === 'canyon');
+      ok('Climber Rex blocks the canyon pass until beaten', !isWalkable(MAPS.canyon, 19, 11));
+      G.flags.rex = true;
+      ok('...then he steps aside', isWalkable(MAPS.canyon, 19, 11) && !npcAt(MAPS.canyon, 19, 11));
+      G.flags.rex = false;
+      ok('Whisker Woods now leads to Misty Marsh, and the marsh to Frosty Peak', MAPS.woods.exits.some(e => e.to === 'marsh') && MAPS.marsh.exits.some(e => e.to === 'peak') && MAPS.peak.exits.some(e => e.to === 'lab'));
+      ok('Trail Ribbon guardians wait in the Farm, Lake, Dunes and Jungle', RIBBON_IDS.every(id => Object.values(MAPS).some(mm => mm.npcs.some(n => n.id === id && n.ribbon))));
+      enterMap('pawsville', HOME.x, HOME.y, 'down'); await wait(5); }
+    // Leaving a trainer battle, and tips from helpful characters.
+    { const rex = MAPS.canyon.npcs.find(n => n.id === 'rex'), savedParty = G.party;
+      G.party = [createPet('buddy', 9)]; G.flags.rex = false;
+      enterMap('canyon', 19, 12, 'up'); runScript(() => talkTo(rex));
+      await mash(() => topScreen() instanceof ActionMenu, 200);
+      await key('ArrowRight'); await key('ArrowDown'); await key('Enter');   // Run
+      await mash(idle, 60);
+      ok('You can leave a trainer battle with Run, and the trainer stays unbeaten', idle() && !G.flags.rex && G.map === 'canyon');
+      const granny = MAPS.pawsville.npcs.find(n => n.id === 'granny');
+      delete G.flags.met_granny; enterMap('pawsville', 12, 8, 'down');
+      runScript(() => talkTo(granny)); await wait(5);
+      const said = [];
+      for (let i = 0; i < 40 && !idle(); i++) { const t = topScreen(); if (t instanceof MessageScreen) said.push(t.pages.flat().join(' ')); await key('Enter'); await wait(4); }
+      ok('A helpful character tells their story, then gives a tip', said.some(s => s.includes('type')) && said.some(s => s.startsWith('Tip:') || s.startsWith('Battle tip:')));
+      runScript(() => talkTo(granny)); await wait(5);
+      const again = topScreen() instanceof MessageScreen ? topScreen().pages.flat().join(' ') : '';
+      ok('Talking again goes straight to a new tip (' + again.slice(0, 30) + '...)', again.startsWith('Tip:') || again.startsWith('Battle tip:'));
+      await mash(idle, 20);
+      G.flags.rex = false; G.party = savedParty; enterMap('pawsville', HOME.x, HOME.y, 'down'); await wait(5); }
     // Jukebox in the pause menu.
     await key('KeyQ'); await wait(5);
     for (let k = 0; k < 4; k++) await key('ArrowDown');
@@ -4708,8 +5462,15 @@ async function runSmoke() {
     ok('Caught pet joins the party (party ' + p0 + ' -> ' + G.party.length + ')', G.party.length >= p0 + (G.stats.caught ? 1 : 0) && G.stats.caught <= 1);
     // Trainer battle: Treat is refused and Run is refused without losing the turn.
     G.party = [createPet('buddy', 2)];
+    for (const id of RIBBON_IDS) G.flags[id] = false;
+    { const champ0 = MAPS.peak.npcs.find(n => n.id === 'maple');
+      enterMap('peak', 19, 2, 'up'); runScript(() => talkTo(champ0)); await wait(5);
+      ok('Champion Maple refuses to battle without the 4 Trail Ribbons', topScreen() instanceof MessageScreen && topScreen().pages.flat().join(' ').includes('4 Trail Ribbons'));
+      await mash(idle, 30);
+      ok('...and no battle started', idle() && !G.flags.maple); }
+    for (const id of RIBBON_IDS) G.flags[id] = true;
     const coins0 = G.coins;
-    const champ = MAPS.woods.npcs.find(n => n.id === 'maple');
+    const champ = MAPS.peak.npcs.find(n => n.id === 'maple');
     // Wrong treat: a cat offered Bugs usually refuses.
     { const realRandom = Math.random; Math.random = () => 0.1;
       const cat = createPet('mittens', 4); cat.hp = 1; G.party = [createPet('buddy', 9)];
@@ -4727,7 +5488,7 @@ async function runSmoke() {
       ok('Running away from the picky cat works', await mash(idle, 200));
       G.party = [createPet('buddy', 2)];
       bagMenu.last = 0; }
-    enterMap('woods', 24, 3, 'up');
+    enterMap('peak', 19, 3, 'up');
     runScript(() => talkTo(champ));
     await mash(() => topScreen() instanceof ActionMenu, 300);
     bagMenu.last = 0;
@@ -4759,12 +5520,12 @@ async function runSmoke() {
     runScript(() => startBattle({ wild: true, enemies: [createPet('buddy', 2)] }));
     ok('Battle finished and Cookie evolved into Cream', await mash(idle, 1500) && G.party[0].sp === 'cream');
     // Beat the Champion: she reveals Dr. Gizmo and steps aside from the lab path.
-    G.party = [createPet('rocky', 20), createPet('shadow', 20)];
-    G.party.forEach(q => { q.moves = ['howlwave', 'purrstorm'].filter(m => learnsetOf(q.sp).some(e => e[1] === m)).concat(['pounce']); });
-    ok('The lab path is blocked before the Champion is beaten', !isWalkable(MAPS.woods, 24, 1));
-    enterMap('woods', 24, 2, 'up');
+    G.party = ['rocky', 'shadow', 'nugget', 'cream', 'spike', 'mango'].map(sp => createPet(sp, 20));   // an end-game team
+    G.party.forEach(q => q.moves.sort((x, y) => MOVES[y].power - MOVES[x].power));   // mashing Enter uses the first move, so put the strongest first, like a real player would pick
+    ok('The lab path is blocked before the Champion is beaten', !isWalkable(MAPS.peak, 19, 1));
+    enterMap('peak', 19, 2, 'up');
     runScript(() => talkTo(champ));
-    ok('Champion battle won and she steps aside', await mash(idle, 2000) && G.flags.maple === true && npcPos(champ).x === 22 && !G.flags.gizmo);
+    ok('Champion battle won and she steps aside', await mash(idle, 2000) && G.flags.maple === true && npcPos(champ).x === 17 && !G.flags.gizmo);
     ok('No win screen yet (the story continues)', !stack.some(s => s instanceof WinScreen));
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' })); await wait(40);
     window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW' })); await wait(40);
