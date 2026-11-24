@@ -1,6 +1,6 @@
 # Pet Adventures
 
-A top-down, turn-based pet-collecting RPG for kids. The whole game is **one self-contained file**, `pet-adventures.html` (about 5,700 lines of HTML, CSS and vanilla JS). It runs by double-clicking it in Chrome or Safari on a Mac, or from a web address on iPad or iPhone. `README.md` is the player-facing guide; keep it in step with features.
+A top-down, turn-based pet-collecting RPG for kids. The whole game is **one self-contained file**, `pet-adventures.html` (about 6,600 lines of HTML, CSS and vanilla JS). **To play on a PC or Mac:** double-click the file; it opens in Chrome, Edge or Safari and uses the keyboard. **On iPad or iPhone:** open it from a web address in Safari (touch controls appear; a local file won't run there). `README.md` is the player-facing guide; keep it in step with features.
 
 ## Hard rules
 
@@ -29,6 +29,7 @@ A top-down, turn-based pet-collecting RPG for kids. The whole game is **one self
   | F | Fullscreen |
   | V | Emote |
   | H | Go home (asks first) |
+  | T | Switch main theme (Jukebox only) |
 
   - Keys are ignored while Cmd, Ctrl or Alt is held.
   - Space also pushes a `'space'` token, which the intro uses to skip.
@@ -111,55 +112,113 @@ Some grown-up pets have `machineEvo` (a species marked `machineOnly`) instead of
 - **Starters:** a puppy (Buddy) or a kitten (Mittens) only.
 - **Difficulty curve:** a self-test simulates a typical team at the level a player usually has for each big fight. Win rates must stay between **45% and 92%**. Retune trainer levels, not the formulas, if it fails.
 
-## Music (section 4)
+## Audio system (section 4)
 
-- **Sound styles (`STYLES`, default `16bit`, chosen by the user; `MUS.style` at startup):** 8-bit (pulse lead and arps, triangle bass, noise drums), **Mix** (8-bit pulse lead and tapping arps plus snappy noise drums, with an FM bass, a sine kick and a light echo, no pad) and 16-bit (all FM, gated drums, pad, full echo). Mix was the default for a while (the user felt pure 16-bit lost some punch), but the user then chose 16-bit as the default. A saved Jukebox choice still wins. Players switch styles with Left/Right in the Jukebox; the choice is saved in `localStorage` (`petAdventures.settings.v1`). The compressor is set gently (ratio 3, 8 ms attack) so attacks punch through.
+Everything is synthesized with Web Audio; there are no audio files. The pieces, in file order: SFX → `MainThemes` → `SONGS` → compiler → scheduler → voices → Jukebox.
 
-- **The 16-bit voices.** Songs are data in `SONGS`; in 16-bit style the voices map as follows:
+### Song data
 
-  | Data voice | Sound |
-  | --- | --- |
-  | `p1` | FM LEAD |
-  | `p2` | FM ARP (bell; ratio 3.5 or 7, or 2 if `duty: 0.5`) |
-  | `tri` | FM BASS |
-  | `noise` | gated kick/snare/hat, plus `g` (ghost) and `r` (rimshot) |
-  | `pad` | detuned saws; only allowed in Title, Pawsville, Clinic/Shop and Win (`PAD_SONGS`) |
-
-  Sound effects stay 8-bit.
-- **Audio chain:**
-  - Music: voices → 11 kHz lowpass → compressor → `musicBus` (0.18, N toggles it) → `duck` (dips under each SFX) → `master` (M mutes) → speakers.
-  - Echo: one 1/8-note feedback echo, only on Title, Whisker Woods and Clinic/Shop (`SONGS.x.echo`).
-- **Step strings:** each layer is `L(voice, steps, loopLength, opts)`.
+- A song is `{ title, bpm, spb, barSteps, meter, form, parts }`. `form` is a list of part names; each part is `{ bars, layers, barSteps?, meter?, echo?, solo? }` of at most 8 bars. All layers restart together at each part.
+- A layer is `L(voice, steps, loopLength, opts)`. Each layer loops at its own length, which is what makes the polymeter.
+- **Voices:** `p1` (lead), `p2` (arp), `tri` (bass), `noise` (drums), `pad`, `chirp` (pet voices). One layer per voice in a part.
+- **Step tokens:**
 
   | Token | Meaning |
   | --- | --- |
-  | `C4` | a note |
-  | `.` | rest |
+  | `C4`, `F#5`, `Bb3` | a note |
+  | `.` | rest (a held note keeps ringing through it) |
+  | `_` | rest that also ends a held note |
   | `-` suffix | hold |
   | `+` | quarter-tone sharp |
-  | `/` | bend into the note |
+  | `/` | slide up from a quarter-tone flat (90 ms) |
+  | `^` | snap bend: from a quarter-tone flat to pitch within 60 ms |
+  | `%` | wobble bend: dips a quarter-tone and returns, ending in tune |
   | `~` | vibrato |
   | `>` prefix | accent |
   | `:xy` | tracker arpeggio on p1/p2 (32nd notes), or chord tones on pad |
+  | `T1`–`T5`, `U1`–`U5` | the active theme's notes (see Main themes) |
   | `\|` | visual bar line, ignored |
 
-  Each layer loops at its own length (polymeter). Songs are made of parts of at most 8 bars, and all layers restart together at each part.
-- **Rules the tests enforce:**
-  - Every note parses, and every `loopLength` matches its step count.
-  - Every song quotes the 5-note motif (up a minor 3rd, down a 4th, up a 5th, down a step; E G D A G in C).
-  - Quarter-tones appear only in `woods` and `champion`, are never held, and are at most 1 per bar in Woods.
-  - Every part has a steady pulse (kick or bass).
-  - Songs are 16–32 bars, at most 7 voices.
-  - Every note and SFX fades in and out over at least 5 ms (`envelope`, `gateEnv`, `tone`, `noise` set `isEnv`).
-  - Live audio nodes stay at about 40 at most (`NODES`, `roomFor` skips low-priority notes).
-- **Engine quality layer (don't remove without re-measuring):**
-  - **Loudness trims:** `SONG_TRIM[style][song]` sets each song's player gain so songs and styles match in level. The trims close 60% of each song's gap to the median, so calm songs stay a little quieter on purpose. After changing voices, styles or song data, re-measure with `python3 tools/cdp_probe.py "$F#view=loudness&raw" 45` (raw levels) and `#view=loudness` (with trims). The compressor absorbs part of a trim, so refine the trims against the measured result.
-  - **Stereo:** `PAN` values times the style's `width` (8-bit is 0, so it stays mono; Mix 0.6; 16-bit 1). Each song player gets 5 fixed panner nodes (`makeBuses`), which are not counted in the ~40-node note budget. The echo is ping-pong when width > 0.
-  - **Master stage (`makeMasterChain`):** mute gain → 28 Hz highpass → 4× oversampled soft clip (clean below 0.6) → limiter. `makeMusicChain` is shared by live playback and the offline probes.
-  - **Node budget in crossfades:** a song that is fading out stops starting pad, arp (`p2`) and hi-hat notes, so the incoming song has room. The ping-pong echo's extra 4 nodes are fixed routing (`pl.fixed`), like the panners. With 16-bit, the real-audio probe can still skip about 1 quiet arp note while a new song fades in, which the old engine did too.
-  - **M and N** fade with `smoothSet` (no clicks). Noise hits start at a random offset in a 2 s buffer.
-- **Scheduler:** `setInterval` every 25 ms schedules 120 ms ahead on the audio clock. A hidden tab skips missed steps instead of bursting. Songs crossfade over 400 ms between areas, battles start with a sting, and the victory jingle is a one-shot.
+- **Drum tokens:** `k` kick, `s` snare, `h` hat, `g` ghost, `r` rimshot, `x` kick + snare, `t`/`m`/`l` high/mid/low tom.
+- **Chirp tokens:** `y` yip, `m` mew, `q` squeak (pitch curves in `MainThemes.theme1.chirps`).
+- **Layer options:** `duty` (pulse width), `tr` (transpose in semitones), `gate` (note length as a fraction of a step), `trem` (route through the tremolo bus), `off` (start offset in steps, to carry a loop's position across parts), `q` (theme quotes).
+- `compileSong(name)` caches per theme (`name|theme`). `songEventDump()` lists every scheduled event.
+
+### Main themes
+
+- **Naming:** **Theme 1** (key `theme1`, the default) is the newer klezmer-mode theme; **Theme 2** (key `theme2`) is the original soundtrack. They were first built the other way round and renamed at the user's request, so the golden file for the original is `theme2-events.json`. Theme 1's own songs have ids ending in `K`: `titleK`, `winK`, `championK`, `victoryK`.
+- `MainThemes.theme2` and `.theme1` each hold `name`, `theme` (5 notes), `intervals`, `sting`, `songs` and `title` (the title track's data). theme1 also has `riff`, `hook`, `groove`, `chirps` and a `minor` variant of its intervals.
+- **Theme 2 must never change musically.** `tests/golden/theme2-events.json` holds every song's events for 2 loops as they were before Theme 1 existed, and `python3 tools/check_golden.py` must pass. Run it after any change to song data, the compiler or the scheduler.
+- **Quotes:** songs quote the active theme with `T1`–`T5`. The layer's `q: [Q(root1, root2, iv1, iv2)]` gives the root note per theme and optional interval variants (Theme 2's lydian or major variants; `MINOR2` for Theme 1 in minor keys). `U1`–`U5` use the second entry of `q`.
+- **Selection:** `activeThemeKey` (default `theme1`). Order of precedence at startup: `?theme=theme2|theme1` in the address, then the stored setting (`petAdventures.settings.v1`, with the sound style), then the default. A save also stores `musicTheme`; it applies only when the browser has no stored choice (`applySavedTheme`). `setMusicTheme(k)` switches at once with a 400 ms crossfade (`rethemeAt`).
+- **Song swaps:** `themeSong(name)` maps a requested song to the active theme's version. Theme 1 swaps `title` → `titleK`, `win` → `winK` (section E of the title), `champion` → `championK` (last 8 bars: the riff in 7/8, then the 4/4 groove) and `victory` → `victoryK` (last five notes are the theme). `switchSong(name, now, { raw: true })` skips the swap; the Jukebox uses it for its two "Main Theme" rows. Each player remembers what was asked for in `pl.req`.
+- **Theme 1's title (`titleK`)** is 40 bars, about 70 s at 128 BPM, with a constant eighth note:
+
+  | Section | Parts | Bars | What happens |
+  | --- | --- | --- | --- |
+  | A | `A` | 4 of 7/8 | riff alone, tremolo, echo |
+  | B | `B` | 8 of 7/8 | drums and bass hit the riff's rhythm; pet chirps |
+  | C | `C1 C2 C3` | 8 of 7/8 | lead sings the theme in a 14-eighth cycle; hats, then a rising arp |
+  | D | `D1 D2` | 7/8 + 4/4 | riff alone, then a tom fill |
+  | E | `E1`–`E6` | 16 of 4/4 | looper build, then the hook twice (second time an octave up) and a tag |
+  | F | `F` | 2 of 7/8 | riff alone, back into A |
+
+  Parts whose names share a first letter form one section (`songSections`). The self-test checks these lengths, the riff's `off` continuity through E, and that it realigns 7 bars after it enters.
+- The spec that asked for Theme 1 mentioned an "RNG ?theme= parameter"; the game has no RNG or seed parameter, so there was nothing to preserve.
+
+### Sound styles (`STYLES`)
+
+Default `16bit` (the user's choice; Mix was the default before). Players switch with A/D in the Jukebox, and the choice is stored.
+
+| Data voice | 8-bit | Mix | 16-bit |
+| --- | --- | --- | --- |
+| `p1` | pulse | pulse | FM lead |
+| `p2` | pulse | pulse | FM bell arp (ratio 3.5 or 7, or 2 if `duty: 0.5`) |
+| `tri` | triangle | FM bass | FM bass |
+| `noise` | noise bursts, triangle kick | noise bursts, sine kick | gated kick/snare/hat |
+| `pad` | off | off | detuned saws (only in `PAD_SONGS`) |
+| `chirp` | square blip | square blip | FM blip |
+| echo | off | 0.6× | full, ping-pong |
+| stereo width | 0 (mono) | 0.6 | 1 |
+
+Sound effects (`SFX`, `tone`, `noise`) always stay 8-bit.
+
+### Signal path
+
+- Music: voice → (tremolo bus or stereo bus) → player gain (the song's loudness trim) → `musicIn` → 11 kHz lowpass → compressor (ratio 3, 8 ms attack) → `musicBus` (0.18; N toggles it) → `duck` (dips under each SFX) → master.
+- Echo: a send from the player gain, 1/8-note delay, feedback 0.3, lowpassed. Songs opt in with `SONGS.x.echo`; a part can switch it on or off with `echo: 1|0` (`pl.onPart`).
+- Master (`makeMasterChain`): mute gain (M) → 28 Hz highpass → 4× oversampled soft clip (clean below 0.6) → limiter → speakers.
+- `makeMusicChain` is shared by live playback and the offline probes.
+
+### Quality rules (don't remove without re-measuring)
+
+- **No clicks:** every note and SFX fades in and out over at least 5 ms (`envelope`, `gateEnv`, `tone`, `noise` mark their gain `isEnv`, and the self-test checks each one). M and N fade with `smoothSet`.
+- **Pitch shapes** go through `pitchShape()`, and every shape ends exactly in tune.
+- **Loudness trims:** `SONG_TRIM[style][song]` sets each song's player gain. Trims close 60% of each song's gap to the median, so calm songs stay a little quieter on purpose. After changing voices, styles or song data, re-measure with `python3 tools/cdp_probe.py "$F#view=loudness&raw" 90` (raw) and `#view=loudness` (with trims). The compressor absorbs part of a trim, so refine against the measured result. Theme-2-only songs are measured over their whole loop; the others over 24 s.
+- **Node budget:** about 40 live note nodes (`NODES`, `roomFor`; low-priority notes are skipped first). Fixed routing per player (panners, pad filters, ping-pong echo, tremolo) is kept in `pl.fixed` and not counted. A song that is fading out stops starting pad, arp, chirp and hi-hat notes. In 16-bit the real-audio probe can still skip about 1 quiet arp note while a new song fades in.
+- **Stereo:** `PAN` values times the style's width. Bass, kick and snare stay centred.
+- Noise hits start at a random offset in a 2 s buffer.
+
+### Scheduler
+
+`setInterval` every 25 ms schedules 120 ms ahead on the audio clock (`pumpPlayer`). A hidden tab skips missed steps instead of bursting. `switchSong` crossfades over 400 ms (`cut` and `sting` stop the old song at once), and never leaves two songs playing. Battles start with the active theme's 3-note sting; the victory jingle is a one-shot. Music starts only after the first key press or tap (`audioUnlock`).
+
+### Rules the self-test enforces
+
+- Every note parses, and every `loopLength` matches its step count.
+- Under each theme, every song that theme plays quotes that theme.
+- Quarter-tones (`+`, `/`) appear only in `QUARTER_TONE_SONGS`, are never held, and at most 1 per bar in Woods.
+- Every part has a kick or bass, unless it's marked `solo`.
+- Songs are 16–32 bars (unless `long`), with at most 7 voices and no repeated voice in a part.
+
+### Jukebox (`MusicRoomScreen`)
+
+Rows: "Main Theme - Theme 2", "Main Theme - Theme 1" (both always as written), then every other song as the active theme plays it. A/D switches sound style, or jumps between sections when Theme 1's row is selected. T (or tapping the Theme label) switches the theme.
+
+### User preferences
+
 - **Parrot Jungle is the user's favorite.** Its groove is the reference for the other songs, so don't change its patterns without asking.
+- The user wants originality: Theme 1 uses techniques from microtonal math rock, but no existing song's melody, riff or rhythm.
 
 ## Testing (run both before every commit)
 
@@ -173,7 +232,8 @@ F="file://$PWD/pet-adventures.html"
 ```
 
 - **Screenshots:** `--screenshot=out.png --window-size=1366,640 --virtual-time-budget=400` on `#view=<name>`. Previews include `title`, `starter`, `map_<id>`, `battle`, `moves`, `bag`, `party`, `summary`, `pen`, `shop`, `clinic`, `win`, `evolve`, `pets`, `newpets`, `intro0`–`intro5`, `name`, `nick`, `dressup`, `outfits`, `emote`, `labtop` and `boss`. Add `&touch` to force the touch layout, and use a phone-sized `--window-size` such as 844,390.
-- **Real audio:** headless virtual time freezes the audio clock, so use `python3 tools/cdp_probe.py "$F#view=audioprobe" 22` (switching, crossfades, N/M, node peak), `"$F#view=clicktest&tri" 25` (offline render, measuring sudden sample jumps), or `"$F#view=jukebox" 4 shot.png`.
+- **Golden check:** `python3 tools/check_golden.py` (Theme 2's notes must match `tests/golden/theme2-events.json`).
+- **Real audio:** headless virtual time freezes the audio clock, so use `"$F#view=themeprobe" 232` (Theme 1 in all three styles, section jump, theme switching), or `python3 tools/cdp_probe.py "$F#view=audioprobe" 22` (switching, crossfades, N/M, node peak), `"$F#view=clicktest&tri" 25` (offline render, measuring sudden sample jumps), or `"$F#view=jukebox" 4 shot.png`.
 - **Music Room:** `pet-adventures.html#music` is the Music Room jukebox; the in-game one is Menu → Jukebox.
 - **New features need new checks** in `runSelfTest()` (pure logic) or `runSmoke()` (flows). In smoke tests:
   - Save and restore anything you change on `G`, such as the party or flags.
@@ -190,6 +250,7 @@ F="file://$PWD/pet-adventures.html"
 
 ## Repo and workflow
 
-- GitHub: `aserediuk/pet-adventures` (private), branch `main`, tag `v0.1`. Commits use the user's real name and email. End commit messages with the `Co-Authored-By` line the current session specifies.
+- GitHub: `aserediuk/pet-adventures` (private), branch `main`, tags `v0.1`–`v0.3`. Commits use the user's real name and email. End commit messages with the `Co-Authored-By` line the current session specifies.
 - Only commit or push when the user asks.
+- **License:** PolyForm Noncommercial 1.0.0 (`LICENSE`), © 2026 When Pets Attack Studio Productions. The game file has a header comment and the title screen shows `CREDIT_LINE`.
 - iOS needs the game served from a URL. A private repo can't use GitHub Pages without making the repo public or a paid plan.

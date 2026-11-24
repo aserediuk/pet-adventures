@@ -1,4 +1,11 @@
 <!DOCTYPE html>
+<!--
+  Pet Adventures
+  Copyright (c) 2026 When Pets Attack Studio Productions
+
+  Licensed under the PolyForm Noncommercial License 1.0.0. Free for noncommercial use.
+  See the LICENSE file, or https://polyformproject.org/licenses/noncommercial/1.0.0
+-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -263,6 +270,8 @@ const FONT = {
 '▼':'..... ..... ##### .###. ..#.. ..... .....',
 '▲':'..... ..... ..#.. .###. ##### ..... .....',
 '♥':'..... .#.#. ##### ##### .###. ..#.. .....',
+'©':'.###. #...# #.### #.#.. #.### #...# .###.',
+'·':'..... ..... ..... ..#.. ..... ..... .....',
 '×':'..... ..... #...# .#.#. ..#.. .#.#. #...#',
 };
 const FW = 6, FH = 8, LINE_H = 10;
@@ -1236,9 +1245,20 @@ function sfx(name) { try { if (SFX[name]) { SFX[name](); duckMusic(); } } catch 
 // step (E G D A G in C). Every song quotes it, transposed, re-rhythmed or in another meter.
 // =====================================================================
 const L = (voice, steps, loopLength, opts = {}) => Object.assign({ voice, steps, loopLength }, opts);
-const SONGS = {
-  title: {
-    title: 'Title Theme', bpm: 118, spb: 2, barSteps: 7, meter: '7/8 (2+2+3)',
+// ---------------------------------------------------------------------
+// MAIN THEMES. A main theme is a title track plus the five-note signature ("theme") that every other
+// song quotes. Songs quote it with the tokens T1..T5 (and U1..U5 for a second quote in the same layer):
+// the layer's `q` option gives the root note and, if needed, a variant of the intervals for each theme.
+// Theme 2 is the original soundtrack, note for note (tests/golden/theme2-events.json checks that).
+// ---------------------------------------------------------------------
+const MainThemes = {
+  theme2: {
+    name: 'Theme 2',
+    theme: ['E5', 'G5', 'D5', 'A5', 'G5'], intervals: [0, 3, -2, 5, 3],
+    sting: ['E5', 'G5', 'D6'],   // the first three theme notes, used as the battle "encounter sting"
+    songs: {},                   // Theme 2 plays every song as written
+    title: {
+    title: 'Main Theme - Theme 2', bpm: 118, spb: 2, barSteps: 7, meter: '7/8 (2+2+3)',
     form: 'A B A B',
     parts: {
       A: { bars: 4, layers: [
@@ -1257,6 +1277,103 @@ const SONGS = {
       ] },
     },
   },
+  },
+};
+// ---- Theme 1: original material in "klez mode" on D (D Eb F# G A Bb C) ----
+{
+  // RIFF: one bar of 7/8 (2+2+3), short choppy notes. The two "^" notes are controlled bends:
+  // they start a quarter-tone flat and snap up to pitch within 60 ms.
+  const riff = 'D5 Eb5 >F#5^ . A5 G5^ Eb5';
+  // HOOK: 4 bars of 4/4 built from the theme (D A G F# D). One wobble bend ("%") at the end of bar 2; ends on an in-tune D.
+  const hook = 'D4 . A4 . G4 . F#4 . | D4- . . _ _ F#4 A4%- . | Bb4 . A4 . G4 . F#4 . | Eb4 . F#4 . D4- . . _';
+  const groove = {
+    drums: 'k h x h k h x h',   // four-on-the-floor kick (x = kick + snare on 2 and 4), off-beat hats
+    bass: 'D2 D3 D2 D3 D2 D3 D2 D3 | D2 D3 D2 D3 D2 D3 A2 A3 | G2 G3 G2 G3 G2 G3 G2 G3 | Eb2 Eb3 Eb2 Eb3 D2 D3 D2 D3',   // octave jumps
+    riffDrums: 'k k >s . k k s',   // kick and snare hit exactly the riff's rhythm
+    riffBass: 'D3 Eb3 >F#3 . A3 G3 Eb3',
+  };
+  // PET CHIRPS: tiny FM "pet voice" blips. [seconds, Hz] pitch points.
+  const chirps = {
+    y: { name: 'yip',    dur: 0.10, pts: [[0, 900], [0.05, 1500], [0.09, 1300]] },
+    m: { name: 'mew',    dur: 0.26, pts: [[0, 1000], [0.08, 1500], [0.24, 850]] },
+    q: { name: 'squeak', dur: 0.11, pts: [[0, 2100], [0.035, 2700], [0.06, 2200], [0.09, 2800]] },
+  };
+  const lead = o => L('p1', riff, 7, Object.assign({ gate: 0.5 }, o));
+  const E = { barSteps: 8, meter: '4/4', echo: 0 };
+  const title = {
+    title: 'Main Theme - Theme 1', bpm: 128, spb: 2, barSteps: 7, meter: '7/8 (2+2+3) riff, then a 4/4 groove (D klez mode)',
+    long: true, only: 'theme1', echo: 0.35,
+    // The eighth note stays the same length all the way through, so 7/8 -> 4/4 feels like the groove settling.
+    form: 'A B C1 C2 C3 D1 D2 E1 E2 E3 E4 E5 E6 F',
+    parts: {
+      // A. WOBBLE INTRO (bars 1-4, 7/8): the riff alone with tremolo and echo. The accent is on the 3rd eighth.
+      A: { bars: 4, echo: 1, solo: true, layers: [lead({ trem: true })] },
+      // B. LOCK-IN (bars 5-12, 7/8): drums and bass hit the riff's rhythm; a pet chirp answers every 2nd bar.
+      B: { bars: 8, echo: 0, layers: [
+        L('noise', groove.riffDrums, 7),
+        L('tri', groove.riffBass, 7),
+        lead({}),
+        L('chirp', '. . . . . . . | . . . . . . y | . . . . . . . | . . . . . . m', 28),
+      ] },
+      // C. STRETCH (bars 13-20, 7/8): the lead sings the theme in a 14-eighth cycle grouped 8+6 (realigns every 2 bars).
+      C1: { bars: 2, echo: 1, layers: [
+        L('noise', groove.riffDrums, 7),
+        L('tri', 'D3 Eb3 >F#3 D3 A3 G3 Eb3', 7),
+        L('p1', 'D5- . . A5- . . G5- . F#5- . . D5- . .', 14),
+      ] },
+      C2: { bars: 2, echo: 1, layers: [   // hats from bar 3
+        L('noise', 'k h >s h k k s', 7),
+        L('tri', 'D3 Eb3 >F#3 D3 A3 G3 Eb3', 7),
+        L('p1', 'D5- . . A5- . . G5- . F#5- . . D5- . .', 14),
+      ] },
+      C3: { bars: 4, echo: 1, layers: [   // rising arp in bars 5-8
+        L('noise', 'k h >s h k k s', 7),
+        L('tri', 'D3 Eb3 >F#3 D3 A3 G3 Eb3', 7),
+        L('p2', 'D4 F#4 A4 D5 F#5 A5 D6 | F#4 A4 D5 F#5 A5 D6 F#6 | A4 D5 F#5 A5 D6 F#6 A6 | D5 F#5 A5 D6 F#6 A6 F#6', 28),
+        L('p1', 'D5- . . A5- . . G5- . F#5- . . D5- . .', 14),
+      ] },
+      // D. BREAK (bars 21-22): the riff alone with tremolo, then a tom fill counts in the new groove.
+      D1: { bars: 1, echo: 1, solo: true, layers: [lead({ trem: true })] },
+      D2: { bars: 1, barSteps: 8, meter: '4/4', echo: 1, layers: [L('noise', 't . t . m m >l l', 8)] },
+      // E. GROOVE (bars 23-38, 4/4): layers stack every 2 bars like a looper pedal.
+      E1: Object.assign({ bars: 2, layers: [L('noise', groove.drums, 8)] }, E),
+      E2: Object.assign({ bars: 2, layers: [L('noise', groove.drums, 8), L('tri', groove.bass.split(' | ').slice(0, 2).join(' | '), 16)] }, E),
+      // The 7-eighth riff on the arp slides against the 8-eighth bars and lines up again every 7 bars
+      // (it starts in bar 5 of E and meets the bar line again in bar 12). `off` carries its position across parts.
+      E3: Object.assign({ bars: 2, layers: [L('noise', groove.drums, 8), L('tri', groove.bass.split(' | ').slice(0, 2).join(' | '), 16),
+        L('p2', riff, 7, { gate: 0.5, off: 0 })] }, E),
+      E4: Object.assign({ bars: 4, layers: [L('noise', groove.drums, 8), L('tri', groove.bass, 32),   // bars 7-10 of E: the hook
+        L('p2', riff, 7, { gate: 0.5, off: 2 }), L('p1', hook, 32),
+        L('chirp', '. . . . . . . . | . . . m . . . . | . . . . . . . . | . . . . . . . y', 32)] }, E),
+      E5: Object.assign({ bars: 4, layers: [L('noise', groove.drums, 8), L('tri', groove.bass, 32),   // bars 11-14: the hook, up an octave
+        L('p2', riff, 7, { gate: 0.5, off: 6 }), L('p1', hook, 32, { tr: 12 }),
+        L('chirp', '. . . . . . . . | . . . q q . . . | . . . . . . . . | . . . . . . . m', 32)] }, E),
+      E6: Object.assign({ bars: 2, layers: [L('noise', groove.drums, 8), L('tri', groove.bass.split(' | ').slice(2).join(' | '), 16),   // bars 15-16: tag
+        L('p2', riff, 7, { gate: 0.5, off: 3 }), L('p1', hook.split(' | ').slice(2).join(' | '), 16, { tr: 12 }),
+        L('chirp', '. . . . . . . q | . . . . . . . y', 16)] }, E),
+      // F. RETURN (bars 39-40, 7/8): the riff alone with tremolo, flowing straight back into A.
+      F: { bars: 2, echo: 1, solo: true, layers: [lead({ trem: true })] },
+    },
+  };
+  MainThemes.theme1 = {
+    name: 'Theme 1',
+    theme: ['D5', 'A5', 'G5', 'F#5', 'D5'], intervals: [0, 7, 5, 4, 0], minor: [0, 7, 5, 3, 0],   // up a fifth, then step back down home
+    sting: ['D5', 'A5', 'D6'],
+    songs: { title: 'titleK', win: 'winK', champion: 'championK', victory: 'victoryK' },   // songs that Theme 1 swaps
+    title, riff, hook, groove, chirps,
+  };
+}
+// Which theme is playing. Default: Theme 1. "?theme=theme2" or "?theme=theme1" in the address overrides it.
+const THEME_URL = (() => { try { const m = /[?&]theme=(theme[12])(?:&|$)/.exec(location.search); return m ? m[1] : null; } catch (e) { return null; } })();
+let activeThemeKey = 'theme1', storedTheme = null;
+function activeTheme() { return MainThemes[activeThemeKey]; }
+function themeSong(name) { return activeTheme().songs[name] || name; }
+function logicalSongs() { return Object.keys(SONGS).filter(n => SONGS[n].only !== 'theme1'); }
+// One quote of the theme: its root note under each theme, and (optionally) a variant of the intervals.
+const MINOR2 = MainThemes.theme1.minor;
+const Q = (root1, root2, iv1, iv2) => ({ root: { theme2: root1, theme1: root2 }, iv: { theme2: iv1, theme1: iv2 } });
+const SONGS = {
+  title: MainThemes.theme2.title,
   town: {
     title: 'Pawsville', bpm: 114, spb: 2, barSteps: 8, meter: '4/4, arpeggio in 3 against 4 (F lydian)',
     form: 'A B A B',
@@ -1266,14 +1383,14 @@ const SONGS = {
         L('tri', 'F2 . F2 C3 . F2 . C3 | G2 . G2 D3 . G2 . B2', 16),
         L('pad', 'F3:47- . . . . . . . | G3:47- . . . . . . .', 16),
         L('p2', 'A4 C5 E5', 3),
-        L('p1', 'A4 . C5 . G4 . D5- . | . . C5- . . . . . | F5 . E5 . D5 . C5 . | B4 . C5 . D5- . . . | E5 . D5 . C5 . A4 . | G4- . . . . . . .', 48, { duty: 0.25 }),
+        L('p1', 'T1 . T2 . T3 . T4- . | . . T5- . . . . . | F5 . E5 . D5 . C5 . | B4 . C5 . D5- . . . | E5 . D5 . C5 . A4 . | G4- . . . . . . .', 48, { duty: 0.25, q: [Q('A4', 'A4', null, MINOR2)] }),
       ] },
       B: { bars: 6, layers: [
         L('noise', '>k g h k s g h . | k . h k r h h g', 16),
         L('tri', 'D3 . D3 A2 . D3 . A2 | C3 . C3 G2 . C3 . E3', 16),
         L('pad', 'D3:37- . . . . . . . | C3:47- . . . . . . .', 16),
         L('p2', 'F4 A4 C5', 3),
-        L('p1', 'D5 . F5 . E5 . C5 . | D5- . . . A4 . C5 . | C5 . E5 . G5 . E5 . | D5 . C5 . G4- . . . | A4 . C5 . G4 . D5 . | C5- . . . . . . .', 48, { duty: 0.25 }),
+        L('p1', 'D5 . F5 . E5 . C5 . | D5- . . . A4 . C5 . | C5 . E5 . G5 . E5 . | D5 . C5 . G4- . . . | T1 . T2 . T3 . T4 . | T5- . . . . . . .', 48, { duty: 0.25, q: [Q('A4', 'A4', null, MINOR2)] }),
       ] },
     },
   },
@@ -1285,7 +1402,7 @@ const SONGS = {
         L('noise', '>k g h k h s | k h g k r h', 12),
         L('tri', 'G2 . D3 G2 D3 G3 | F2 . C3 F2 C3 F3', 12),
         L('p2', 'D6 B5 G5 A5 B5', 5),
-        L('p1', 'B4 . D5 . A4 . | E5 . D5- . . . | G5 . F5 . D5 . | C5 . D5- . . . | B4 . G4 . A4 . | B4 . C5 . D5 . | F5 . E5 . C5 . | D5- . . . . .', 48),
+        L('p1', 'T1 . T2 . T3 . | T4 . T5- . . . | G5 . F5 . D5 . | C5 . D5- . . . | B4 . G4 . A4 . | B4 . C5 . D5 . | F5 . E5 . C5 . | D5- . . . . .', 48, { q: [Q('B4', 'G4')] }),
       ] },
       B: { bars: 8, layers: [
         L('noise', '>k g h k h s | k h g k r h', 12),
@@ -1308,19 +1425,19 @@ const SONGS = {
         L('noise', '>k . h g h | k . h s . h g', 12),
         L('tri', 'D2 A2 D3 C3 A2 | D2 F2 G2 A2 C3 A2 E2', 12),
         L('p2', 'F4:47 . A4:37 . . | E4:37 . . G4:47 . . . | F4:47 . C5:47 . . | E4:37 . . A4:37 . . .', 24),
-        L('p1', 'F4 . A4 . E4 | B4- . . A4- . . . | D5 . C5 . A4 | G4 . A4/ . . . . | F4 . G4 . A4 | C5 . B4 . A4- . . | G4 . F4 . E4/ | D4- . . . . . .', 48),
+        L('p1', 'T1 . T2 . T3 | T4- . . T5- . . . | D5 . C5 . A4 | G4 . A4/ . . . . | F4 . G4 . A4 | C5 . B4 . A4- . . | G4 . F4 . E4/ | D4- . . . . . .', 48, { q: [Q('F4', 'D4', [0, 4, -1, 6, 4], MINOR2)] }),
       ] },
       C: { bars: 4, layers: [
         L('noise', '>k . h g h | k . h s . h g', 12),
         L('tri', 'D2 A2 E3 C3 A2 | D2 F2 G2 A2 C3 A2 E2', 12),
         L('p2', 'F4:47 . A4:37 . . | E4:37 . . G4:47 . . . | F4:47 . C5:47 . . | E4:37 . . A4:37 . . .', 24),
-        L('p1', 'F4 . A4 . E4 | B4- . . A4- . . . | D5 . C5 . A4 | G4 . A4/ . . . . | F4 . G4 . A4 | C5 . B4 . A4- . . | G4 . F4 . E4/ | D4- . . . . . .', 48),
+        L('p1', 'T1 . T2 . T3 | T4- . . T5- . . . | D5 . C5 . A4 | G4 . A4/ . . . . | F4 . G4 . A4 | C5 . B4 . A4- . . | G4 . F4 . E4/ | D4- . . . . . .', 48, { q: [Q('F4', 'D4', [0, 4, -1, 6, 4], MINOR2)] }),
       ] },
       D: { bars: 4, layers: [
         L('noise', '>k h g k h | k g h s k h r', 12),
         L('tri', 'D2 A2 E3 C3 A2 | D2 F2 G2 B2 C3 A2 E2', 12),
         L('p2', 'F4:47 . A4:37 . . | E4:37 . . G4:47 . . . | F4:47 . C5:47 . . | E4:37 . . A4:37 . . .', 24),
-        L('p1', 'A4 . C5 . G4 | D5- . . C5- . . . | F5 . E5 . C5 | B4 . C5/ . . . . | A4 . B4 . C5 | E5 . D5 . C5- . . | B4 . A4 . G4/ | A4- . . . . . .', 48),
+        L('p1', 'T1 . T2 . T3 | T4- . . T5- . . . | F5 . E5 . C5 | B4 . C5/ . . . . | A4 . B4 . C5 | E5 . D5 . C5- . . | B4 . A4 . G4/ | A4- . . . . . .', 48, { q: [Q('A4', 'A4', null, MINOR2)] }),
       ] },
     },
   },
@@ -1332,7 +1449,7 @@ const SONGS = {
         L('tri', 'C3 . . . . . | G2 . . . . .', 12),
         L('pad', 'C4:47- . . . . . | G3:47- . . . . .', 12),
         L('p2', 'C5 . . G4 . .', 6, { duty: 0.5 }),
-        L('p1', 'E5 . G5 . D5 . | A5 . G5- . . . | C6 . B5 . G5 . | A5 . E5- . . .', 24, { duty: 0.125 }),
+        L('p1', 'T1 . T2 . T3 . | T4 . T5- . . . | C6 . B5 . G5 . | A5 . E5- . . .', 24, { duty: 0.125, q: [Q('E5', 'C5')] }),
       ] },
       B: { bars: 8, layers: [
         L('tri', 'F2 . . . . . | G2 . . . . .', 12),
@@ -1355,7 +1472,7 @@ const SONGS = {
         L('noise', '>k h g >s h g >k h h | >k h g >s h g >k h | >k g >s h >k h r', 24),
         L('tri', 'A3 A3 C4 A3 A3 D4 A3 E4 D4 | A3 A3 C4 A3 G3 A3 C4 D4 | E4 D4 C4 A3 G3 A3 B3', 24, { tr: -12 }),
         L('p2', 'A4:37- . . C5:47- . . A4:37 . . | G4:47- . . B4:37- . . G4:47 . | E4:37- . G4:47- . B4:37- . .', 24, { duty: 0.125 }),
-        L('p1', 'C5 . E5 . B4 . F#5- . . | E5- . . . . . A5 . | G5 . E5 . D5 . C5 | D5 . E5 . G5 . A5- . . | G5 . E5 . D5 . C5 . | B4- . . . . . .', 48),
+        L('p1', 'T1 . T2 . T3 . T4- . . | T5- . . . . . A5 . | G5 . E5 . D5 . C5 | D5 . E5 . G5 . A5- . . | G5 . E5 . D5 . C5 . | B4- . . . . . .', 48, { q: [Q('C5', 'A4', [0, 4, -1, 6, 4], MINOR2)] }),
       ] },
     },
   },
@@ -1366,25 +1483,25 @@ const SONGS = {
       A: { bars: 4, layers: [
         L('noise', '>k . h g s . h . | k g h . s . h h | k . h g s g h . | k . h k r . s s', 32),
         L('tri', '>E2 E2 G2 E2 A2 E2 B2', 7),
-        L('p1', '>E5 G5 D5 A5 G5', 5),
+        L('p1', '>T1 T2 T3 T4 T5', 5, { q: [Q('E5', 'E5', null, MINOR2)] }),
       ] },
       B: { bars: 4, layers: [
         L('noise', '>k . h g s . h . | k g h . s . h h | k . h g s g h . | k . h k r . s s', 32),
         L('tri', '>E2 E2 G2 E2 A2 E2 B2', 7),
         L('p2', 'B4:37- . . B4:37- . . A4:47 .', 8, { duty: 0.125 }),
-        L('p1', '>E5 G5 D5 A5 G5', 5),
+        L('p1', '>T1 T2 T3 T4 T5', 5, { q: [Q('E5', 'E5', null, MINOR2)] }),
       ] },
       C: { bars: 4, layers: [
         L('noise', '>k . h g s . h . | k g h . s . h h | k . h g s g h . | k . h k r . s s', 32),
         L('tri', '>E2 E2 G2 E2 A2 E2 B2', 7),
         L('p2', 'E5:37 . D5:47 . B4:37 . D5:47 .', 8, { duty: 0.125 }),
-        L('p1', '>E5 G5 D5 A5 G5 | E5 G5 D5 B5 A5', 10),
+        L('p1', '>T1 T2 T3 T4 T5 | T1 T2 T3 B5 A5', 10, { q: [Q('E5', 'E5', null, MINOR2)] }),
       ] },
       D: { bars: 4, layers: [
         L('noise', '>k . h g s . h . | k g h . s . h h | k . h k s g h . | >k . s s >s s >s >s', 32),
         L('tri', '>E2 E2 G2 E2 A2 E2 B2', 7),
         L('p2', 'G4:47- . . G4:47- . . F#4:37 .', 8, { duty: 0.125 }),
-        L('p1', '>E5 G5 D5 A5 G5 E5 G5 D5 | A5 G5 E5 G5 D5 A5 G5 E5 | B5 . A5 . G5 . A5 . | B5- . . . A5+ A5 G5+ G5', 32),
+        L('p1', '>T1 T2 T3 T4 T5 T1 T2 T3 | T4 T5 T1 T2 T3 T4 T5 T1 | B5 . A5 . G5 . A5 . | B5- . . . A5+ A5 G5+ G5', 32, { q: [Q('E5', 'E5', null, MINOR2)] }),
       ] },
     },
   },
@@ -1408,7 +1525,7 @@ const SONGS = {
         L('noise', '>k . g k h s | k g h k r h', 12),
         L('tri', 'A2 . E2 A2 C3 E3 | G2 . D2 G2 B2 D3', 12),
         L('p2', 'A4:37 . E4:37 . .', 5),
-        L('p1', 'C5 . E5 . B4 . | F#5- . . E5- . . | D5 . C5 . A4 . | B4- . . . . . | E5 . G5 . D5 . | A5- . . G5 . . | F5 . E5 . D5 . | E5- . . . . .', 48),
+        L('p1', 'T1 . T2 . T3 . | T4- . . T5- . . | D5 . C5 . A4 . | B4- . . . . . | U1 . U2 . U3 . | U4- . . U5 . . | F5 . E5 . D5 . | E5- . . . . .', 48, { q: [Q('C5', 'A4', [0, 4, -1, 6, 4], MINOR2), Q('E5', 'E5', null, MINOR2)] }),
       ] },
       B: { bars: 8, layers: [
         L('noise', '>k . g k h s | k g h k r h', 12),
@@ -1426,7 +1543,7 @@ const SONGS = {
         L('noise', '>k h g k h g s h r h', 10),
         L('tri', 'D2 . . A2 . . D3 . C3 . | G2 . . D3 . . G2 . A2 .', 20),
         L('p2', 'F#5:37 A5 D6 A5 F#5 E5', 6),
-        L('p1', 'F#5 . A5 . E5 . B5- . . . | A5- . . . . . . . . . | D6 . C#6 . A5 . F#5 . G5 . | A5- . . . . . . . . .', 40),
+        L('p1', 'T1 . T2 . T3 . T4- . . . | T5- . . . . . . . . . | D6 . C#6 . A5 . F#5 . G5 . | A5- . . . . . . . . .', 40, { q: [Q('F#5', 'D5')] }),
       ] },
       B: { bars: 4, layers: [
         L('noise', '>k h g k h g s h r h', 10),
@@ -1471,13 +1588,13 @@ const SONGS = {
         L('noise', 'k . g k s . . h | k . h g r . k .', 16),
         L('tri', 'E2 . . E2 . . F2 .', 8),
         L('p2', 'B4 . . D#5 .', 5, { duty: 0.125 }),
-        L('p1', 'E5 . G5 . D5 . A5 . | G5- . . . F#5 . D#5 . | E5 . . . B4 . . . | C5- . . . B4- . . .', 32),
+        L('p1', 'T1 . T2 . T3 . T4 . | T5- . . . F#5 . D#5 . | E5 . . . B4 . . . | C5- . . . B4- . . .', 32, { q: [Q('E5', 'E5', null, MINOR2)] }),
       ] },
       B: { bars: 4, layers: [
         L('noise', 'k . g k s . . h | k . h g r . k .', 16),
         L('tri', 'C3 . . C3 . . B2 .', 8),
         L('p2', 'G4 . . B4 .', 5, { duty: 0.125 }),
-        L('p1', 'C5 . E5 . B4 . F5 . | E5- . . . D#5 . B4 . | C5 . . . G4 . . . | B4- . . . . . . .', 32),
+        L('p1', 'T1 . T2 . T3 . T4 . | T5- . . . D#5 . B4 . | C5 . . . G4 . . . | B4- . . . . . . .', 32, { q: [Q('C5', 'C5', [0, 4, -1, 5, 4])] }),
       ] },
     },
   },
@@ -1489,7 +1606,7 @@ const SONGS = {
         L('noise', '>k g h k h s h | k h g k . r h', 14),
         L('tri', 'E2 . . E2 . B2 . | F2 . . F2 . C3 .', 14),
         L('p2', 'E5 G#5 B5 G#5', 4),
-        L('p1', 'E5 . G#5 . D5 . A5- | . . G#5- . . . . | F5 . E5 . D5 . C5 | B4- . . . . . .', 28),
+        L('p1', 'T1 . T2 . T3 . T4- | . . T5- . . . . | F5 . E5 . D5 . C5 | B4- . . . . . .', 28, { q: [Q('E5', 'E5', [0, 4, -2, 5, 4])] }),
       ] },
       B: { bars: 4, layers: [
         L('noise', '>k g h k h s h | k h g k . r h', 14),
@@ -1507,7 +1624,7 @@ const SONGS = {
         L('noise', '>k . h k s . h . | k h . k s . h h', 16),
         L('tri', 'C3 . C3 G2 . C3 . G2 | F2 . F2 C3 . F2 . G2', 16),
         L('p2', 'G5 E5 C6 G5 E5 D5', 6),
-        L('p1', 'E5 . G5 . D5 . A5 . | G5 . . . E5 . C5 . | F5 . A5 . C6 . A5 . | G5- . . . . . E5 . | D5 . E5 . G5 . A5 . | C6- . . . . . . .', 48),
+        L('p1', 'T1 . T2 . T3 . T4 . | T5 . . . E5 . C5 . | F5 . A5 . C6 . A5 . | G5- . . . . . E5 . | D5 . E5 . G5 . A5 . | C6- . . . . . . .', 48, { q: [Q('E5', 'C5')] }),
       ] },
       B: { bars: 6, layers: [
         L('noise', '>k . h k s . h . | k h . k s . h h', 16),
@@ -1525,7 +1642,7 @@ const SONGS = {
         L('noise', 'k g h s . | k h k r h', 10),
         L('tri', 'C2 . G2 C2 . | Ab1 . Eb2 Ab1 .', 10),
         L('p2', 'G4 . Eb4', 3),
-        L('p1', 'Eb5 . G5 . D5 | Ab5- . . . G5 | . . . . . | C5 . Eb5 . F5 | F#5 . G5- . . | . . . . .', 30),
+        L('p1', 'T1 . T2 . T3 | T4- . . . T5 | . . . . . | C5 . Eb5 . F5 | F#5 . G5- . . | . . . . .', 30, { q: [Q('Eb5', 'C5', [0, 4, -1, 5, 4], MINOR2)] }),
       ] },
       B: { bars: 6, layers: [
         L('noise', 'k g h s . | k h k r h', 10),
@@ -1537,15 +1654,61 @@ const SONGS = {
   },
 };
 SONGS.title.echo = 0.35; SONGS.woods.echo = 0.4; SONGS.interior.echo = 0.35;   // echo only where it suits (never battles)
+// ---- songs that only Theme 1 uses ----
+{
+  const T2 = MainThemes.theme1, tp = T2.title.parts;
+  SONGS.titleK = T2.title;
+  // Win screen: section E of the main theme (the looper build and the hook) is the whole loop.
+  SONGS.winK = { title: 'Win Screen Anthem', bpm: T2.title.bpm, spb: 2, barSteps: 8, meter: '4/4 groove with the 7-eighth riff sliding across it', only: 'theme1',
+    form: 'E1 E2 E3 E4 E5 E6', parts: { E1: tp.E1, E2: tp.E2, E3: tp.E3, E4: tp.E4, E5: tp.E5, E6: tp.E6 } };
+  // Champion battle: the last 8 bars quote the Theme 1 riff in 7/8, then switch to the four-on-the-floor groove.
+  SONGS.championK = { title: 'Champion Battle', bpm: 156, spb: 2, barSteps: 8, meter: '4/4, bass in 7, lead in 5; then the riff in 7/8 and a 4/4 groove', only: 'theme1',
+    form: 'A B X Y',
+    parts: {
+      A: SONGS.champion.parts.A, B: SONGS.champion.parts.B,
+      X: { bars: 4, barSteps: 7, meter: '7/8 (2+2+3)', layers: [   // the riff, moved up to E
+        L('noise', T2.groove.riffDrums, 7),
+        L('tri', T2.groove.riffBass, 7, { tr: -10 }),
+        L('p1', T2.riff, 7, { tr: 2, gate: 0.5 }),
+      ] },
+      Y: { bars: 4, layers: [
+        L('noise', T2.groove.drums, 8),
+        L('tri', T2.groove.bass, 32, { tr: 2 }),
+        L('p1', T2.hook, 32, { tr: 14 }),
+      ] },
+    } };
+  // Victory jingle: its last five notes are the theme.
+  SONGS.victoryK = { title: 'Victory Jingle', bpm: 180, spb: 2, barSteps: 5, meter: '5/8 flourish (one-shot)', oneShot: true, only: 'theme1',
+    form: 'A',
+    parts: {
+      A: { bars: 3, layers: [
+        L('noise', 'k h s h k | k h s k s | >k . . . .', 15),
+        L('tri', 'D3 . A2 . D3 | G2 . G2 . A2 | >D3- . . . .', 15),
+        L('p2', '. . . . . | F#5 . D6 B5 A5 | >D6- . . . .', 15, { duty: 0.5 }),
+        L('p1', 'A4 D5 F#5 A5 D6 | D5 . A5 G5 F#5 | >D5- . . . .', 15),
+      ] },
+    } };
+}
 const PAD_SONGS = ['title', 'town', 'interior', 'win'];
 const MUSIC_ALIAS = { hero: 'title', trainer: 'battle', boss: 'champion' };
-const QUARTER_TONE_SONGS = ['woods', 'champion'];
-const STING = ['E5', 'G5', 'D6'];   // the first three motif notes, used as the battle "encounter sting"
+const QUARTER_TONE_SONGS = ['woods', 'champion', 'championK'];
 
 // ---- parsing / compiling (pure, no audio) ----
 const NOTE_BASE = { C: -9, D: -7, E: -5, F: -4, G: -2, A: 0, B: 2 };
-const NOTE_RE = /^(>?)([A-G])([#b]?)(\d)(\+?)(?::([0-9a-c])([0-9a-c]))?([-~\/]*)$/;
-const DRUM_RE = /^(>?)([kshgr])$/;
+const NOTE_RE = /^(>?)([A-G])([#b]?)(\d)(\+?)(?::([0-9a-c])([0-9a-c]))?([-~\/^%]*)$/;   // "^" = snap bend, "%" = wobble bend
+const DRUM_RE = /^(>?)([kshgrxtml])$/;   // x = kick + snare together; t, m, l = high, mid and low tom
+const CHIRP_RE = /^(>?)([ymq])$/;        // pet chirps: yip, mew, squeak
+const QUOTE_RE = /^(>?)([TU])([1-5])(.*)$/;
+const SEMI_NAMES = ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'];
+function noteSemi(n) { const m = /^([A-G])([#b]?)(\d)$/.exec(n); return NOTE_BASE[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + (parseInt(m[3], 10) - 4) * 12; }
+function semiName(semi) { return SEMI_NAMES[((semi % 12) + 12) % 12] + (4 + Math.floor((semi + 9) / 12)); }
+// "T3-" -> the 3rd note of the active theme, from this layer's root (and interval variant) for that theme.
+function quoteToken(layer, m, themeKey) {
+  const q = (layer.q || [])[m[2] === 'T' ? 0 : 1];
+  if (!q) return null;
+  const iv = q.iv[themeKey] || MainThemes[themeKey].intervals;
+  return m[1] + semiName(noteSemi(q.root[themeKey]) + iv[parseInt(m[3], 10) - 1]) + m[4];
+}
 function noteFreq(n) {
   const m = /^([A-G])([#b]?)(\d)$/.exec(n); if (!m) return 0;
   const semi = NOTE_BASE[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + (parseInt(m[3], 10) - 4) * 12;
@@ -1557,13 +1720,21 @@ function compileLayer(layer) {
   const toks = stepTokens(layer.steps), errors = [], ev = new Array(toks.length).fill(null);
   if (toks.length !== layer.loopLength) errors.push('loopLength ' + layer.loopLength + ' but ' + toks.length + ' steps');
   toks.forEach((t, i) => {
-    if (t === '.') return;
+    if (t === '.' || t === '_') return;   // "_" is a rest that also ends a held note
     if (layer.voice === 'noise') {
       const m = DRUM_RE.exec(t);
       if (!m) { errors.push('bad drum "' + t + '"'); return; }
       ev[i] = { drum: m[2], acc: !!m[1], dur: 1 };
       return;
     }
+    if (layer.voice === 'chirp') {
+      const m = CHIRP_RE.exec(t);
+      if (!m) { errors.push('bad chirp "' + t + '"'); return; }
+      ev[i] = { chirp: m[2], acc: !!m[1], dur: 1 };
+      return;
+    }
+    const qm = QUOTE_RE.exec(t);
+    if (qm) { t = quoteToken(layer, qm, activeThemeKey); if (!t) { errors.push('theme token without a quote "' + toks[i] + '"'); return; } }
     const m = NOTE_RE.exec(t);
     if (!m) { errors.push('bad note "' + t + '"'); return; }
     let f = noteFreq(m[2] + m[3] + m[4]) * Math.pow(2, (layer.tr || 0) / 12);
@@ -1576,20 +1747,24 @@ function compileLayer(layer) {
     const arp = m[6] ? [0, parseInt(m[6], 16), parseInt(m[7], 16)] : null;
     if (arp && !['p1', 'p2', 'pad'].includes(layer.voice)) errors.push('arpeggio on ' + layer.voice);
     ev[i] = { f, acc: !!m[1], dur, hold, arp, quarter: !!m[5], bend: fx.includes('/'), vib: fx.includes('~') };
+    if (fx.includes('^')) ev[i].snap = true;
+    if (fx.includes('%')) ev[i].wob = true;
   });
   return { ev, errors };
 }
 const compiledSongs = {};
 function compileSong(name) {
-  if (compiledSongs[name]) return compiledSongs[name];
+  const key = name + '|' + activeThemeKey;   // theme quotes differ per theme
+  if (compiledSongs[key]) return compiledSongs[key];
   const s = SONGS[name];
   const parts = {};
   for (const k in s.parts) {
     const p = s.parts[k], barSteps = p.barSteps || s.barSteps;
-    parts[k] = { len: p.bars * barSteps, bars: p.bars, barSteps, meter: p.meter || s.meter,
+    parts[k] = { len: p.bars * barSteps, bars: p.bars, barSteps, meter: p.meter || s.meter, echo: p.echo,
       layers: p.layers.map(l => Object.assign({}, l, { ev: compileLayer(l).ev })) };
   }
-  return (compiledSongs[name] = { name, title: s.title, bpm: s.bpm, sd: 60 / s.bpm / s.spb, oneShot: !!s.oneShot, echo: s.echo || 0, form: s.form.split(' '), parts });
+  const trem = Object.values(s.parts).some(pt => pt.layers.some(l => l.trem));
+  return (compiledSongs[key] = { name, title: s.title, bpm: s.bpm, sd: 60 / s.bpm / s.spb, oneShot: !!s.oneShot, echo: s.echo || 0, form: s.form.split(' '), parts, trem, long: !!s.long });
 }
 
 // ---- scheduler core (pure: works on a time number, plays through an emit callback) ----
@@ -1623,8 +1798,9 @@ function pumpPlayer(pl, now, emit) {
   while (!pl.done && pl.next < now + LOOKAHEAD) {
     if (pl.stopAt === undefined || pl.next < pl.stopAt) {
       const part = pl.song.parts[pl.song.form[pl.formIdx]];
+      if (pl.step === 0 && pl.onPart) pl.onPart(part, pl.next);
       for (const layer of part.layers) {
-        const ev = layer.ev[pl.step % layer.ev.length];
+        const ev = layer.ev[(pl.step + (layer.off || 0)) % layer.ev.length];
         if (ev) { emit(layer, ev, pl.next, sd, pl); n++; }
       }
       pl.log.push({ t: pl.next, formIdx: pl.formIdx, step: pl.step });
@@ -1638,6 +1814,8 @@ function pumpPlayer(pl, now, emit) {
 // Switch songs. Overworld songs crossfade over 400 ms; cut/sting stop the old song at once.
 function switchSong(name, now, opts = {}) {
   name = MUSIC_ALIAS[name] || name;
+  const req = { name, raw: !!opts.raw };       // what was asked for (the active theme may swap it)
+  if (!opts.raw) name = themeSong(name);
   if (!SONGS[name]) return null;
   const cur = MUS.cur;
   if (cur && cur.name === name && !opts.restart && !cur.done && cur.stopAt === undefined) return cur;
@@ -1654,6 +1832,8 @@ function switchSong(name, now, opts = {}) {
   }
   const start = now + 0.05 + (opts.sting ? 0.36 : 0);
   const pl = newPlayer(name, start);
+  pl.req = req;
+  if (opts.formIdx) pl.formIdx = opts.formIdx;   // start at a later part (the Jukebox's section jump)
   pl.fadeIn = fade;
   MUS.players.push(pl);
   MUS.cur = pl;
@@ -1663,11 +1843,30 @@ function prunePlayers(now) {
   MUS.players = MUS.players.filter(pl => {
     const dead = (pl.stopAt !== undefined && now > pl.stopAt + 0.25) || (pl.done && now > pl.next + 1.5);
     if (dead && pl.gain) { try { pl.gain.disconnect(); } catch (e) { /* already gone */ } }
-    if (dead && pl.fixed) pl.fixed.forEach(nd => { try { nd.disconnect(); } catch (e) { /* gone */ } });
+    if (dead && pl.fixed) pl.fixed.forEach(nd => { try { if (nd.stop) nd.stop(); nd.disconnect(); } catch (e) { /* gone */ } });
     if (dead && pl.echo) { pl.echo.nodes.forEach(nd => { try { nd.disconnect(); } catch (e) { /* gone */ } }); pl.echo.entry.t1 = now; }
     return !dead;
   });
   if (MUS.cur && !MUS.players.includes(MUS.cur)) MUS.cur = null;
+}
+// The theme changed: restart the current song in the new theme (400 ms crossfade, never two songs left playing).
+function rethemeAt(now) {
+  const cur = MUS.cur;
+  if (!cur || !cur.req || cur.req.raw || cur.done || cur.song.oneShot || cur.stopAt !== undefined) return;
+  switchSong(cur.req.name, now, { restart: true });
+}
+function setMusicTheme(k) {
+  if (!MainThemes[k]) return;
+  const changed = k !== activeThemeKey;
+  activeThemeKey = k; storedTheme = k;
+  if (G) G.musicTheme = k;
+  saveSettings();
+  if (changed && Snd.ac) rethemeAt(Snd.ac.currentTime);
+}
+// A save remembers its theme; it applies when this browser has no stored choice (and no ?theme= override).
+function applySavedTheme(d) {
+  if (!THEME_URL && !storedTheme && MainThemes[d.musicTheme]) activeThemeKey = d.musicTheme;
+  else if (!THEME_URL) d.musicTheme = activeThemeKey;
 }
 function audiblePlayers(now) { return MUS.players.filter(pl => !pl.done && (pl.stopAt === undefined || pl.stopAt > now)); }
 
@@ -1728,9 +1927,9 @@ const STYLE_ORDER = ['8bit', 'mix', '16bit'];
 // Loudness trims, measured by rendering every song in every style offline (#view=loudness) so that
 // all songs and styles play at the same level. Re-measure after changing voices or song data.
 const SONG_TRIM = {
-  '8bit': { title: 0.962, town: 0.984, meadow: 0.907, woods: 0.796, interior: 1.694, battle: 0.813, champion: 0.832, victory: 1.015, marsh: 0.883, peak: 1.194, win: 1.023, lab: 1.243, desert: 1.135, jungle: 1.0, gizmo: 1.025 },
-  'mix': { title: 0.971, town: 1.0, meadow: 0.881, woods: 0.817, interior: 1.656, battle: 0.823, champion: 0.808, victory: 0.942, marsh: 0.85, peak: 1.325, win: 1.065, lab: 1.279, desert: 1.19, jungle: 1.022, gizmo: 1.034 },
-  '16bit': { title: 0.795, town: 0.881, meadow: 0.78, woods: 0.778, interior: 1.225, battle: 0.733, champion: 0.745, victory: 0.755, marsh: 0.788, peak: 1.09, win: 0.907, lab: 1.113, desert: 1.0, jungle: 0.887, gizmo: 0.913 },
+  '8bit': { title: 0.962, town: 0.984, meadow: 0.907, woods: 0.796, interior: 1.694, battle: 0.813, champion: 0.832, victory: 1.015, marsh: 0.883, peak: 1.194, win: 1.023, lab: 1.243, desert: 1.135, jungle: 1.0, gizmo: 1.025, titleK: 0.948, winK: 0.873, championK: 0.842, victoryK: 1.032 },
+  'mix': { title: 0.971, town: 1.0, meadow: 0.881, woods: 0.817, interior: 1.656, battle: 0.823, champion: 0.808, victory: 0.942, marsh: 0.85, peak: 1.325, win: 1.065, lab: 1.279, desert: 1.19, jungle: 1.022, gizmo: 1.034, titleK: 0.927, winK: 0.847, championK: 0.83, victoryK: 0.95 },
+  '16bit': { title: 0.795, town: 0.881, meadow: 0.78, woods: 0.778, interior: 1.225, battle: 0.733, champion: 0.745, victory: 0.755, marsh: 0.788, peak: 1.09, win: 0.907, lab: 1.113, desert: 1.0, jungle: 0.887, gizmo: 0.913, titleK: 0.808, winK: 0.742, championK: 0.734, victoryK: 0.802 },
 };
 function songTrim(name) { return (SONG_TRIM[MUS.style] || {})[name] || 1; }
 // Stereo placement (scaled by the style's width; 8-bit stays mono): arp left, lead slightly right,
@@ -1739,7 +1938,15 @@ const PAN = { p1: 0.12, p2: -0.3, hat: 0.28, padL: -0.55, padR: 0.55 };
 function makeBuses(pl, ac) {
   pl.bus = {}; pl.fixed = [];
   const w = (STYLES[MUS.style] || STYLES.mix).width || 0;
-  if (!w || !ac.createStereoPanner) return;
+  if (w && ac.createStereoPanner) makeStereoBuses(pl, ac, w);
+  if (pl.song.trem) {   // tremolo "pedal" for layers marked trem: the volume wobbles about 7 times a second
+    const tg = ac.createGain(), lfo = ac.createOscillator(), depth = ac.createGain();
+    tg.gain.value = 0.7; lfo.frequency.value = 7; depth.gain.value = 0.3;
+    lfo.connect(depth); depth.connect(tg.gain); lfo.start(); tg.connect(pl.bus.p1 || pl.gain);
+    pl.bus.trem = tg; pl.fixed.push(tg, lfo, depth);
+  }
+}
+function makeStereoBuses(pl, ac, w) {
   for (const k in PAN) { const pn = ac.createStereoPanner(); pn.pan.value = PAN[k] * w; pn.connect(pl.gain); pl.bus[k] = pn; pl.fixed.push(pn); }
   for (const k of ['padL', 'padR']) {   // the pad's warm lowpass lives on its bus, so each pad note needs no filter of its own
     const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1300; lp.Q.value = 0.5;
@@ -1747,13 +1954,21 @@ function makeBuses(pl, ac) {
   }
 }
 MUS.style = '16bit';   // default; the Jukebox switches between 8-bit, Mix and 16-bit
+function saveSettings() {
+  try { const s = storage(); if (s) s.setItem('petAdventures.settings.v1', JSON.stringify({ style: MUS.style, theme: storedTheme || undefined })); } catch (e) { /* no storage */ }
+}
 function setSoundStyle(k) {
   if (!STYLES[k]) return;
   MUS.style = k;
-  try { const s = storage(); if (s) s.setItem('petAdventures.settings.v1', JSON.stringify({ style: k })); } catch (e) { /* no storage */ }
+  saveSettings();
 }
 function loadSoundStyle() {
-  try { const s = storage(), d = s && JSON.parse(s.getItem('petAdventures.settings.v1') || '{}'); if (d && STYLES[d.style]) MUS.style = d.style; } catch (e) { /* defaults */ }
+  try {
+    const s = storage(), d = s && JSON.parse(s.getItem('petAdventures.settings.v1') || '{}');
+    if (d && STYLES[d.style]) MUS.style = d.style;
+    if (d && MainThemes[d.theme]) { activeThemeKey = d.theme; storedTheme = d.theme; }
+  } catch (e) { /* defaults */ }
+  if (THEME_URL) activeThemeKey = THEME_URL;
 }
 const pulseWaves = {};
 function pulseWave(duty) {
@@ -1764,10 +1979,44 @@ function pulseWave(duty) {
   }
   return pulseWaves[duty];
 }
+// Pitch of one note. Plain notes sit on pitch. "/" slides up from a quarter-tone flat (90 ms), "^" snaps up
+// from a quarter-tone flat within 60 ms, "%" wobbles a quarter-tone down and back. Every shape ends exactly in tune.
+function pitchShape(param, f, ev, t, len) {
+  const flat = Math.pow(2, -0.5 / 12);
+  if (ev.bend || ev.snap) { param.setValueAtTime(f * flat, t); param.linearRampToValueAtTime(f, t + Math.min(ev.snap ? 0.06 : 0.09, len * 0.6)); }
+  else param.setValueAtTime(f, t);
+  if (ev.wob) { const w = len / 8; [[2, 1], [3, flat], [4, 1], [5, Math.pow(2, -0.3 / 12)], [6, 1]].forEach(([k, m]) => param.linearRampToValueAtTime(f * m, t + w * k)); }
+}
+// Toms (for fills): a sine (or 8-bit triangle) that drops onto its pitch.
+const TOM_HZ = { t: 196, m: 147, l: 110 };
+function playTom(kind, t, acc, dest, wave) {
+  if (!roomFor(t, 2, true)) return;
+  const ac = Snd.ac, o = ac.createOscillator(), g = ac.createGain(), f = TOM_HZ[kind];
+  o.type = wave; o.frequency.setValueAtTime(f * 1.6, t); o.frequency.exponentialRampToValueAtTime(f, t + 0.07);
+  const end = envelope(g.gain, t, 0.7 * acc, 0.11, { release: 0.12 });
+  o.connect(g); g.connect(dest); o.start(t); o.stop(end);
+  registerNodes(t, end, [o, g], o);
+}
+// Pet chirps: a tiny FM blip that follows a pitch curve (a plain square blip in 8-bit).
+function playChirp(kind, t, acc, dest, fm) {
+  const C = MainThemes.theme1.chirps[kind], ac = Snd.ac;
+  if (!C || !roomFor(t, fm ? 4 : 2, false)) return;
+  const car = ac.createOscillator(), amp = ac.createGain(), nodes = [car, amp];
+  const curve = (param, mult) => C.pts.forEach(([dt, hz], i) => { if (i) param.linearRampToValueAtTime(hz * mult, t + dt); else param.setValueAtTime(hz * mult, t); });
+  car.type = fm ? 'sine' : 'square'; curve(car.frequency, 1);
+  const end = envelope(amp.gain, t, (fm ? 0.2 : 0.08) * acc, C.dur, { release: 0.04 });
+  if (fm) {
+    const mod = ac.createOscillator(), depth = ac.createGain();
+    mod.type = 'sine'; curve(mod.frequency, 2); depth.gain.setValueAtTime(C.pts[0][1] * 1.2, t);
+    mod.connect(depth); depth.connect(car.frequency); mod.start(t); mod.stop(end); nodes.push(mod, depth);
+  }
+  car.connect(amp); amp.connect(dest); car.start(t); car.stop(end);
+  registerNodes(t, end, nodes, car);
+}
 // 8-bit pulse voice (12.5/25/50% duty): punchy envelope, arpeggios, bends, vibrato.
 function playPulse(layer, ev, t, sd, dest) {
   const ac = Snd.ac, acc = ev.acc ? 1.35 : 1, lead = layer.voice === 'p1';
-  const len = ev.hold ? ev.dur * sd * 0.96 : sd * 0.72;
+  const len = ev.hold ? ev.dur * sd * 0.96 : sd * (layer.gate ? layer.gate * 0.9 : 0.72);
   const vib = ev.vib && lead;
   if (!roomFor(t, vib ? 4 : 2, lead)) return;
   const o = ac.createOscillator(), g = ac.createGain(), v = (lead ? 0.3 : 0.18) * acc;
@@ -1779,8 +2028,7 @@ function playPulse(layer, ev, t, sd, dest) {
   g.gain.setValueAtTime(v * 0.6, t + Math.max(len, 0.011));
   g.gain.linearRampToValueAtTime(0, t + Math.max(len, 0.011) + 0.02);
   const end = t + Math.max(len, 0.011) + 0.025;
-  o.frequency.setValueAtTime(ev.bend ? ev.f * Math.pow(2, -0.5 / 12) : ev.f, t);
-  if (ev.bend) o.frequency.linearRampToValueAtTime(ev.f, t + Math.min(0.09, len * 0.6));
+  pitchShape(o.frequency, ev.f, ev, t, len);
   if (ev.arp) for (let k = 1, tt = t + sd / 4; tt < t + len; k++, tt += sd / 4) o.frequency.setValueAtTime(ev.f * Math.pow(2, ev.arp[k % 3] / 12), tt);
   const nodes = [o, g];
   if (vib) { const lfo = ac.createOscillator(), lg = ac.createGain(); lfo.frequency.value = 6; lg.gain.value = ev.f * 0.012; lfo.connect(lg); lg.connect(o.frequency); lfo.start(t + 0.08); lfo.stop(end); nodes.push(lfo, lg); }
@@ -1803,6 +2051,8 @@ function playTriangle(ev, t, sd, dest) {
 // 8-bit drums: snappy noise bursts and a fast pitch-drop kick (triangle in 8-bit, sine in Mix).
 function playDrumChip(kind, t, acc, dest, kickWave) {
   const ac = Snd.ac;
+  if (kind === 'x') { playDrumChip('k', t, acc, dest, kickWave); playDrumChip('s', t, acc, dest, kickWave); return; }
+  if (TOM_HZ[kind]) return playTom(kind, t, acc, dest, kickWave === 'sine' ? 'sine' : 'triangle');
   const burst = (dur, vol, type, freq) => {
     if (!roomFor(t, 3, false)) return;
     const s = ac.createBufferSource(); s.buffer = Snd.noiseBuf;
@@ -1832,9 +2082,10 @@ function playDrumChip(kind, t, acc, dest, kickWave) {
 }
 function playChipEvent(layer, ev, t, sd, pl) {
   const ac = Snd.ac; if (!ac || !pl.gain) return;
-  const bus = pl.bus || {}, dest = bus[layer.voice] || pl.gain, S = STYLES[MUS.style] || STYLES.mix;
+  const bus = pl.bus || {}, dest = (layer.trem && bus.trem) || bus[layer.voice] || pl.gain, S = STYLES[MUS.style] || STYLES.mix;
   // A song that is fading out (crossfade) drops its quiet extras, so the incoming song always has room for every note.
-  if (pl.stopAt !== undefined && (layer.voice === 'pad' || layer.voice === 'p2' || ev.drum === 'h' || ev.drum === 'g')) return;
+  if (pl.stopAt !== undefined && (layer.voice === 'pad' || layer.voice === 'p2' || layer.voice === 'chirp' || ev.drum === 'h' || ev.drum === 'g')) return;
+  if (layer.voice === 'chirp') return playChirp(ev.chirp, t, ev.acc ? 1.3 : 1, pl.gain, S.lead === 'fm');
   if (layer.voice === 'noise') {
     const dd = (ev.drum === 'h' || ev.drum === 'g') ? (bus.hat || pl.gain) : pl.gain;
     return S.drums === 'gated' ? playDrum(ev.drum, t, ev.acc ? 1.3 : 1, dd) : playDrumChip(ev.drum, t, ev.acc ? 1.3 : 1, dd, S.kick);
@@ -1847,14 +2098,12 @@ function playChipEvent(layer, ev, t, sd, pl) {
 function playFM(layer, ev, t, sd, dest) {
   const ac = Snd.ac;
   const V = FM_VOICES[layer.voice], acc = ev.acc ? 1.25 : 1, ratio = fmRatio(layer);
-  const len = ev.hold ? ev.dur * sd * 0.96 : sd * 0.8;
+  const len = ev.hold ? ev.dur * sd * 0.96 : sd * (layer.gate || 0.8);
   const vib = ev.vib && layer.voice === 'p1';
   if (!roomFor(t, vib ? 6 : 4, layer.voice !== 'p2')) return;
   const car = ac.createOscillator(), mod = ac.createOscillator(), depth = ac.createGain(), amp = ac.createGain();
   car.type = 'sine'; mod.type = 'sine';
-  const f0 = ev.bend ? ev.f * Math.pow(2, -0.5 / 12) : ev.f;
-  car.frequency.setValueAtTime(f0, t); mod.frequency.setValueAtTime(f0 * ratio, t);
-  if (ev.bend) { const tb = t + Math.min(0.09, len * 0.6); car.frequency.linearRampToValueAtTime(ev.f, tb); mod.frequency.linearRampToValueAtTime(ev.f * ratio, tb); }
+  pitchShape(car.frequency, ev.f, ev, t, len); pitchShape(mod.frequency, ev.f * ratio, ev, t, len);
   if (ev.arp) for (let k = 1, tt = t + sd / 4; tt < t + len; k++, tt += sd / 4) {
     const fa = ev.f * Math.pow(2, ev.arp[k % 3] / 12); car.frequency.setValueAtTime(fa, tt); mod.frequency.setValueAtTime(fa * ratio, tt);
   }
@@ -1900,6 +2149,8 @@ function playPad(ev, t, sd, dest, bus = {}) {
 }
 function playDrum(kind, t, acc, dest) {
   const ac = Snd.ac;
+  if (kind === 'x') { playDrum('k', t, acc, dest); playDrum('s', t, acc, dest); return; }
+  if (TOM_HZ[kind]) return playTom(kind, t, acc, dest, 'sine');
   const noiseHit = (vol, type, freq, hold, q) => {
     if (!roomFor(t, 3, false)) return;
     const s = ac.createBufferSource(); s.buffer = Snd.noiseBuf;
@@ -1940,9 +2191,12 @@ function addEcho(pl, ac, now) {
   } else { lp.connect(fb); fb.connect(dl); lp.connect(Snd.musicIn); }
   pl.echo = { nodes, entry: { t0: now, t1: Infinity, n: nodes.length } };
   NODES.list.push(pl.echo.entry);
+  // Parts can switch the echo on or off (the tail of the last echo still rings out).
+  const level = send.gain.value;
+  pl.onPart = (part, t) => { if (part.echo !== undefined) send.gain.setTargetAtTime(part.echo ? level : 0, t, 0.02); };
 }
 function playSting(t) {
-  STING.forEach((n, i) => playChipEvent({ voice: 'p1', duty: 0.25 }, { f: noteFreq(n), acc: i === 2, dur: 1, hold: false }, t + i * 0.1, 0.11, { gain: Snd.musicIn }));
+  activeTheme().sting.forEach((n, i) => playChipEvent({ voice: 'p1', duty: 0.25 }, { f: noteFreq(n), acc: i === 2, dur: 1, hold: false }, t + i * 0.1, 0.11, { gain: Snd.musicIn }));
 }
 function musicTick() {
   const ac = Snd.ac;
@@ -1995,21 +2249,48 @@ document.addEventListener('visibilitychange', () => {
 
 // ---- #music: the jukebox / music test room ----
 // (tap a song in the list to play it)
-const MR_TOP = 26, MR_ROW = 13;   // song list rows: 15 songs end well above the hint bar
-const VOICE_LABEL = { p1: 'LEAD', p2: 'ARP', tri: 'BASS', noise: 'DRUMS', pad: 'PAD' };
+const MR_TOP = 26, MR_ROW = 12, MR_X = 156;   // song list rows end above the hint bar; the info panel starts at MR_X
+const VOICE_LABEL = { p1: 'LEAD', p2: 'ARP', tri: 'BASS', noise: 'DRUMS', pad: 'PAD', chirp: 'PETS' };
+// Sections of a long song: parts whose names start with the same letter (C1, C2, C3) form one section.
+function songSections(song) {
+  const out = []; let bar = 0;
+  song.form.forEach((k, i) => { if (!out.length || out[out.length - 1].letter !== k[0]) out.push({ letter: k[0], formIdx: i, bar0: bar }); bar += song.parts[k].bars; });
+  out.bars = bar;
+  return out;
+}
 class MusicRoomScreen {
-  constructor(resolve) { this.opaque = true; this.i = 0; this.names = Object.keys(SONGS); this.t = 0; this.resolve = resolve || null; }
+  constructor(resolve) {
+    this.opaque = true; this.i = 0; this.t = 0; this.resolve = resolve || null;
+    // The two main themes first (always played as written), then every other song (which follows the active theme).
+    this.names = ['titleK', 'title'].concat(logicalSongs().filter(n => n !== 'title'));
+  }
+  raw(k) { return k < 2; }
+  songName(k) { return this.raw(k) ? this.names[k] : themeSong(this.names[k]); }
+  rowOf(pl) { return !pl ? -1 : pl.name === 'titleK' ? 0 : pl.name === 'title' ? 1 : this.names.indexOf(pl.req ? pl.req.name : pl.name); }
+  play(k, opts) { playMusic(this.names[k], Object.assign({ cut: true, restart: true, raw: this.raw(k) }, opts)); }
+  pos(pl) { const now = Snd.ac ? Snd.ac.currentTime : 0; let pos = null; for (const e of pl.log) if (e.t <= now) pos = e; return pos; }
+  onSections() { return this.names[this.i] === 'titleK'; }
+  jumpSection(dir) {
+    const secs = songSections(compileSong('titleK')), pl = MUS.cur && MUS.cur.name === 'titleK' ? MUS.cur : null;
+    let k = 0;
+    if (pl) { const pos = this.pos(pl) || { formIdx: pl.formIdx }; let cur = 0; secs.forEach((sc, j) => { if (sc.formIdx <= pos.formIdx) cur = j; }); k = (cur + dir + secs.length) % secs.length; }
+    playMusic('titleK', { raw: true, restart: true, formIdx: secs[k].formIdx });
+  }
+  nextStyle(dir) {
+    const k = STYLE_ORDER.indexOf(MUS.style), n = STYLE_ORDER.length;
+    setSoundStyle(STYLE_ORDER[(k + (dir < 0 ? n - 1 : 1)) % n]); sfx('confirm');
+    const cur = MUS.cur;
+    if (cur) playMusic(cur.req ? cur.req.name : cur.name, { cut: true, restart: true, raw: !!(cur.req && cur.req.raw) });   // hear the new style right away
+  }
+  nextTheme() { setMusicTheme(activeThemeKey === 'theme2' ? 'theme1' : 'theme2'); sfx('confirm'); }
   update(inp) {
     this.t++;
     for (const a of inp) {
       if (a === 'up') { this.i = (this.i + this.names.length - 1) % this.names.length; sfx('move'); }
       else if (a === 'down') { this.i = (this.i + 1) % this.names.length; sfx('move'); }
-      else if (a === 'ok') playMusic(this.names[this.i], { cut: true, restart: true });
-      else if (a === 'left' || a === 'right') {
-        const k = STYLE_ORDER.indexOf(MUS.style), n = STYLE_ORDER.length;
-        setSoundStyle(STYLE_ORDER[(k + (a === 'left' ? n - 1 : 1)) % n]); sfx('confirm');
-        if (MUS.cur) playMusic(MUS.cur.name, { cut: true, restart: true });   // hear the new style right away
-      }
+      else if (a === 'ok') this.play(this.i);
+      else if (a === 'left' || a === 'right') { if (this.onSections()) this.jumpSection(a === 'left' ? -1 : 1); else this.nextStyle(a === 'left' ? -1 : 1); }
+      else if (a === 'theme') this.nextTheme();
       else if (a === 'back') {
         sfx('cancel');
         pop(this);
@@ -2022,42 +2303,48 @@ class MusicRoomScreen {
   draw() {
     ctx.fillStyle = '#14121e'; ctx.fillRect(0, 0, W, H);
     drawText(this.resolve ? 'JUKEBOX' : 'MUSIC ROOM', 8, 6, '#ffd84a', 2);
-    drawText(MUS.musicOn ? '' : '(music is off - press N)', 150, 10, COL.red);
+    drawText(MUS.musicOn ? '' : '(music is off - press N)', 150, 14, COL.red);
+    const playRow = this.rowOf(MUS.cur);
     this.names.forEach((n, k) => {
-      const y = MR_TOP + k * MR_ROW, sel = k === this.i, playing = MUS.cur && MUS.cur.name === n;
-      if (sel) { ctx.fillStyle = '#3b3b6d'; ctx.fillRect(4, y - 2, 128, MR_ROW); }
-      drawText((playing ? '♪' : ' ') + ' ' + SONGS[n].title, 10, y, playing ? '#7dff9a' : sel ? COL.white : COL.dim);
+      const y = MR_TOP + k * MR_ROW, sel = k === this.i, playing = k === playRow;
+      if (sel) { ctx.fillStyle = '#3b3b6d'; ctx.fillRect(4, y - 2, MR_X - 20, MR_ROW); }
+      drawText((playing ? '♪' : ' ') + ' ' + SONGS[this.songName(k)].title, 10, y, playing ? '#7dff9a' : sel ? COL.white : COL.dim);
     });
-    const s = SONGS[this.names[this.i]];
-    box(138, 24, 290, 202, '#1d1b2e');
-    drawText(s.title, 148, 32, COL.white);
-    drawTextR('Sound: < ' + STYLES[MUS.style].name + ' >', 420, 10, '#ffd84a');
-    drawText(s.bpm + ' BPM   ' + (s.oneShot ? 'one-shot' : s.form.split(' ').length + ' parts: ' + s.form), 148, 44, COL.barText);
-    wrapText(s.meter, 270).slice(0, 2).forEach((ln, k) => drawText(ln, 148, 56 + k * 10, '#8fd3ff'));
-    const pl = MUS.cur && MUS.cur.name === this.names[this.i] ? MUS.cur : null;
-    if (!pl) { drawText('Press Enter to play.', 148, 90, COL.dim); return; }
-    const now = Snd.ac ? Snd.ac.currentTime : 0;
-    let pos = null;
-    for (const e of pl.log) if (e.t <= now) pos = e;
+    const s = SONGS[this.songName(this.i)];
+    box(MR_X - 10, 24, 438 - MR_X, 202, '#1d1b2e');
+    drawText(s.title, MR_X, 32, COL.white);
+    drawTextR('Theme: ' + activeTheme().name + (touchUI ? '' : '  (T)'), 420, 3, '#7dff9a');
+    drawTextR('Sound: < ' + STYLES[MUS.style].name + ' >', 420, 13, '#ffd84a');
+    const pl = MUS.cur && playRow === this.i ? MUS.cur : null;
+    const secs = s.long ? songSections(compileSong(this.songName(this.i))) : null;
+    drawText(s.bpm + ' BPM   ' + (s.oneShot ? 'one-shot' : secs ? secs.length + ' sections: ' + secs.map(sc => sc.letter).join(' ') + '   ' + secs.bars + ' bars' : s.form.split(' ').length + ' parts: ' + s.form), MR_X, 44, COL.barText);
+    wrapText(s.meter, 262).slice(0, 2).forEach((ln, k) => drawText(ln, MR_X, 56 + k * 10, '#8fd3ff'));
+    if (!pl) { drawText('Press Enter to play.', MR_X, 84, COL.dim); return; }
+    const pos = this.pos(pl);
     if (!pos) return;
-    const partName = pl.song.form[pos.formIdx], part = pl.song.parts[partName];
-    drawText('Part ' + partName + '  bar ' + (Math.floor(pos.step / part.barSteps) + 1) + '/' + part.bars + '  step ' + (pos.step + 1) + '/' + part.len, 148, 80, COL.white);
+    const partName = pl.song.form[pos.formIdx], part = pl.song.parts[partName], bar = Math.floor(pos.step / part.barSteps);
+    if (secs) {
+      let barsBefore = 0; for (let k = 0; k < pos.formIdx; k++) barsBefore += pl.song.parts[pl.song.form[k]].bars;
+      drawText('Section ' + partName[0] + '   bar ' + (barsBefore + bar + 1) + '/' + secs.bars + '   ' + part.meter.split(' ')[0] + '   part ' + partName, MR_X, 78, COL.white);
+    } else drawText('Part ' + partName + '  bar ' + (bar + 1) + '/' + part.bars + '  step ' + (pos.step + 1) + '/' + part.len, MR_X, 78, COL.white);
     part.layers.forEach((layer, k) => {
-      const y = 98 + k * 30, n = layer.ev.length, at = pos.step % n;
-      drawText(VOICE_LABEL[layer.voice] + '  loops every ' + n, 148, y, COL.barText);
+      const y = 94 + k * 26, n = layer.ev.length, at = (pos.step + (layer.off || 0)) % n;
+      drawText(VOICE_LABEL[layer.voice] + '  loops every ' + n + (layer.trem ? '  (tremolo)' : ''), MR_X, y, COL.barText);
       const show = Math.min(n, 32), first = n > 32 ? Math.floor(at / 32) * 32 : 0;
       for (let c = 0; c < show && first + c < n; c++) {
-        const ev = layer.ev[first + c], x = 148 + c * 8;
-        ctx.fillStyle = first + c === at ? '#ffd84a' : ev ? (ev.quarter || ev.bend ? '#ff7a59' : ev.arp ? '#b07ad0' : ev.drum === 'g' ? '#3e4a78' : '#5a8ad8') : '#2e2c44';
+        const ev = layer.ev[first + c], x = MR_X + c * 8;
+        ctx.fillStyle = first + c === at ? '#ffd84a' : ev ? (ev.quarter || ev.bend || ev.snap || ev.wob ? '#ff7a59' : ev.arp ? '#b07ad0' : ev.chirp ? '#7dff9a' : ev.drum === 'g' ? '#3e4a78' : '#5a8ad8') : '#2e2c44';
         ctx.fillRect(x, y + 11, 7, ev && ev.acc ? 10 : 7);
       }
     });
   }
   tap(x, y) {
     const k = Math.floor((y - MR_TOP + 2) / MR_ROW);
-    if (x < 136 && k >= 0 && k < this.names.length) { this.i = k; playMusic(this.names[k], { cut: true, restart: true }); }
+    if (x < MR_X - 14 && k >= 0 && k < this.names.length) { this.i = k; this.play(k); }
+    else if (x > 280 && y < 12) this.nextTheme();
+    else if (x > 280 && y < 24) this.nextStyle(1);
   }
-  hint() { return 'W/S: song   Enter: play   A/D: sound style   ' + hintKeys() + ': ' + (this.resolve ? 'back' : 'title') + '   N: music'; }
+  hint() { return 'W/S song  Enter play  A/D ' + (this.onSections() ? 'section' : 'sound') + '  T theme  ' + hintKeys() + ' ' + (this.resolve ? 'back' : 'title') + '  N music'; }
 }
 
 // ---------------------------------------------------------------------
@@ -3129,6 +3416,7 @@ function newGame(starterSp, name) {
     party: [createPet(starterSp, 5)], pen: [],
     bag: starterBag(starterSp), coins: 100,
     chests: {}, flags: {}, quests: {}, stats: { caught: 0, wins: 0, battles: 0, time: 0, steps: 0 },
+    musicTheme: activeThemeKey,
   };
 }
 function storage() { try { return window.localStorage || null; } catch (e) { return null; } }
@@ -3164,6 +3452,7 @@ function loadGame() {
     const m = MAPS[d.map];
     d.chests = d.chests || {}; d.flags = d.flags || {};
     d.quests = (d.quests && typeof d.quests === 'object') ? d.quests : {};
+    if (!MainThemes[d.musicTheme]) delete d.musicTheme;
     const prevG = G; G = d;   // NPC positions depend on this save's story flags
     const blocked = !Number.isFinite(d.x) || !Number.isFinite(d.y) || !isWalkable(m, d.x, d.y) || exitAt(m, d.x, d.y) || doorAt(m, d.x, d.y);
     G = prevG;
@@ -3189,7 +3478,7 @@ function hasSave() { return !!loadGame(); }
 // ---------------------------------------------------------------------
 const KEYMAP = {
   KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right',
-  Enter: 'ok', NumpadEnter: 'ok', Space: 'ok', KeyE: 'ok', Escape: 'back', KeyQ: 'back', KeyM: 'mute', KeyF: 'full', KeyV: 'emote', KeyH: 'home', KeyN: 'music',
+  Enter: 'ok', NumpadEnter: 'ok', Space: 'ok', KeyE: 'ok', Escape: 'back', KeyQ: 'back', KeyM: 'mute', KeyF: 'full', KeyV: 'emote', KeyH: 'home', KeyN: 'music', KeyT: 'theme',
 };
 const DIR_KEYS = ['up', 'down', 'left', 'right'];
 const held = {};
@@ -3910,8 +4199,8 @@ async function pauseMenu() {
   sfx('menu');
   let start = 0;
   for (;;) {
-    const i = await choose(['Pets', 'Bag', 'Tasks', 'Go Home', 'Your Name', 'Jukebox', 'Save', 'Controls', 'Close'], {
-      x: W - 96, y: 22, minW: 90, cancel: 8, start, title: G.coins + ' coins',
+    const i = await choose(['Pets', 'Bag', 'Tasks', 'Go Home', 'Your Name', 'Jukebox', 'Music Theme', 'Save', 'Controls', 'Close'], {
+      x: W - 102, y: 22, minW: 96, cancel: 9, start, title: G.coins + ' coins',
       info: () => goalText() + '\nRibbons: ' + ribbonCount() + '/4   Tasks: ' + QUESTS.filter(q => questState(q) === 'done').length + '/' + QUESTS.length + '   Pets: ' + G.stats.caught + '   Chests: ' + Object.keys(G.chests).length + '/' + ALL_CHESTS.length + '   Time: ' + fmtTime(G.stats.time),
     });
     start = i;
@@ -3924,16 +4213,27 @@ async function pauseMenu() {
       if (n) { G.name = n; sfx('emote_star'); await say('Nice to meet you, {name}!'); saveGame(); }
     }
     else if (i === 5) await openJukebox();
-    else if (i === 6) { const ok = saveGame(); await say(ok ? 'Your adventure was saved!' : 'Saving isn\'t available in this browser, but you can keep playing.'); }
-    else if (i === 7) await showControls();
+    else if (i === 6) await musicThemeMenu();
+    else if (i === 7) { const ok = saveGame(); await say(ok ? 'Your adventure was saved!' : 'Saving isn\'t available in this browser, but you can keep playing.'); }
+    else if (i === 8) await showControls();
     else return;
   }
+}
+// Music Theme: which main theme the whole soundtrack uses. The change is heard at once (400 ms crossfade).
+async function musicThemeMenu() {
+  const keys = Object.keys(MainThemes).sort();
+  const k = await choose(keys.map(t => ({ label: MainThemes[t].name, right: t === activeThemeKey ? 'On' : '' })).concat([{ label: 'Back' }]),
+    { x: W - 130, y: 60, minW: 110, cancel: keys.length, start: keys.indexOf(activeThemeKey), title: 'Music Theme' });
+  if (k >= keys.length) return;
+  setMusicTheme(keys[k]); sfx('confirm');
+  await say('The music now uses ' + MainThemes[keys[k]].name + '. Every song plays its melody!');
+  saveGame();
 }
 // Jukebox from the pause menu: listen to any song, then go back to this area's music.
 function openJukebox() {
   return new Promise(r => {
     const s = push(new MusicRoomScreen(r));
-    const playing = MUS.cur ? s.names.indexOf(MUS.cur.name) : -1;
+    const playing = s.rowOf(MUS.cur);
     if (playing >= 0) s.i = playing;
   });
 }
@@ -4262,6 +4562,7 @@ function drawSky(t) {
   for (let y = 176; y < H; y += 16) for (let x = 0; x < W; x += 16) ctx.drawImage(TILES['.'][0], x, y);
   for (let x = 0; x < W; x += 16) ctx.drawImage(TILES['T'][0], x, 160);
 }
+const CREDIT_LINE = '© 2026 When Pets Attack Studio Productions · Free for noncommercial use';   // see the LICENSE file
 class TitleScreen {
   constructor() { this.opaque = true; this.phase = 'press'; this.t = 0; }
   update(inp) {
@@ -4279,6 +4580,7 @@ class TitleScreen {
     drawTextC('ADVENTURES', W / 2, 62, '#ffd84a', 3, COL.border);
     drawTextC('A When Pets Attack Studio Production', W / 2, 96, COL.ink);
     if (this.phase === 'press' && Math.floor(this.t / 30) % 2 === 0) drawTextC('Press ENTER to start', W / 2, 116, COL.ink, 1);
+    drawTextC(CREDIT_LINE, W / 2, 216, COL.white, 1, COL.border);
   }
   hint() { return 'Enter: start   M: sound   F: fullscreen'; }
   tap() { inputQueue.push('ok'); }
@@ -4618,6 +4920,7 @@ async function titleMenu(title) {
       const d = loadGame();
       if (!d) { await say('Couldn\'t find a saved game.'); continue; }
       G = d;
+      applySavedTheme(G);
       await fadeTo(1, 15);
       stack.length = 0; push(overworld); enterMap(G.map, G.x, G.y, G.dir);
       await fadeTo(0, 15);
@@ -5432,11 +5735,16 @@ function runSelfTest() {
   check('500 random battles: stats, HP, XP, levels and evolution stay valid', !bErr.length, bErr.slice(0, 4).join('; '));
   check('Battles take a sensible number of turns (avg ' + (totalTurns / 500).toFixed(1) + ')', totalTurns / 500 > 1.5 && totalTurns / 500 < 15, 'avg ' + totalTurns / 500);
   // ---- Music ----
-  const mErr2 = [], VOICES = ['p1', 'p2', 'tri', 'noise', 'pad'];
+  const mErr2 = [], VOICES = ['p1', 'p2', 'tri', 'noise', 'pad', 'chirp'];
   const motifOK = notes => { for (let i = 0; i + 4 < notes.length; i++) {
     const d = [1, 2, 3, 4].map(k => Math.round(12 * Math.log2(notes[i + k] / notes[i + k - 1])));
     if (d[0] >= 3 && d[0] <= 4 && d[1] <= -4 && d[1] >= -6 && d[2] >= 5 && d[2] <= 7 && d[3] <= -1 && d[3] >= -2) return true; } return false; };
-  for (const name in SONGS) {
+  const theme1OK = notes => { for (let i = 0; i + 4 < notes.length; i++) {
+    const d = [1, 2, 3, 4].map(k => Math.round(12 * Math.log2(notes[i + k] / notes[i + k - 1])));
+    if (d[0] === 7 && d[1] === -2 && (d[2] === -1 || d[2] === -2) && (d[3] === -4 || d[3] === -3)) return true; } return false; };
+  const themeBefore = activeThemeKey;
+  for (const tk in MainThemes) { activeThemeKey = tk;
+  for (const name of logicalSongs().map(themeSong)) {
     const s = SONGS[name];
     let quotes = false;
     for (const pk of s.form.split(' ')) if (!s.parts[pk]) mErr2.push(name + ' form uses missing part ' + pk);
@@ -5447,12 +5755,12 @@ function runSelfTest() {
       if (voices.some(v => !VOICES.includes(v)) || new Set(voices).size !== voices.length) mErr2.push(name + '.' + pk + ' voices ' + voices);
       if (voices.includes('pad') && !PAD_SONGS.includes(name)) mErr2.push(name + ' has a pad (calm songs only)');
       if (voices.length > 7) mErr2.push(name + ' uses more than 7 voices');
-      if (!voices.includes('noise') && !voices.includes('tri')) mErr2.push(name + '.' + pk + ' has no steady pulse');
+      if (!voices.includes('noise') && !voices.includes('tri') && !part.solo) mErr2.push(name + '.' + pk + ' has no steady pulse');
       for (const l of part.layers) {
         const c = compileLayer(l);
         c.errors.forEach(er => mErr2.push(name + '.' + pk + '.' + l.voice + ': ' + er));
         c.ev.forEach((ev, i) => {
-          if (!ev || ev.drum) return;
+          if (!ev || ev.drum || ev.chirp) return;
           if (!Number.isFinite(ev.f) || ev.f < 20 || ev.f > 4200) mErr2.push(name + ' bad frequency ' + ev.f);
           if ((ev.quarter || ev.bend) && !QUARTER_TONE_SONGS.includes(name)) mErr2.push(name + ' has a quarter-tone');
           if ((ev.quarter || ev.bend) && ev.hold) mErr2.push(name + ' holds a quarter-tone');
@@ -5463,16 +5771,75 @@ function runSelfTest() {
           const halves = [c.ev.slice(b, b + 5), c.ev.slice(b + 5, b + 12)];
           if (halves.some(h => h.filter(ev => ev && (ev.quarter || ev.bend)).length > 1)) mErr2.push('woods: more than 1 quarter-tone in a bar');
         }
-        if (l.voice !== 'noise' && motifOK(c.ev.filter(Boolean).map(ev => ev.f))) quotes = true;
+        if (l.voice !== 'noise' && l.voice !== 'chirp' && (tk === 'theme2' ? motifOK : theme1OK)(c.ev.filter(Boolean).map(ev => ev.f))) quotes = true;
       }
     }
-    if (!quotes) mErr2.push(name + ' never quotes the motif');
+    if (!quotes) mErr2.push(name + ' never quotes ' + MainThemes[tk].name);
     const total = s.form.split(' ').reduce((a, k) => a + s.parts[k].bars, 0) * (s.cycleBars || 1);
-    if (!s.oneShot && (total < 16 || total > 32)) mErr2.push(name + ' is ' + total + ' bars long');
+    if (!s.oneShot && !s.long && (total < 16 || total > 32)) mErr2.push(name + ' is ' + total + ' bars long');
   }
+  }
+  activeThemeKey = themeBefore;
   for (const k in MAPS) if (!SONGS[MUSIC_ALIAS[MAPS[k].music] || MAPS[k].music]) mErr2.push(k + ' has no song');
   for (const k of ['title', 'town', 'meadow', 'woods', 'interior', 'battle', 'champion', 'victory', 'win']) if (!SONGS[k]) mErr2.push('missing ' + k);
-  check(Object.keys(SONGS).length + ' songs: every note parses, loops match, motif quoted, realign within 8 bars', !mErr2.length, mErr2.slice(0, 4).join('; '));
+  check(Object.keys(SONGS).length + ' songs: every note parses, loops match, realign within 8 bars, and every song quotes the active theme (Theme 2 and Theme 1)', !mErr2.length, mErr2.slice(0, 4).join('; '));
+  // Main Theme 1: structure, bends, the 7-against-8 riff, and switching themes.
+  const t2Err = [];
+  { const keep = { theme: activeThemeKey, stored: storedTheme, players: MUS.players, cur: MUS.cur };
+    activeThemeKey = 'theme1';
+    const s2 = compileSong('titleK'), secs = {};
+    s2.form.forEach(k => { const c = k[0]; secs[c] = secs[c] || [0, 0]; secs[c][0] += s2.parts[k].bars; secs[c][1] += s2.parts[k].len; });
+    const plan = { A: [4, 28], B: [8, 56], C: [8, 56], D: [2, 15], E: [16, 128], F: [2, 14] };
+    for (const k in plan) if (!secs[k] || secs[k][0] !== plan[k][0] || secs[k][1] !== plan[k][1]) t2Err.push('section ' + k + ' is ' + secs[k]);
+    const secsLong = Object.values(secs).reduce((a, x) => a + x[1], 0) * s2.sd;
+    if (secsLong < 68 || secsLong > 80) t2Err.push('loop is ' + secsLong.toFixed(1) + ' s');
+    if (Math.abs(s2.sd * 2 - 60 / 128) > 1e-9) t2Err.push('eighth note is not constant');
+    // seamless loop: F and A are the same texture (the riff alone, tremolo, echo on)
+    const sig = pt => pt.layers.map(l => l.voice + l.steps + !!l.trem).join() + pt.echo;
+    if (sig(s2.parts.F) !== sig(s2.parts.A) || s2.parts.A.layers.length !== 1) t2Err.push('F does not flow into A');
+    // the riff: 7 eighths, two snap bends, strongest accent on the 3rd eighth
+    const riff = s2.parts.A.layers[0].ev;
+    if (riff.length !== 7 || riff.filter(e => e && e.snap).length !== 2 || !riff[2].acc || riff.filter(e => e && e.acc).length !== 1) t2Err.push('riff shape');
+    // the 7-eighth riff keeps its place across the E parts and meets the bar line again 7 bars after it starts
+    let phase = null, at = 0, startAt = -1;
+    for (const k of s2.form.filter(x => x[0] === 'E')) {
+      const part = s2.parts[k], rl = part.layers.find(l => l.voice === 'p2');
+      if (rl) { if (phase === null) { phase = 0; startAt = at; } if (rl.ev.length !== 7 || (rl.off || 0) !== phase) t2Err.push('riff jumps at ' + k); phase = (phase + part.len) % 7; }
+      at += part.len;
+    }
+    if (startAt !== 32 || (startAt + 56) % 8 !== 0 || 56 % 7 !== 0) t2Err.push('riff does not realign after 7 bars');
+    // the hook: 4 bars, one wobble at the end of bar 2, ends on an in-tune D
+    const hook = s2.parts.E4.layers.find(l => l.voice === 'p1').ev, hn = hook.filter(Boolean);
+    if (hook.length !== 32 || hn.filter(e => e.wob).length !== 1 || !hook[14] || !hook[14].wob) t2Err.push('hook wobble');
+    const lastN = hn[hn.length - 1];
+    if (Math.abs(lastN.f - noteFreq('D4')) > 1e-9 || lastN.snap || lastN.wob || lastN.bend || lastN.quarter) t2Err.push('hook does not end on an in-tune D');
+    // every pitch shape lands exactly in tune; the snap bend takes at most 60 ms
+    for (const fx of ['snap', 'wob', 'bend']) {
+      const c = [], rec = { setValueAtTime: (v, t) => c.push([v, t]), linearRampToValueAtTime: (v, t) => c.push([v, t]) };
+      pitchShape(rec, 440, { [fx]: true }, 1, 0.4);
+      if (Math.abs(c[c.length - 1][0] - 440) > 1e-9) t2Err.push(fx + ' ends out of tune');
+      if (fx === 'snap' && (Math.abs(c[0][0] - 440 * Math.pow(2, -0.5 / 12)) > 1e-9 || c[1][1] - 1 > 0.06 + 1e-9)) t2Err.push('snap bend');
+    }
+    // switching themes: never two songs, Theme 1 swaps the title / win / champion / victory songs
+    MUS.players = []; MUS.cur = null; activeThemeKey = 'theme2';
+    switchSong('title', 0); if (MUS.cur.name !== 'title') t2Err.push('Theme 2 title');
+    activeThemeKey = 'theme1'; rethemeAt(1);
+    if (MUS.cur.name !== 'titleK' || audiblePlayers(1.2).length !== 2 || audiblePlayers(1.45).length !== 1) t2Err.push('theme switch crossfade');
+    prunePlayers(2); if (MUS.players.length !== 1) t2Err.push('theme switch left two songs');
+    for (const [a, b] of [['win', 'winK'], ['boss', 'championK'], ['victory', 'victoryK'], ['town', 'town']]) if (switchSong(a, 3, { cut: true }).name !== b) t2Err.push(a + ' under Theme 1');
+    if (switchSong('title', 4, { raw: true, cut: true }).name !== 'title') t2Err.push('jukebox cannot play Theme 2 as written');
+    switchSong('town', 5, { cut: true }); const townNotes = k => compileSong('town').parts.A.layers.find(l => l.voice === 'p1').ev.filter(Boolean).slice(0, 5).map(e => Math.round(12 * Math.log2(e.f / 440)));
+    const t2n = townNotes(); activeThemeKey = 'theme2'; rethemeAt(6);
+    if (townNotes().join() === t2n.join() || townNotes().join() !== '0,3,-2,5,3' || t2n.join() !== '0,7,5,3,0') t2Err.push('town does not follow the theme');
+    if (audiblePlayers(6.45).length !== 1) t2Err.push('two songs after switching back');
+    // save data: a save's theme applies when the browser has no stored choice; an unknown value is ignored
+    activeThemeKey = 'theme1'; storedTheme = null;
+    if (!THEME_URL) { const d = { musicTheme: 'theme2' }; applySavedTheme(d); if (activeThemeKey !== 'theme2') t2Err.push('saved theme not applied');
+      const d2 = { musicTheme: 'nope' }; applySavedTheme(d2); if (activeThemeKey !== 'theme2' || d2.musicTheme !== 'theme2') t2Err.push('bad saved theme'); }
+    if (JSON.parse(JSON.stringify(newGame('buddy', 'A'))).musicTheme !== activeThemeKey) t2Err.push('new games do not store the theme');
+    activeThemeKey = keep.theme; storedTheme = keep.stored; MUS.players = keep.players; MUS.cur = keep.cur;
+  }
+  check('Main Theme 1: sections A-F match the plan, bends land in tune, the 7-against-8 riff realigns, themes switch cleanly', !t2Err.length, t2Err.slice(0, 4).join('; '));
   // Scheduler: 10 simulated minutes on a fake clock, no drift, no late notes, no burst after a hidden tab.
   const schErr = [], savedMUS = { players: MUS.players, cur: MUS.cur };
   for (const name of ['woods', 'battle', 'champion', 'title']) {
@@ -5537,10 +5904,10 @@ function runSelfTest() {
       MUS.style = st; Object.keys(pulseWaves).forEach(k => delete pulseWaves[k]);
       params.length = 0; NODES.list = []; NODES.peak = 0; NODES.skipped = 0;
       const pl = newPlayer(name, 0.05); pl.gain = node('gain'); makeBuses(pl, fake); addEcho(pl, fake, 0);
-      if (st === '8bit' && (Object.keys(pl.bus).length || (pl.echo && pl.echo.nodes.length > 4))) fmErr.push('8-bit must stay mono');
+      if (st === '8bit' && (Object.keys(pl.bus).some(k => k !== 'trem') || (pl.echo && pl.echo.nodes.length > 4))) fmErr.push('8-bit must stay mono');
       if (!(songTrim(name) >= 0.5 && songTrim(name) <= 2)) fmErr.push(st + ' ' + name + ' loudness trim ' + songTrim(name));
       if (!(SONG_TRIM[st] || {})[name]) fmErr.push(st + ' ' + name + ' has no measured loudness trim');
-      for (let t = 0; t < 40; t += 0.025) { fake.currentTime = t; pumpPlayer(pl, t, playChipEvent); pruneNodeList(t); if (pl.done) break; }
+      for (let t = 0; t < (SONGS[name].long ? 75 : 40); t += 0.025) { fake.currentTime = t; pumpPlayer(pl, t, playChipEvent); pruneNodeList(t); if (pl.done) break; }
       params.filter(pr => pr.isEnv).forEach(pr => checkEnv(pr, st + ' ' + name));
       peaks.push(NODES.peak);
       if (NODES.peak > NODE_CAP + 4) fmErr.push(st + ' ' + name + ' peaks at ' + NODES.peak + ' nodes');
@@ -5631,6 +5998,7 @@ function runSelfTest() {
   for (const k in MAPS) for (const c of MAPS[k].chests) texts.push('You found ' + chestLabel(c) + '!');
   for (const k in SPECIES) texts.push((SPECIES[k].desc || ''), 'Champion Maple\'s ' + SPECIES[k].name + ' used Whisker Swipe!', SPECIES[k].name + ' wants to learn Pouch Cannon! But a pet can only know 4 moves.');
   texts.push('Your party is full, so ' + longName + ' went to rest in the Pet Pen at the Clinic.');
+  texts.push('The music now uses Theme 1. Every song plays its melody!');
   texts.push('SUPER GROWTH MACHINE. It helps a grown-up Nugget grow into a Super Hamster!', 'You don\'t have a Nugget yet. Raise an Alvin to Lv 10 so it grows into a Nugget, then come back!',
     'Your Nugget is resting in the Pet Pen. Put it in your party at the Pet Clinic, then come back!', '{name} hops in. You pull the big lever... BZZZT! It tickles!', 'Put {name} in the machine?',
     '{name} grew into a Super Hamster! It looks stronger than ever!', 'Tip: Dr. Gizmo\'s Super Growth Machine in his lab can turn a Nugget into a Super Hamster!',
@@ -5656,11 +6024,14 @@ function runSelfTest() {
   world.map = MAPS.pawsville;
   const hints = [overworld.hint(), new MessageScreen('x', () => {}).hint(), new ChoiceScreen(['a'], () => {}, { cancel: 0 }).hint(),
     new PartyScreen(() => {}, {}).hint(), new PenScreen(() => {}).hint(), new NameEntryScreen(() => {}, { title: 'x', cancel: true }).hint(), new StarterScreen().hint(), new TitleScreen().hint()];
-  for (const h of hints) { if (textW(h) > W - 8) uErr.push('hint too long: ' + h); if (textW(touchHint(h)) > W - 8) uErr.push('touch hint too long: ' + h); }
+
+  if (textW(CREDIT_LINE) > W - 4) uErr.push('title credit line too wide');
   for (const row of NAME_KEYS) if (row.length !== 10) uErr.push('keyboard row');
   if (NK.x0 + NK.w * 10 > W || NK.y0 + NK.h * 4 > HINT_Y) uErr.push('on-screen keyboard does not fit');
-  if (MR_TOP + (Object.keys(SONGS).length - 1) * MR_ROW + FH + 2 > HINT_Y) uErr.push('jukebox song list runs into the hint bar');
-  for (const k in SONGS) if (10 + textW('\u266A ' + SONGS[k].title) > 134) uErr.push('jukebox title too wide: ' + SONGS[k].title);
+  if (MR_TOP + logicalSongs().length * MR_ROW + FH + 2 > HINT_Y) uErr.push('jukebox song list runs into the hint bar');
+  for (const k in SONGS) if (10 + textW('\u266A ' + SONGS[k].title) > MR_X - 14) uErr.push('jukebox title too wide: ' + SONGS[k].title);
+  for (const row of [0, 1]) { const mr = new MusicRoomScreen(); mr.i = row; hints.push(mr.hint()); }
+  for (const h of hints) { if (textW(h) > W - 8) uErr.push('hint too long: ' + h); if (textW(touchHint(h)) > W - 8) uErr.push('touch hint too long: ' + h); }
   G = null;
   check('All UI text fits its box at 432x240 (longest dialog: ' + maxPages + ' pages)', !uErr.length, uErr.slice(0, 4).join('; '));
 
@@ -5700,6 +6071,27 @@ function runSelfTest() {
 // ---------------------------------------------------------------------
 // 20. DEVELOPER PREVIEWS (#view=...) used to check screens
 // ---------------------------------------------------------------------
+// Every scheduled note of every song for 2 complete loops: [step, voice, pitch in Hz (or drum letter), length in steps, accent, effects].
+function songEventDump() {
+  const out = { sting: activeTheme().sting.slice(), theme: activeTheme().theme.slice(), songs: {} };
+  for (const name of logicalSongs()) {   // each song as the active theme plays it
+    const song = compileSong(themeSong(name)), pl = { song, formIdx: 0, step: 0, done: false }, ev = [];
+    const total = song.form.reduce((n, k) => n + song.parts[k].len, 0) * 2;
+    for (let i = 0; i < total && !pl.done; i++) {
+      const part = song.parts[song.form[pl.formIdx]];
+      for (const layer of part.layers) {
+        const e = layer.ev[(pl.step + (layer.off || 0)) % layer.ev.length];
+        if (e) ev.push([i, layer.voice, e.drum || e.chirp || +e.f.toFixed(3), e.dur, e.acc ? 1 : 0,
+          (e.hold ? 'h' : '') + (e.quarter ? 'q' : '') + (e.bend ? 'b' : '') + (e.vib ? 'v' : '') + (e.arp ? 'a' + e.arp.join('.') : '') + (layer.duty ? 'd' + layer.duty : '') +
+          (e.snap ? 's' : '') + (e.wob ? 'w' : '') + (layer.trem ? 't' : '')]);
+      }
+      advancePlayer(pl);
+    }
+    out.songs[name] = { bpm: song.bpm, stepSeconds: +song.sd.toFixed(6), echo: song.echo, oneShot: song.oneShot, form: song.form.join(' '),
+      partSteps: song.form.map(k => song.parts[k].len), events: ev };
+  }
+  return out;
+}
 function devView(v) {
   G = newGame('mittens');
   G.party.push(createPet('rocky', 12), createPet('alvin', 7), createPet('cream', 11));
@@ -5731,6 +6123,9 @@ function devView(v) {
     G.party[0].nick = 'WWWWWWWWWW';
     push(new PartyScreen(() => {}, { title: 'Your pets' }));
   }
+  else if (v === 'events') {   // every song's note events for 2 full loops, as JSON (the golden snapshot in tests/golden is made from this)
+    document.getElementById('testout').textContent = 'EVENTS ' + JSON.stringify(songEventDump());
+  }
   else if (v === 'loudness') { runScript(async () => {   // render every song in every style offline: loudness (RMS), peak, stereo width
     const out = {}, saved = { ac: Snd.ac, musicIn: Snd.musicIn, nb: Snd.noiseBuf, style: MUS.style, nodes: NODES.list };
     const raw = location.hash.includes('raw');   // raw = ignore the stored trims (used to measure new ones)
@@ -5739,7 +6134,7 @@ function devView(v) {
       for (const name in SONGS) {
         MUS.style = st;
         const song = compileSong(name), total = song.form.reduce((a, k) => a + song.parts[k].len, 0) * song.sd;
-        const sr = 44100, secs = song.oneShot ? total + 0.6 : Math.min(24, total), oc = new OfflineAudioContext(2, Math.ceil(sr * secs), sr);
+        const sr = 44100, secs = song.oneShot ? total + 0.6 : SONGS[name].only ? total : Math.min(24, total), oc = new OfflineAudioContext(2, Math.ceil(sr * secs), sr);
         const chain = makeMusicChain(oc); chain.bus.connect(oc.destination);
         Snd.ac = oc; Snd.musicIn = chain.input; Snd.noiseBuf = makeNoiseBuffer(oc); NODES.list = [];
         Object.keys(pulseWaves).forEach(k => delete pulseWaves[k]);
@@ -5781,6 +6176,29 @@ function devView(v) {
     out.push('done'); document.getElementById('testout').textContent = out.join('\n');
   }); }
   else if (v === 'jukebox') { const s = push(new MusicRoomScreen()); audioUnlock(); s.i = s.names.indexOf('champion'); playMusic('champion', { cut: true }); }
+  else if (v === 'pausemenu') { push(overworld); enterMap('pawsville', 12, 11, 'down'); world.banner = 0; runScript(pauseMenu); }
+  else if (v === 'themeprobe') { const room = push(new MusicRoomScreen()); runScript(async () => {   // real Web Audio check of main Theme 1 and theme switching
+    const out = []; const log = s => { out.push(s); document.getElementById('testout').textContent = out.join('\n'); };
+    const real = ms => new Promise(r => setTimeout(r, ms));
+    audioUnlock(); const ac = Snd.ac; await real(300);
+    for (const st of STYLE_ORDER) {
+      MUS.style = st; NODES.peak = 0; NODES.skipped = 0;
+      room.i = 0; room.play(0); const t0 = ac.currentTime; let loops = 0, lastIdx = 0, seam = null;
+      while (ac.currentTime - t0 < 73) {   // one full loop and the F -> A seam
+        await real(50);
+        const pl = MUS.cur; if (pl.formIdx < lastIdx) { loops++; seam = { players: audiblePlayers(ac.currentTime).length, gap: pl.next - ac.currentTime }; } lastIdx = pl.formIdx;
+      }
+      log(st + ': Theme 1 looped ' + loops + 'x, players at the seam ' + (seam && seam.players) + ', scheduler ahead by ' + (seam && seam.gap.toFixed(3)) + ' s, node peak ' + NODES.peak + ', skipped notes ' + NODES.skipped);
+    }
+    MUS.style = '16bit';
+    room.jumpSection(1); await real(700); log('section jump: playing ' + MUS.cur.name + ' part ' + MUS.cur.song.form[MUS.cur.formIdx] + ', audible ' + audiblePlayers(ac.currentTime).length);
+    activeThemeKey = 'theme1'; playMusic('town', { cut: true }); await real(800);
+    setMusicTheme('theme2'); await real(200); const mid = audiblePlayers(ac.currentTime).length; await real(600);
+    log('switch to Theme 2 mid-song: during crossfade ' + mid + ' players, after ' + audiblePlayers(ac.currentTime).length + ', playing ' + MUS.cur.name);
+    playMusic('title'); await real(700); const a1 = MUS.cur.name; setMusicTheme('theme1'); await real(700);
+    log('title follows the theme: ' + a1 + ' -> ' + MUS.cur.name + ', audible ' + audiblePlayers(ac.currentTime).length + ', players kept ' + MUS.players.length);
+    log('done');
+  }); }
   else if (v === 'audioprobe') { push(new MusicRoomScreen()); runScript(async () => {   // real Web Audio check (needs autoplay allowed)
     const out = []; const log = s => { out.push(s); document.getElementById('testout').textContent = out.join('\n'); };
     audioUnlock(); const ac = Snd.ac;
@@ -5908,7 +6326,7 @@ async function runSmoke() {
       ok('B opens the menu', topScreen() instanceof ChoiceScreen);
       const menu = topScreen(), cr = canvas.getBoundingClientRect();
       const toClient = (gx, gy) => [cr.left + gx * cr.width / W, cr.top + gy * cr.height / H];
-      const [px, py] = toClient(menu.x + 20, menu.y + 7 + 7 * menu.rowH + 3);   // tap "Controls"
+      const [px, py] = toClient(menu.x + 20, menu.y + 7 + 8 * menu.rowH + 3);   // tap "Controls"
       tpd(canvas, px, py, 13); tpd(canvas, px, py, 13, 'pointerup'); await wait(5);
       ok('Tapping a menu choice picks it', topScreen() instanceof MessageScreen && topScreen().pages[0].join(' ').includes('D-pad'));
       const [ax, ay] = centerOf(document.getElementById('btnA'));

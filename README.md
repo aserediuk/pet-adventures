@@ -3,11 +3,13 @@
 A top-down, turn-based pet-collecting adventure for kids, in one self-contained HTML file.
 It needs no install, libraries, or internet connection.
 
+Its soundtrack is the showpiece: a complete music engine, written from scratch inside that same file, that synthesizes every note live in the browser. There are no audio files at all. See [The music engine](#the-music-engine).
+
 ## Play
 
-**On iPad or iPhone:** open the game in Safari. Touch controls appear automatically: a D-pad on the left, **A** (talk, confirm, hold for faster text) and **B** (back, menu) on the right, plus small Emote, Home, Music and Sound buttons. You can also tap menu choices, battle buttons and dialog boxes, and names are typed on an on-screen keyboard. Landscape gives the biggest screen. On iPhone, use Share, then **Add to Home Screen**, to play full screen. The game needs a web address to run on an iPhone or iPad (see below); opening the file from the Files app won't work.
+**On a PC or Mac:** double-click `pet-adventures.html`. It opens in your browser (Chrome, Edge or Safari) and plays with the keyboard. Nothing to install, and it works offline.
 
-Double-click `pet-adventures.html`. It runs in Chrome or Safari.
+**On iPad or iPhone:** open the game's web address in Safari. Touch controls appear automatically: a D-pad on the left, **A** (talk, confirm, hold for faster text) and **B** (back, menu) on the right, plus small Emote, Home, Music and Sound buttons. You can also tap menu choices, battle buttons and dialog boxes, and names are typed on an on-screen keyboard. Landscape gives the biggest screen. On iPhone, use Share, then **Add to Home Screen**, to play full screen. An iPhone or iPad needs the game served from a web address; opening the file from the Files app won't work.
 
 Press **Space** to begin. A short intro from *When Pets Attack Studio Productions* introduces the story and the evil Dr. Gizmo: **Space** skips it, **Enter** goes to the next scene.
 
@@ -47,7 +49,7 @@ Press **Space** to begin. A short intro from *When Pets Attack Studio Production
 | Frosty Peak | north of Misty Marsh | snow bunnies, mice, ferrets, dogs and cats, plus the Champion at the summit |
 | Parrot Jungle | east of Whisker Woods | parrots, lizards and frogs |
 
-**32 pets**, each a baby that grows up at Lv 10: Buddy (dog), Mittens (cat), Alvin (hamster), Cookie (gerbil), Ziggy (lizard), Kiwi (parrot), Clover (rabbit), Nibbles (mouse), Noodle (ferret), Prickle (hedgehog), Shelly (turtle), Bubbles (goldfish), Ribbit (frog), Daisy (pony), Puddles (duckling) and Truffle (piglet). Water pets hide in the reeds by the pond and the stream.
+**33 pets**: the Super Hamster, plus 16 babies that each grow up at Lv 10: Buddy (dog), Mittens (cat), Alvin (hamster), Cookie (gerbil), Ziggy (lizard), Kiwi (parrot), Clover (rabbit), Nibbles (mouse), Noodle (ferret), Prickle (hedgehog), Shelly (turtle), Bubbles (goldfish), Ribbit (frog), Daisy (pony), Puddles (duckling) and Truffle (piglet). Water pets hide in the reeds by the pond and the stream.
 
 **Names and dress-up:** you type your name when you start a new game (change it any time in Menu, Your Name). Give pets nicknames, and dress them up with a bow, top hat, crown, flower or party hat in 6 colors (Menu, Pets, pick a pet).
 
@@ -68,14 +70,53 @@ Offer the wrong snack and the pet usually turns up its nose. In battle, the Bag 
 
 Types come in loops (1.5× damage forward, 0.67× backward): **Dog > Cat > Hamster > Gerbil > Dog**, **Cat > Parrot > Lizard > Cat**, **Cat > Mouse**, **Ferret > Mouse > Pony > Pig > Hedgehog > Ferret** and **Duck > Frog > Fish > Turtle > Rabbit > Duck**. A pet's Summary shows what it's strong and weak against.
 
-## Music
+## The music engine
 
-The soundtrack is "math-rock chiptune" with three sound styles you can switch in the Jukebox (Left/Right): **8-bit**, **Mix** (punchy 8-bit lead, arps and drums with a fuller FM bass) and **16-bit** (the default), an emulated FM sound chip with an FM lead, a glassy FM arp/bell, a growly FM bass, a soft detuned-saw pad for calm songs, gated kick/snare/hat, and a 1/8-note echo on the Title, Whisker Woods and Clinic/Shop songs (sound effects stay 8-bit), odd meters, polyrhythms, and a shared five-note theme quoted in every song. Listen to any song from the pause menu's **Jukebox**, or open `pet-adventures.html#music` for the Music Room: W/S to choose, Enter to play. It shows each layer's step pattern, so you can see the polyrhythms.
+Every sound in Pet Adventures is made on the spot by a tracker-style synthesizer built into the game file. There are no audio files, samples or libraries: just song data (a few lines of text per song) and a Web Audio engine that plays it.
 
-The audio engine matches loudness across songs and styles, places Mix and 16-bit voices in subtle stereo (8-bit stays mono, like a real chip), and runs everything through a soft clipper and limiter so it never distorts.
+**The style** is "math-rock chiptune": odd meters, polyrhythms and tapping arpeggios on retro sound chips.
+
+- **19 songs**, from a 3/4 music box in the Pet Clinic to a 9/8 + 8/8 + 7/8 battle theme.
+- **Polymeter built in.** Each instrument loops at its own length, so a 5-step riff drifts against an 8-step drum beat and locks back in on schedule.
+- **Three sound styles**, switchable any time in the Jukebox:
+
+  | Style | Sound |
+  | --- | --- |
+  | **8-bit** | Pulse-wave lead and arpeggios, triangle bass, noise drums. Mono, like a real chip. |
+  | **Mix** | The punchy 8-bit lead, arps and drums with a fuller FM bass and a light echo. |
+  | **16-bit** (default) | An emulated FM sound chip: FM lead, glassy FM bell arps, growly FM bass, a soft pad on calm songs, gated drums, stereo and ping-pong echo. |
+
+- **Two main themes.** A main theme is a title track plus a five-note melody that every other song quotes. Switch between them in the pause menu (**Music Theme**) or with **T** in the Jukebox, and the whole soundtrack changes its quotes at once with a smooth crossfade.
+  - **Theme 1** (default) is a 70-second piece in klezmer mode on D. A choppy 7/8 riff with quarter-tone "snap" bends and tremolo locks in with the drums, stretches over a 14-beat cycle, then settles into a danceable 4/4 groove. There the layers stack like a looper pedal, the 7-beat riff slides against the 8-beat bars (lining up again every 7 bars), and little pet chirps (yip, mew, squeak) answer the melody.
+  - **Theme 2** is the original: E G D A G, in a 7/8 title track.
+  - Add `?theme=theme2` or `?theme=theme1` to the address to pick one directly.
+- **Expressive notes:** accents, held notes, vibrato, tracker arpeggios, quarter-tones, three kinds of pitch bend, tremolo, tom fills and FM pet voices.
+- **Studio-style output:**
+  - Every note fades in and out over at least 5 ms, so there are no clicks.
+  - Every song is loudness-matched in every style (measured by rendering each one offline).
+  - The music ducks under sound effects.
+  - A soft clipper and limiter keep it from ever distorting.
+- **Rock-solid timing:** notes are scheduled ahead on the audio clock, songs crossfade over 400 ms between areas, and a hidden browser tab resumes cleanly instead of bursting.
+
+**Listen:** open the **Jukebox** from the pause menu, or open `pet-adventures.html#music` for the Music Room.
+
+| Key | Jukebox action |
+| --- | --- |
+| W / S | Choose a song |
+| Enter | Play it |
+| A / D | Switch sound style (on "Main Theme - Theme 1": jump between its sections A–F) |
+| T | Switch the main theme and hear every song change its quotes |
+| N | Music on/off |
+
+The Jukebox shows each instrument's step pattern as it plays, so you can watch the polyrhythms line up. For Theme 1 it also shows the section, bar number and meter.
 
 ## Tests
 
+- `python3 tools/check_golden.py` checks that Theme 2 still plays exactly the notes saved in `tests/golden/theme2-events.json` (it needs Chrome).
 - `pet-adventures.html#test` runs the self-test. It checks sprites, data, all 3 maps (shape, reachability, exits), 500 random battles, and that UI text fits.
 - `pet-adventures.html#view=smoke` plays through automatically with simulated key presses. It covers starting a game, walking, the clinic, a map exit, winning, catching, the refused Treat, losing, a chest, evolving, and beating the Champion. Results appear in the browser console.
 - `#view=<screen>` opens a preview of one screen, for checking layout. Screens: `intro0`–`intro5`, `title`, `starter`, `map_pawsville`, `map_meadow`, `map_woods`, `map_lab`, `map_farm`, `map_lake`, `map_dunes`, `map_jungle`, `labtop`, `boss`, `battle`, `moves`, `party`, `summary`, `pen`, `shop`, `clinic`, `win`, `evolve`, `pets` (all 32 pets), `newpets`, `bag`, `emote`, `emotebattle`.
+
+## License
+
+© 2026 When Pets Attack Studio Productions. Pet Adventures is free for noncommercial use under the [PolyForm Noncommercial License 1.0.0](LICENSE).
