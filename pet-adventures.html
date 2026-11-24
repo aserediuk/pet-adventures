@@ -1084,6 +1084,7 @@ function buildAllSprites() {
   buildAccessories();
   SPR_PAW = buildSprite('paw', PAW_ROWS, { o: '#3b1a10', 1: '#ff7a59' });
   SPR_TREAT = buildSprite('treat', TREAT_ROWS, { o: '#8a5a2b', 1: '#f6d7a0' });
+  buildProps();
 }
 
 // >>> GFX:core
@@ -1270,7 +1271,7 @@ const TERRAIN = { '.': 1, 'f': 1, ',': 1, 'T': 1, '|': 1, 'R': 1, 'B': 1, 'K': 1
 // Per-biome mood. g = four steps of the foliage ramp (highlight, light, mid, shadow); flowers = wildflower density.
 const BIOME = {
   pawsville: { g: [1, 2, 3, 4], flowers: 0.035, seed: 11 },
-  meadow:    { g: [0, 1, 2, 3], flowers: 0.09, seed: 23 },
+  meadow:    { g: [0, 1, 2, 3], flowers: 0.09, seed: 23, stones: true },
   woods:     { g: [2, 3, 4, 5], flowers: 0.012, seed: 37 },
   farm:      { g: [1, 2, 3, 4], flowers: 0.03, seed: 41 },
   lake:      { g: [1, 2, 3, 4], flowers: 0.015, seed: 53, reeds: true },
@@ -1328,8 +1329,8 @@ function paintGround(rows, B) {
       else if (tAt(x, y + 1) !== T_WATER || tAt(x, y + 2) !== T_WATER || tAt(x, y + 3) !== T_WATER || tAt(x + 1, y) !== T_WATER || tAt(x + 2, y) !== T_WATER) c = PI.water[0];   // lighter band along the near bank
     } else if (t === T_SAND) {
       const v = vnoise(x, y, 11, seed + 8) * 0.6 + sp * 0.4, warm = B.warm;
-      c = v < 0.3 ? (warm ? PI.earth[0] : PI.cream[0]) : v < 0.78 ? (warm ? PI.earth[1] : PI.cream[1]) : (warm ? PI.earth[2] : PI.earth[0]);
-      if (vnoise(x * 0.35 + y, y * 2.2, 5, seed + 9) > 0.78 && sp > 0.5) c = warm ? PI.earth[2] : PI.earth[0];   // wind ripples
+      c = v < 0.17 ? (warm ? PI.earth[0] : PI.cream[0]) : v < 0.78 ? (warm ? PI.earth[1] : PI.cream[1]) : (warm ? PI.earth[2] : PI.earth[0]);
+      if (vnoise(x * 0.35 + y, y * 2.2, 5, seed + 9) > 0.86 && sp > 0.5) c = warm ? PI.earth[2] : PI.earth[0];   // wind ripples
       if (tAt(x, y + 1) === T_WATER || tAt(x, y + 2) === T_WATER) c = warm ? PI.earth[2] : PI.earth[1];          // damp sand at the waterline
     } else if (t === T_SNOW) {
       const v = vnoise(x, y, 13, seed + 10) * 0.7 + sp * 0.3;
@@ -1344,8 +1345,8 @@ function paintGround(rows, B) {
       c = row < 2 ? PI.earth[4] : row < 3 ? PI.earth[2] : sp > 0.7 ? PI.earth[2] : PI.earth[3];
     } else if (t === T_FLOOR) {
       const lx = x & 15, ly = y & 15, alt = ((x >> 4) + (y >> 4)) & 1;              // big lab floor tiles, lit from the upper left
-      c = lx === 15 || ly === 15 ? PI.stone[2] : lx === 0 || ly === 0 ? PI.snow[0] : alt ? PI.stone[0] : PI.snow[1];
-      if (sp > 0.93 && lx > 1 && ly > 1 && lx < 14 && ly < 14) c = PI.stone[1];
+      c = lx === 15 || ly === 15 ? PI.snow[2] : lx === 0 || ly === 0 ? PI.snow[0] : alt && (lx + ly) < 9 ? PI.snow[0] : PI.snow[1];   // a soft glint across every other tile
+      if (sp > 0.95 && lx > 1 && ly > 1 && lx < 14 && ly < 14) c = PI.snow[2];
     } else c = PI.teal[2];
     g.d[y * w + x] = c;
   }
@@ -1378,7 +1379,13 @@ function paintGround(rows, B) {
       if (r(0) < 0.16) { const x = ox + 3 + Math.floor(r(4) * 9), y = oy + 3 + Math.floor(r(8) * 9); put(x, y, PI.stone[1]); put(x + 1, y, PI.stone[0]); put(x + 1, y + 1, PI.earth[2]); }
     } else if (ch === '*') {
       if (r(0) < 0.2) { const x = ox + 3 + Math.floor(r(4) * 9), y = oy + 3 + Math.floor(r(8) * 9); put(x, y, PI.blue[0]); put(x + 1, y + 1, PI.snow[2]); }
-    } else if (ch === 'b') paintBridge(g, rows, tx, ty);
+    } else if (ch === 'b') { if (B.stones) paintStones(g, tx, ty); else paintBridge(g, rows, tx, ty); }
+    else if (ch === 'M') paintLabWall(g, rows, tx, ty);
+    else if (ch === '~') {
+      const wet = (x, y) => { const c2 = (rows[y] || '')[x]; return c2 === '~' || c2 === 'b'; };
+      if (wet(tx - 1, ty) && wet(tx + 1, ty) && wet(tx, ty - 1) && wet(tx, ty + 1)) { if (r(0) < 0.1) paintLily(g, ox + 3 + Math.floor(r(1) * 8), oy + 4 + Math.floor(r(2) * 7), r(3) < 0.45); }
+      else if (!wet(tx, ty + 1) && (rows[ty + 1] || '')[tx] !== undefined && r(0) < 0.4 && tAt(ox + 6, oy + 9) === T_WATER) { paintCattail(g, ox + 4 + Math.floor(r(1) * 3), oy + 12); paintCattail(g, ox + 10 + Math.floor(r(2) * 3), oy + 13); }
+    }
     else if (ch === 'P') { for (let j = 3; j < 13; j++) for (let i = 3; i < 13; i++) { const d = Math.abs(i - 7.5) + Math.abs(j - 7.5); put(ox + i, oy + j, d > 6.5 ? PI.mint[2] : (i > 6 && i < 9) || (j > 6 && j < 9) ? PI.snow[0] : PI.mint[1]); } }
   }
   return g;
@@ -1528,6 +1535,7 @@ function bushPix(variant = 0, B = BIOME.pawsville) {
   return p.selfEdge(false);
 }
 const TREE_CHARS = { T: 1, J: 1, Y: 1 };
+const STRIP_RE = /[TJYrqc|]/;   // tiles whose picture stands up from the ground (drawn in the row strips)
 // ---- buildings ----
 const BUILDING_CHARS = { R: 1, B: 1, K: 1, H: 1, W: 1, D: 1 };
 const B_OX = 4, B_OY = 10;   // how far a building's picture sticks out past its tiles (left/right, and up)
@@ -1611,6 +1619,29 @@ function buildingPix(grid, style) {
     p.rect(mid - 6, wallY - 12, 12, 11, PI.wood[4]); p.rect(mid - 5, wallY - 11, 10, 9, PI.wood[3]);
     p.line(mid - 5, wallY - 11, mid + 4, wallY - 3, PI.cream[0]); p.line(mid + 4, wallY - 11, mid - 5, wallY - 3, PI.cream[0]);
   }
+  // Little props along the front wall, either side of the door: our own designs.
+  const last = grid[nrows - 1], d = last.indexOf('D'), L0 = B_OX + 1, L1 = d >= 0 ? B_OX + d * 16 - 2 : mid - 4, R0 = d >= 0 ? B_OX + (d + 1) * 16 + 2 : mid + 4, R1 = w - B_OX - 2, by = h - 1;
+  const plant = (x, y, big) => { p.ell(x, y - 2, big ? 4.5 : 3.2, big ? 3.6 : 2.6, [PI.grass[1], PI.grass[2], PI.grass[3], PI.grass[5]], { tex: 0.6, seed: x }); };
+  const bed = (x0, x1) => { p.rect(x0, by - 3, x1 - x0, 3, PI.earth[3]); p.rect(x0, by - 3, x1 - x0, 1, PI.earth[2]); };
+  if (style === 'cottage') {
+    p.rect(L0 + 5, by - 9, 2, 9, PI.wood[3]); p.rect(L0 + 5, by - 9, 1, 9, PI.wood[2]);                                // mailbox on a post
+    p.rect(L0 + 2, by - 14, 8, 5, PI.red[0]); p.rect(L0 + 2, by - 14, 8, 1, PI.pink[0]); p.rect(L0 + 2, by - 10, 8, 1, PI.red[1]); p.rect(L0 + 9, by - 16, 1, 4, PI.snow[0]); p.rect(L0 + 10, by - 16, 2, 2, PI.yellow[1]);
+    bed(R0, R1);                                                                                                       // a flower bed behind a white picket fence
+    for (let x = R0 + 2; x < R1 - 1; x += 5) { plant(x + 1, by - 3, false); p.set(x + 1, by - 7, [PI.pink[1], PI.yellow[1], PI.violet[1], PI.pink[0]][(x >> 2) % 4]); p.set(x, by - 6, PI.snow[0]); }
+    for (let x = R0; x < R1; x += 3) { p.rect(x, by - 5, 2, 6, PI.snow[0]); p.set(x, by - 6, PI.snow[0]); p.set(x + 1, by - 5, PI.snow[1]); p.set(x + 1, by, PI.snow[2]); }
+    p.rect(R0, by - 3, R1 - R0, 1, PI.snow[1]);
+  } else if (style === 'clinic') {
+    bed(L0, L1); bed(R0, R1);                                                                                          // garden beds with leafy plants
+    for (let x = L0 + 4; x < L1 - 2; x += 8) plant(x, by - 3, true);
+    for (let x = R0 + 4; x < R1 - 2; x += 8) plant(x, by - 3, true);
+  } else if (style === 'shop') {
+    p.rect(L0 + 2, by - 10, 11, 10, PI.wood[2]); p.rect(L0 + 2, by - 10, 11, 1, PI.wood[0]); p.rect(L0 + 2, by - 5, 11, 1, PI.wood[3]); p.rect(L0 + 12, by - 9, 1, 9, PI.wood[3]);   // a crate of apples
+    for (const [ax, ay] of [[4, 12], [7, 13], [10, 12]]) { p.rect(L0 + ax, by - ay, 2, 2, PI.red[0]); p.set(L0 + ax, by - ay, PI.pink[0]); }
+    p.rect(R1 - 10, by - 6, 8, 6, PI.wood[1]); p.rect(R1 - 10, by - 6, 8, 1, PI.wood[0]); p.rect(R1 - 10, by - 1, 8, 1, PI.wood[3]); plant(R1 - 6, by - 6, true);                     // a potted plant
+  } else if (barn) {
+    p.ell(L0 + 9, by - 5, 8, 5.5, [PI.yellow[0], PI.yellow[1], PI.orange[1], PI.orange[2]], { tex: 0.5, seed: 5 });     // a hay bale
+    p.rect(L0 + 4, by - 6, 1, 6, PI.orange[2]); p.rect(L0 + 13, by - 6, 1, 6, PI.orange[2]);
+  }
   return p;
 }
 // Everything tall on a map, built once: tree strips (one per row) and buildings.
@@ -1620,11 +1651,16 @@ function worldObjects(m) {
   if (WORLD_OBJ[k]) return WORLD_OBJ[k];
   const rows = m.rows, cols = rows[0].length, B = biomeOf(m), out = { strips: [], buildings: [] };
   rows.forEach((row, ty) => {
-    if (!/[TJY]/.test(row)) return;
+    if (!STRIP_RE.test(row)) return;
     const strip = new Pix(cols * TS, TREE_H);
     for (const parity of [1, 0]) for (let tx = 0; tx < cols; tx++) {
-      if (!TREE_CHARS[row[tx]] || (tx & 1) !== parity) continue;
+      const ch = row[tx];
+      if ((tx & 1) !== parity) continue;
       const v = Math.floor(hash2(tx, ty, B.seed + 5) * 3), jx = Math.floor(hash2(tx, ty, B.seed + 6) * 3) - 1;
+      if (ch === 'r' || ch === 'q') { strip.blit(boulderPix(v, ch === 'q' ? 'snow' : B.warm || k === 'dunes' ? 'warm' : 'stone'), tx * TS - 3 + jx, TREE_H - 24, hash2(tx, ty, B.seed + 7) < 0.5); continue; }
+      if (ch === 'c') { strip.blit(cactusPix(v), tx * TS, TREE_H - 26); continue; }
+      if (ch === '|') { const f = (x, y) => (rows[y] || '')[x] === '|'; strip.blit(fencePix((f(tx - 1, ty) ? 1 : 0) | (f(tx + 1, ty) ? 2 : 0) | (f(tx, ty - 1) ? 4 : 0) | (f(tx, ty + 1) ? 8 : 0), false), tx * TS, TREE_H - 20); continue; }
+      if (!TREE_CHARS[ch]) continue;
       // On the top edge of the map the crown sits lower, so the border reads as a wall of leaves, not a row of trunks.
       strip.blit(treePix(row[tx], v, B), tx * TS + 8 - TREE_W / 2 + jx, ty === 0 ? 14 : 0, hash2(tx, ty, B.seed + 7) < 0.5);
     }
@@ -1650,6 +1686,9 @@ function bakeShadows(g, m) {
     if (TREE_CHARS[ch]) {
       const cx = tx * TS + 10, cy = ty * TS + 14;
       for (let y = -5; y <= 5; y++) for (let x = -12; x <= 12; x++) if ((x * x) / 144 + (y * y) / 25 <= 1 && !TREE_CHARS[(rows[(cy + y) >> 4] || '')[(cx + x) >> 4]]) dark(cx + x, cy + y);
+    } else if (ch === 'r' || ch === 'q' || ch === 'c' || ch === '|') {
+      const cx = tx * TS + 10, cy = ty * TS + 14, rx = ch === 'c' ? 6 : ch === '|' ? 5 : 10, ry = ch === '|' ? 2 : 3.5;
+      for (let y = -4; y <= 4; y++) for (let x = -11; x <= 11; x++) if ((x * x) / (rx * rx) + (y * y) / (ry * ry) <= 1) dark(cx + x, cy + y);
     } else if (BUILDING_CHARS[ch]) {
       const right = !BUILDING_CHARS[row[tx + 1]], below = !BUILDING_CHARS[(rows[ty + 1] || '')[tx]];
       if (right) for (let y = 4; y < 16 + (below ? 4 : 0); y++) for (let x = 16 + B_OX; x < 16 + B_OX + 4; x++) dark(tx * TS + x, ty * TS + y);
@@ -1658,6 +1697,141 @@ function bakeShadows(g, m) {
   } });
 }
 // <<< GFX:objects
+
+// >>> GFX:props
+// ---------------------------------------------------------------------
+// 3e. GFX PROPS: boulders, cacti, rail fences, chests, pond plants, and the lab's walls and machines.
+// All our own designs, drawn in code.
+// ---------------------------------------------------------------------
+const PROP_CACHE = {};
+// A boulder (22x24, anchored at the bottom): rough speckled rock with a lighter ledge on top. Rows of them read as a cliff.
+// style: 'stone' (with moss), 'warm' (canyon), 'snow' (snow cap)
+function boulderPix(variant, style) {
+  const key = 'rock' + variant + style;
+  if (PROP_CACHE[key]) return PROP_CACHE[key];
+  const p = new Pix(22, 24), sd = 700 + variant * 19, ramp = style === 'warm' ? [PI.stone[0], PI.stone[1], PI.earth[2], PI.stone[2], PI.stone[3]] : PI.stone;
+  const w = 9.5 + (variant % 2), top = 9 + variant;
+  p.ell(11, 15, w + 0.5, 8.5, [PI.stone[3]], { tex: 0 });
+  p.ell(11, 14.5, w, 8, ramp, { tex: 0.5, seed: sd });
+  p.ell(9.5, top + 1, w - 3.5, 4.2, [ramp[0], ramp[0], ramp[1]], { tex: 0.5, seed: sd + 1 });           // the lit ledge
+  for (let k = 0; k < 3; k++) { const x = 5 + Math.floor(hash2(k, variant, sd) * 12), y = 13 + Math.floor(hash2(k, variant, sd + 2) * 7); p.line(x, y, x + 2, y + 2, ramp[ramp.length - 1]); }   // cracks
+  if (style === 'stone') { p.ell(7, top - 0.5, 4, 2, [PI.grass[2], PI.grass[3], PI.grass[4]], { tex: 0.6, seed: sd + 3 }); p.set(13, top + 1, PI.grass[3]); p.set(14, top + 2, PI.grass[4]); }   // moss
+  if (style === 'snow') { p.ell(10, top, w - 2.5, 3.6, [PI.snow[0], PI.snow[0], PI.snow[1], PI.snow[2]], { tex: 0.2, seed: sd + 4 }); }
+  p.selfEdge(false);
+  return (PROP_CACHE[key] = p);
+}
+// A cactus (16x26): a ribbed column with two arms and a little flower.
+function cactusPix(variant) {
+  const key = 'cactus' + variant;
+  if (PROP_CACHE[key]) return PROP_CACHE[key];
+  const p = new Pix(16, 26), col = (x, y0, y1, wd) => { for (let y = y0; y <= y1; y++) for (let i = 0; i < wd; i++) p.set(x + i, y, i === 0 ? PI.grass[2] : i === wd - 1 ? PI.grass[5] : (i + y) % 3 === 0 ? PI.grass[4] : PI.grass[3]); };
+  col(6, 5, 24, 5); p.rect(7, 4, 3, 1, PI.grass[2]);
+  const ay = 11 + variant * 2, by = 15 - variant;
+  col(1, ay - 4, ay, 3); p.rect(1, ay + 1, 6, 2, PI.grass[4]); p.rect(1, ay + 1, 5, 1, PI.grass[3]);
+  col(12, by - 5, by, 3); p.rect(10, by + 1, 5, 2, PI.grass[5]); p.rect(10, by + 1, 4, 1, PI.grass[4]);
+  for (let y = 7; y < 23; y += 4) { p.set(5, y, PI.cream[0]); p.set(11, y + 2, PI.cream[1]); }                     // spines
+  p.rect(7, 2, 3, 2, PI.pink[1]); p.set(8, 2, PI.yellow[1]); p.set(7, 1, PI.pink[0]); p.set(9, 1, PI.pink[0]);    // flower
+  return (PROP_CACHE[key] = p);
+}
+// A wooden rail fence post (16x20) that joins to its neighbours: mask bits 1 = left, 2 = right, 4 = up, 8 = down. white = picket style.
+function fencePix(mask, white) {
+  const key = 'fence' + mask + (white ? 'w' : '');
+  if (PROP_CACHE[key]) return PROP_CACHE[key];
+  const p = new Pix(16, 20), W0 = white ? [PI.snow[0], PI.snow[1], PI.snow[2], PI.blue[0]] : [PI.wood[0], PI.wood[1], PI.wood[2], PI.wood[3]];
+  const rail = (x0, x1, y) => { p.rect(x0, y, x1 - x0, 3, W0[1]); p.rect(x0, y, x1 - x0, 1, W0[0]); p.rect(x0, y + 2, x1 - x0, 1, W0[3]); };
+  if (mask & 4) { p.rect(7, 0, 3, 8, W0[2]); p.rect(7, 0, 1, 8, W0[1]); }                                           // a rail running away from us
+  if (mask & 1) { rail(0, 8, 8); rail(0, 8, 13); }
+  if (mask & 2) { rail(8, 16, 8); rail(8, 16, 13); }
+  p.rect(6, 4, 5, 15, W0[2]); p.rect(6, 4, 2, 15, W0[1]); p.rect(10, 4, 1, 15, W0[3]); p.rect(6, 3, 5, 2, W0[0]); p.rect(6, 18, 5, 1, W0[3]);   // the post, lit on top
+  if (mask & 8) { p.rect(7, 19, 3, 1, W0[2]); }
+  return (PROP_CACHE[key] = p);
+}
+// Treasure chest, closed and open (16x16): chunky wood with a gold band and lock.
+function chestPix(open) {
+  const p = new Pix(16, 16);
+  if (!open) {
+    p.rect(1, 4, 14, 11, PI.wood[2]); p.rect(1, 4, 14, 1, PI.wood[0]); p.rect(2, 3, 12, 1, PI.wood[0]); p.rect(1, 5, 14, 3, PI.wood[1]);
+    p.rect(1, 8, 14, 1, PI.wood[4]); p.rect(1, 14, 14, 1, PI.wood[4]); p.rect(14, 5, 1, 9, PI.wood[3]);
+    for (const x of [3, 12]) { p.rect(x, 4, 2, 11, PI.yellow[1]); p.rect(x, 4, 1, 11, PI.yellow[0]); }
+    p.rect(1, 9, 14, 1, PI.orange[1]); p.rect(6, 8, 4, 4, PI.yellow[1]); p.rect(6, 8, 4, 1, PI.yellow[0]); p.rect(7, 10, 2, 1, PI.wood[4]);
+  } else {
+    p.rect(2, 1, 12, 6, PI.wood[3]); p.rect(3, 2, 10, 4, PI.wood[4]); p.rect(2, 1, 12, 1, PI.wood[1]);                // the lid, tipped back
+    p.rect(1, 7, 14, 8, PI.wood[2]); p.rect(1, 7, 14, 1, PI.wood[0]); p.rect(2, 8, 12, 2, PI.wood[4]); p.rect(1, 14, 14, 1, PI.wood[4]); p.rect(14, 8, 1, 6, PI.wood[3]);
+    for (const x of [3, 12]) { p.rect(x, 10, 2, 5, PI.yellow[1]); p.rect(x, 10, 1, 5, PI.yellow[0]); }
+    p.rect(5, 7, 6, 2, PI.yellow[1]); p.set(6, 7, PI.yellow[0]); p.set(9, 7, PI.snow[0]);                              // a glint of treasure
+  }
+  return p;
+}
+// ---- pond plants and stepping stones, stamped onto the painted ground ----
+function paintLily(g, x, y, flower) {
+  const pad = ['.###.', '#####', '###.#', '.###.'];
+  pad.forEach((r, j) => { for (let i = 0; i < 5; i++) if (r[i] === '#') g.set(x + i, y + j, j === 0 || i === 0 ? PI.grass[2] : j === 3 ? PI.grass[4] : PI.grass[3]); });
+  for (let i = 1; i < 5; i++) g.set(x + i, y + 4, PI.water[3]);
+  if (flower) { g.set(x + 2, y + 1, PI.pink[0]); g.set(x + 3, y + 1, PI.snow[0]); g.set(x + 2, y, PI.pink[1]); }
+}
+function paintCattail(g, x, y) {
+  for (let k = 0; k < 9; k++) g.set(x, y - k, k < 3 ? PI.grass[5] : PI.grass[3]);
+  g.rect(x, y - 12, 1, 3, PI.wood[3]); g.set(x, y - 13, PI.wood[2]);
+  g.set(x + 1, y - 2, PI.grass[4]); g.set(x + 2, y - 4, PI.grass[2]); g.set(x - 1, y - 3, PI.grass[2]);
+}
+function paintStones(g, tx, ty) {   // flat stepping stones across a stream
+  const ox = tx * TS, oy = ty * TS;
+  for (const [cx, cy, rx, ry] of [[5, 5, 4.4, 3.2], [11, 11, 4.4, 3.2], [12, 3.5, 2.6, 2]]) {
+    g.ell(ox + cx + 0.5, oy + cy + 1.5, rx + 0.4, ry + 0.4, [PI.water[3]], { tex: 0 });
+    g.ell(ox + cx, oy + cy, rx, ry, [PI.stone[0], PI.stone[0], PI.stone[1], PI.stone[2]], { tex: 0.4, seed: tx * 31 + ty });
+  }
+}
+// ---- the lab ----
+// Wall blocks seen from above and in front: a dark top, and a panelled face where the wall meets the floor.
+function paintLabWall(g, rows, tx, ty) {
+  const ox = tx * TS, oy = ty * TS, face = (rows[ty + 1] || '')[tx] !== undefined && (rows[ty + 1] || '')[tx] !== 'M';
+  for (let j = 0; j < 16; j++) for (let i = 0; i < 16; i++) {
+    let c = PI.blue[3];
+    if (speckle(ox + i, oy + j, 9) > 0.82) c = PI.ink[1];
+    if (face) {
+      c = j < 4 ? PI.blue[3] : j === 4 ? PI.stone[1] : j === 15 ? PI.ink[1] : (i % 8 === 7 ? PI.stone[3] : i % 8 === 0 ? PI.stone[1] : PI.stone[2]);
+      if (j === 9 && i % 8 > 1 && i % 8 < 6) c = (tx + (i >> 3)) % 3 === 0 ? PI.mint[1] : PI.stone[3];       // little status lights
+    }
+    g.set(ox + i, oy + j, c);
+  }
+}
+// Console desk (two frames: the screen flickers).
+function consolePix(f) {
+  const p = groundTile('L', BIOME.lab);
+  p.rect(1, 3, 14, 12, PI.stone[2]); p.rect(1, 3, 14, 1, PI.stone[0]); p.rect(1, 14, 14, 1, PI.blue[3]); p.rect(14, 4, 1, 10, PI.stone[3]);
+  p.rect(3, 5, 10, 6, PI.ink[1]); p.rect(4, 6, 8, 4, PI.teal[1]);
+  for (let k = 0; k < 3; k++) p.rect(5, 6 + k + ((f + k) % 2 ? 0 : 0), 3 + ((k + f) % 3) * 2, 1, PI.mint[0]);
+  p.set(11, 6 + f, PI.mint[0]);
+  p.rect(3, 12, 2, 1, PI.red[0]); p.rect(6, 12, 2, 1, f ? PI.yellow[1] : PI.orange[2]); p.rect(9, 12, 2, 1, PI.blue[1]);
+  return p;
+}
+// Machine panel tile (two frames: the coil glows).
+function zapperPix(f) {
+  const p = new Pix(16, 16);
+  p.rect(0, 0, 16, 16, PI.violet[1]); p.rect(0, 0, 16, 1, PI.violet[0]); p.rect(0, 15, 16, 1, PI.blue[3]); p.rect(15, 0, 1, 16, PI.blue[3]); p.rect(0, 0, 1, 16, PI.violet[0]);
+  for (const [x, y] of [[2, 2], [13, 2], [2, 13], [13, 13]]) p.set(x, y, PI.stone[0]);                              // rivets
+  p.ell(8, 8, 4.6, 4.6, [PI.blue[3]], { tex: 0 }); p.ell(8, 8, 3.6, 3.6, f ? [PI.snow[0], PI.yellow[0], PI.yellow[1]] : [PI.yellow[0], PI.yellow[1], PI.orange[1]], { tex: 0 });
+  if (f) { p.set(8, 2, PI.yellow[0]); p.set(3, 8, PI.yellow[0]); p.set(13, 8, PI.yellow[0]); p.set(8, 13, PI.yellow[0]); }
+  return p;
+}
+// Pet cages (drawn in three layers around the little pet inside).
+function cagePix(part) {
+  const p = new Pix(16, 16);
+  if (part === 'back') { p.rect(1, 1, 14, 14, PI.blue[3]); p.rect(2, 2, 12, 12, PI.stone[3]); p.rect(2, 12, 12, 2, PI.wood[2]); }
+  else if (part === 'bars') { for (let x = 2; x < 15; x += 3) { p.rect(x, 1, 1, 14, PI.stone[1]); p.set(x, 1, PI.snow[0]); } p.rect(1, 1, 14, 1, PI.stone[0]); p.rect(1, 14, 14, 1, PI.stone[2]); p.rect(7, 7, 2, 2, PI.yellow[1]); }
+  else { p.rect(1, 1, 14, 14, PI.blue[3]); p.rect(2, 2, 12, 12, PI.stone[3]); p.rect(2, 12, 12, 2, PI.wood[2]); p.rect(1, 1, 14, 1, PI.stone[0]); p.rect(1, 1, 1, 14, PI.stone[1]); p.rect(12, 2, 2, 12, PI.stone[1]); }   // door swung open
+  return p;
+}
+function buildProps() {
+  SPR_CHEST_C = chestPix(false).toCanvas(); SPR_CHEST_O = chestPix(true).toCanvas();
+  TILES['X'] = [consolePix(0).toCanvas(), consolePix(1).toCanvas()];
+  TILES['Z'] = [zapperPix(0).toCanvas(), zapperPix(1).toCanvas()];
+  const wall = new Pix(16, 16); paintLabWall(wall, ['M', 'L'], 0, 0); TILES['M'] = [wall.toCanvas()];
+  SPR_CAGE_BACK = cagePix('back').toCanvas(); SPR_CAGE_BARS = cagePix('bars').toCanvas(); SPR_CAGE_OPEN = cagePix('open').toCanvas();
+  const tileWith = (ground, spr) => { const c = makeCanvas(16, 16), q = c.getContext('2d'); q.drawImage(TILES[ground][0], 0, 0); q.drawImage(spr.toCanvas(), 0, 0, spr.w, spr.h, Math.round((16 - Math.min(16, spr.w)) / 2), 0, Math.min(16, spr.w), 16); return [c]; };
+  TILES['r'] = tileWith('_', boulderPix(0, 'warm')); TILES['q'] = tileWith('*', boulderPix(0, 'snow')); TILES['c'] = tileWith('_', cactusPix(0)); TILES['|'] = tileWith('.', fencePix(3, false));
+}
+// <<< GFX:props
 
 // ---------------------------------------------------------------------
 // 4. AUDIO (Web Audio: synthesized SFX + tiny step sequencer)
@@ -4808,7 +4982,7 @@ function drawCage(tx, ty, X, Y) {
   ctx.drawImage(PET_SPR[sp], 0, 0, 32, 32, X + 2, Y + 2 + bob, 12, 12);
   ctx.drawImage(SPR_CAGE_BARS, X, Y);
 }
-const GROUND_ONLY = { '.': 1, 'f': 1, '=': 1, '_': 1, '*': 1, 'm': 1, 'w': 1, 'b': 1, 'L': 1, 'P': 1, 'T': 1, 'J': 1, 'Y': 1, 'R': 1, 'B': 1, 'K': 1, 'H': 1, 'W': 1, 'D': 1 };   // fully painted into the ground picture
+const GROUND_ONLY = { '.': 1, 'f': 1, '=': 1, '_': 1, '*': 1, 'm': 1, 'w': 1, 'b': 1, 'L': 1, 'P': 1, 'T': 1, 'J': 1, 'Y': 1, 'R': 1, 'B': 1, 'K': 1, 'H': 1, 'W': 1, 'D': 1, 'r': 1, 'q': 1, 'c': 1, '|': 1, 'M': 1 };   // fully painted into the ground picture
 function drawWorld() {
   const m = world.map;
   const cx = Math.round(world.camX), cy = Math.round(world.camY);
@@ -6384,12 +6558,16 @@ function runSelfTest() {
   for (const kind of ['grass', 'reed', 'brush', 'wheat', 'fern', 'shrub']) for (let v = 0; v < 3; v++) if (tallBlades(kind, v).length !== 3) grErr.push(kind + ' frames');
   for (const k in MAPS) {
     const m = MAPS[k], tall = worldObjects(m);
-    m.rows.forEach((row, ty) => { if (/[TJY]/.test(row) !== !!tall.strips[ty]) grErr.push(k + ' tree strip row ' + ty); });
+    m.rows.forEach((row, ty) => { if (STRIP_RE.test(row) !== !!tall.strips[ty]) grErr.push(k + ' tree strip row ' + ty); });
     const roofs = m.rows.join('').replace(/[^RBK]/g, '').length;
     if ((roofs > 0) !== (tall.buildings.length > 0)) grErr.push(k + ' buildings');
     for (const b of tall.buildings) if (b.canvas.width !== b.w * TS + 2 * B_OX || b.canvas.height !== b.h * TS + B_OY) grErr.push(k + ' building size');
   }
   if (MAPS.pawsville && worldObjects(MAPS.pawsville).buildings.length !== 3) grErr.push('Pawsville should have 3 buildings');
+  for (let v = 0; v < 3; v++) { for (const st of ['stone', 'warm', 'snow']) if (boulderPix(v, st).w !== 22) grErr.push('boulder'); if (cactusPix(v).h !== 26) grErr.push('cactus'); }
+  for (let mask = 0; mask < 16; mask++) if (fencePix(mask, false).w !== 16) grErr.push('fence ' + mask);
+  if (SPR_CHEST_C.width !== 16 || SPR_CHEST_O.height !== 16 || !SPR_CHEST_C.pix) grErr.push('chest sprites');
+  for (const ch of ['X', 'Z']) if (TILES[ch].length !== 2) grErr.push(ch + ' should animate');
   for (const kind of ['T', 'J', 'Y']) for (let v = 0; v < 3; v++) { const t = treePix(kind, v, BIOME.pawsville); if (t.w !== TREE_W || t.h !== TREE_H || !t.get(16, 40)) grErr.push('tree ' + kind + v); }
   check('Graphics: the ground of all ' + Object.keys(MAPS).length + ' maps paints fully, in palette, with a biome each', !grErr.length, grErr.slice(0, 4).join('; '));
   // Tasks: every giver is a helpful (non-trainer) character, every lost item/pet sits on an open, reachable tile.
