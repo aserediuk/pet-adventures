@@ -2294,6 +2294,136 @@ function petImage(sp, s, opts) {
 }
 // <<< GFX:pets
 
+// >>> GFX:battle
+// ---------------------------------------------------------------------
+// 3h. GFX BATTLE SCENES: a painted backdrop per biome (sky, a distant line of trees, hills, dunes or
+// peaks, textured ground with an oval of turf under each pet), plus particles for hits, treats and hearts.
+// ---------------------------------------------------------------------
+const BATTLE_H = 176, HORIZON = 104;
+const SCENE = {   // which backdrop each map uses
+  pawsville: 'field', meadow: 'field', farm: 'field', woods: 'forest', jungle: 'jungle', marsh: 'marsh', lake: 'beach', dunes: 'desert', canyon: 'canyon', peak: 'snow', lab: 'lab',
+};
+const SCENE_CACHE = {};
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+function battleBackdrop(kind, ovals) {
+  const key = kind + (ovals ? JSON.stringify(ovals) : '');
+  if (SCENE_CACHE[key]) return SCENE_CACHE[key];
+  const p = new Pix(W, BATTLE_H), sd = kind.length * 13, leaf = PI.leaf;
+  const S = {
+    field:  { sky: [PI.blue[1], PI.blue[0], PI.snow[1], PI.cream[0]], far: [leaf[3], leaf[4]], near: [leaf[4], leaf[5], leaf[6]], g: [leaf[0], leaf[1], leaf[2], leaf[3]], trees: 1 },
+    forest: { sky: [PI.mint[1], PI.mint[0], PI.cream[0], PI.cream[0]], far: [leaf[5], leaf[6]], near: [leaf[5], leaf[6], leaf[7]], g: [leaf[2], leaf[3], leaf[4], leaf[5]], trees: 2 },
+    jungle: { sky: [PI.mint[1], PI.mint[0], PI.yellow[0], PI.cream[0]], far: [leaf[4], leaf[5]], near: [leaf[5], leaf[6], leaf[7]], g: [leaf[1], leaf[2], leaf[3], leaf[5]], trees: 2 },
+    marsh:  { sky: [PI.mint[2], PI.mint[1], PI.mint[0], PI.cream[1]], far: [PI.mint[2], leaf[5]], near: [leaf[5], leaf[6], leaf[7]], g: [leaf[3], leaf[4], leaf[5], leaf[6]], trees: 1, pools: true },
+    beach:  { sky: [PI.blue[1], PI.blue[0], PI.snow[1], PI.cream[0]], far: [PI.water[1], PI.water[2]], near: [PI.water[2], PI.water[3], PI.water[3]], g: [PI.cream[0], PI.cream[1], PI.earth[0], PI.earth[1]], sea: true },
+    desert: { sky: [PI.blue[0], PI.snow[1], PI.cream[1], PI.yellow[0]], far: [PI.earth[0], PI.earth[1]], near: [PI.earth[1], PI.earth[2], PI.earth[3]], g: [PI.cream[0], PI.cream[1], PI.earth[0], PI.earth[1]], dunes: true },
+    canyon: { sky: [PI.orange[0], PI.yellow[0], PI.cream[1], PI.cream[0]], far: [PI.stone[1], PI.stone[2]], near: [PI.earth[2], PI.earth[3], PI.earth[4]], g: [PI.earth[0], PI.earth[1], PI.earth[2], PI.earth[3]], mesa: true },
+    snow:   { sky: [PI.blue[1], PI.blue[0], PI.snow[1], PI.snow[0]], far: [PI.snow[1], PI.snow[2]], near: [PI.grass[4], PI.grass[5], PI.teal[1]], g: [PI.snow[0], PI.snow[0], PI.snow[1], PI.snow[2]], peaks: true },
+    gold:   { sky: [PI.orange[1], PI.orange[0], PI.yellow[0], PI.cream[0]], far: [PI.snow[1], PI.snow[2]], near: [PI.grass[4], PI.grass[5], PI.teal[1]], g: [PI.snow[0], PI.snow[0], PI.snow[1], PI.snow[2]], peaks: true },
+    lab:    { lab: true, g: [PI.snow[0], PI.snow[1], PI.snow[1], PI.snow[2]] },
+  }[kind] || {};
+  // sky: bands that melt into each other with a dither
+  for (let y = 0; y < HORIZON; y++) for (let x = 0; x < W; x++) {
+    if (S.lab) { const lx = x % 48, ly = y % 40; p.set(x, y, ly === 39 ? PI.ink[1] : lx === 47 ? PI.stone[3] : lx === 0 || ly === 0 ? PI.stone[1] : (ly > 14 && ly < 20 && lx > 6 && lx < 42 ? (((x / 48) | 0) % 3 === 0 ? PI.mint[1] : PI.blue[3]) : PI.stone[2])); continue; }
+    const f = y / HORIZON * (S.sky.length - 1), band = Math.floor(f), frac = f - band;
+    p.set(x, y, S.sky[Math.min(S.sky.length - 1, band + (frac > (BAYER[(y & 3) * 4 + (x & 3)] + 0.5) / 16 ? 1 : 0))]);   // ordered dither: clean pixel-art bands
+  }
+  // far and near silhouettes along the horizon
+  if (!S.lab) for (let x = 0; x < W; x++) {
+    const farH = S.peaks ? 26 + Math.abs(((x + 60) % 150) - 75) * -0.5 + 38 + vnoise(x, 0, 18, sd) * 8 : S.mesa ? (vnoise(x, 0, 46, sd) > 0.5 ? 34 : 14) + vnoise(x, 0, 7, sd + 1) * 3 : S.dunes ? 8 + vnoise(x, 0, 60, sd) * 22 : S.sea ? 16 : 12 + vnoise(x, 0, 34, sd) * 14 + Math.abs(Math.sin(x / 7)) * 3;
+    for (let y = HORIZON - Math.round(farH); y < HORIZON; y++) {
+      const d = y - (HORIZON - Math.round(farH));
+      let c = d < 2 ? S.far[0] : S.far[1];
+      if (S.peaks) c = d < 9 + vnoise(x, y, 6, sd + 2) * 6 ? (vnoise(x + y, y, 9, sd + 3) > 0.55 ? PI.snow[1] : PI.snow[0]) : (x + y) % 5 < 2 ? PI.blue[0] : PI.snow[2];
+      if (S.sea) c = d < 1 ? PI.snow[0] : (hash2(x >> 2, y, sd) > 0.82 ? PI.water[0] : y % 4 === 0 ? PI.water[2] : PI.water[1]);
+      if (S.mesa && d > 3 && (x + (y >> 2) * 3) % 9 === 0) c = PI.stone[3];
+      p.set(x, y, c);
+    }
+    if (S.trees || S.peaks) {
+      const nearH = (S.trees === 2 ? 44 : 12) + vnoise(x, 5, 22, sd + 4) * (S.trees === 2 ? 20 : 8) + Math.abs(Math.sin(x / 5.5 + 1)) * 4;
+      for (let y = HORIZON - Math.round(nearH); y < HORIZON; y++) {
+        const d = y - (HORIZON - Math.round(nearH)), sp = speckle(x, y, sd + 5);
+        p.set(x, y, d < 3 && sp > 0.35 ? S.near[0] : sp > 0.72 ? S.near[2] : S.near[1]);
+        if (S.trees === 2 && d > 30 + hash2((x / 34) | 0, 3, sd) * 14 && (x + ((hash2((x / 34) | 0, 1, sd) * 20) | 0)) % 34 < 4) p.set(x, y, (x + ((hash2((x / 34) | 0, 1, sd) * 20) | 0)) % 34 === 0 ? PI.wood[2] : PI.wood[4]);   // a few trunks in the forest wall
+      }
+    }
+  }
+  // ground, with texture that gets finer toward the horizon
+  for (let y = HORIZON; y < BATTLE_H; y++) for (let x = 0; x < W; x++) {
+    const depth = (y - HORIZON) / (BATTLE_H - HORIZON), sy = HORIZON + (y - HORIZON) * (2.4 - depth * 1.2);
+    if (S.lab) { const tx = Math.floor((x - W / 2) / (10 + depth * 26) + 100), ty = Math.floor(sy / 14); p.set(x, y, (y - HORIZON) % Math.max(4, Math.round(6 + depth * 12)) === 0 ? PI.snow[2] : (tx + ty) % 2 ? PI.snow[0] : PI.snow[1]); continue; }
+    const v = vnoise(x, sy, 16, sd + 6) * 0.45 + vnoise(x, sy, 6, sd + 7) * 0.3 + speckle(x, y, sd + 8) * 0.25;
+    let c = v < 0.45 ? S.g[1] : v < 0.78 ? S.g[2] : S.g[3];
+    if (v < 0.3 && speckle(x, y, sd + 9) > 0.6) c = S.g[0];
+    if (y - HORIZON < 2) c = S.g[3];
+    if (S.pools && vnoise(x * 0.5, sy, 22, sd + 10) > 0.74) c = vnoise(x, y, 5, sd) > 0.6 ? PI.water[2] : PI.water[3];
+    p.set(x, y, c);
+  }
+  // the ovals the pets stand on: a lighter patch with a shaded rim and a few tufts or pebbles
+  for (const [cx, cy, rx, ry] of ovals || []) {
+    for (let y = -ry - 3; y <= ry + 3; y++) for (let x = -rx - 2; x <= rx + 2; x++) {
+      const d = (x * x) / (rx * rx) + (y * y) / (ry * ry), d2 = (x * x) / (rx * rx) + ((y - 3) * (y - 3)) / (ry * ry);
+      if (d <= 1) p.set(cx + x, cy + y, d > 0.8 && y > 0 ? S.g[2] : speckle(cx + x, cy + y, sd + 11) > 0.7 ? S.g[1] : S.g[0]);
+      else if (d2 <= 1) p.set(cx + x, cy + y, DARKER[S.g[3]]);                 // the rim's own shadow, below it
+    }
+    if (!S.lab) for (let k = 0; k < 7; k++) { const x = cx - rx + 6 + Math.floor(hash2(k, cx, sd) * (rx * 2 - 12)), y = cy - 2 + Math.floor(hash2(k, cy, sd + 1) * 5); p.set(x, y, S.g[3]); p.set(x + 1, y - 1, S.g[2]); p.set(x + 2, y, S.g[3]); }
+  }
+  return (SCENE_CACHE[key] = p.toCanvas());
+}
+// Soft little clouds that drift across the sky.
+let CLOUD_SPR = null;
+function cloudSprites() {
+  if (!CLOUD_SPR) CLOUD_SPR = [0, 1].map(v => { const p = new Pix(44, 16); p.ell(14, 10, 10, 5, [PI.snow[0], PI.snow[0], PI.snow[1]], { tex: 0 }).ell(26 + v * 2, 8, 12, 6.5, [PI.snow[0], PI.snow[0], PI.snow[1]], { tex: 0 }).ell(34, 11, 8, 4, [PI.snow[0], PI.snow[1]], { tex: 0 }); return p.toCanvas(); });
+  return CLOUD_SPR;
+}
+function drawClouds(t, y0 = 6, n = 4) { const c = cloudSprites(); for (let k = 0; k < n; k++) ctx.drawImage(c[k % 2], Math.round(((k * 131 + t * (0.12 + k * 0.03)) % (W + 60)) - 50), y0 + (k * 19) % 42); }
+// ---- particles ----
+// Particles use their own little random generator, so effects never disturb the game's own dice rolls.
+let fxSeed = 12345;
+function fxRand() { fxSeed = (fxSeed * 1664525 + 1013904223) >>> 0; return fxSeed / 4294967296; }
+function fxSpawn(B, x, y, n, o) {
+  B.fx = B.fx || [];
+  for (let i = 0; i < n; i++) {
+    const a = (o.up ? -Math.PI / 2 + (fxRand() - 0.5) * 1.6 : fxRand() * Math.PI * 2), sp = (o.speed || 2) * (0.5 + fxRand());
+    B.fx.push({ x: x + (fxRand() - 0.5) * (o.spread || 8), y: y + (fxRand() - 0.5) * (o.spread || 8), vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: (o.life || 18) + Math.floor(fxRand() * 8), max: (o.life || 18) + 8,
+      col: o.cols[i % o.cols.length], kind: o.kind || 'spark', g: o.g === undefined ? 0.12 : o.g });
+  }
+  if (B.fx.length > 90) B.fx.splice(0, B.fx.length - 90);
+}
+function fxUpdate(B) {
+  if (!B.fx || !B.fx.length) return;
+  for (const f of B.fx) { f.x += f.vx; f.y += f.vy; f.vy += f.g; f.vx *= 0.94; f.life--; }
+  B.fx = B.fx.filter(f => f.life > 0);
+}
+function fxDraw(B) {
+  if (!B.fx) return;
+  for (const f of B.fx) {
+    const x = Math.round(f.x), y = Math.round(f.y), big = f.life > f.max * 0.45;
+    ctx.fillStyle = f.col;
+    if (f.kind === 'heart') { ctx.fillRect(x - 2, y - 1, 2, 2); ctx.fillRect(x + 1, y - 1, 2, 2); ctx.fillRect(x - 2, y, 5, 2); ctx.fillRect(x - 1, y + 2, 3, 1); ctx.fillRect(x, y + 3, 1, 1); }
+    else if (f.kind === 'star') { ctx.fillRect(x - (big ? 2 : 1), y, big ? 5 : 3, 1); ctx.fillRect(x, y - (big ? 2 : 1), 1, big ? 5 : 3); }
+    else ctx.fillRect(x, y, big ? 2 : 1, big ? 2 : 1);
+  }
+}
+// A hit landed on side 'E' (the other pet) or 'P' (yours): sparks fly, and a super effective hit also flashes and shakes the screen.
+function battleImpact(B, side, mult) {
+  const x = side === 'E' ? EPOS.x + 32 : PPOS.x + 32, y = side === 'E' ? EPOS.y + 40 : PPOS.y + 40;
+  if (mult > 1) { fxSpawn(B, x, y, 22, { cols: ['#ffffff', '#fff29a', '#ffd94a', '#ffae48', '#e8493f'], speed: 3.4, life: 22, kind: 'star' }); fxSpawn(B, x, y, 10, { cols: ['#ffffff', '#ffd94a'], speed: 1.6, life: 14 }); B.flash = 12; B.shake = 10; }
+  else if (mult < 1) fxSpawn(B, x, y, 5, { cols: ['#d4c2cc', '#a88faa'], speed: 1.2, life: 12 });
+  else { fxSpawn(B, x, y, 11, { cols: ['#ffffff', '#fff29a', '#ffd94a'], speed: 2.4, life: 16, kind: 'star' }); B.shake = 3; }
+}
+function battleSceneKind(B) {
+  if (B.o.trainer && B.o.trainer.champion) return 'gold';
+  return SCENE[world.map ? mapKey(world.map) : 'pawsville'] || 'field';
+}
+function drawBattleScene(B) {
+  const kind = battleSceneKind(B);
+  ctx.drawImage(battleBackdrop(kind, [[EPOS.x + 32, EPOS.y + 62, 40, 8], [PPOS.x + 32, PPOS.y + 64, 46, 9]]), 0, 0);
+  if (kind !== 'lab' && kind !== 'forest' && kind !== 'jungle') drawClouds(B.t, 4, kind === 'marsh' ? 2 : 4);
+  const bd = battleBackdrop(kind, [[EPOS.x + 32, EPOS.y + 62, 40, 8], [PPOS.x + 32, PPOS.y + 64, 46, 9]]);
+  ctx.drawImage(bd, 0, BATTLE_H - 1, W, 1, 0, BATTLE_H, W, H - BATTLE_H);   // the ground carries on under the panels
+}
+// <<< GFX:battle
+
 // ---------------------------------------------------------------------
 // 4. AUDIO (Web Audio: synthesized SFX + tiny step sequencer)
 // ---------------------------------------------------------------------
@@ -6412,7 +6542,8 @@ class BattleScreen {
     if (this.player) {
       if (this.dispP > this.player.hp) this.dispP = Math.max(this.player.hp, this.dispP - stepP); else if (this.dispP < this.player.hp) this.dispP = Math.min(this.player.hp, this.dispP + stepP);
     }
-    for (const k of ['hitE', 'hitP', 'lungeE', 'lungeP']) if (this[k] > 0) this[k]--;
+    for (const k of ['hitE', 'hitP', 'lungeE', 'lungeP', 'flash', 'shake']) if (this[k] > 0) this[k]--;
+    fxUpdate(this);
     if (this.treat) this.treat.t++;
     if (this.wiggle > 0) this.wiggle--;
   }
@@ -6421,35 +6552,32 @@ class BattleScreen {
     const champ = this.o.trainer && this.o.trainer.champion;
     const dark = world.map && world.map.dark, lab = world.map && world.map.lab;
     const mm = world.map || {};
-    ctx.fillStyle = mm.bsky || (lab ? '#c9c2e6' : champ ? '#ffd9a8' : dark ? '#b5e3c0' : '#bfe8ff'); ctx.fillRect(0, 0, W, 112);
-    ctx.fillStyle = lab ? '#ddd8f2' : champ ? '#ffe9c8' : dark ? '#d0f0d8' : '#dff4ff';
-    for (let k = 0; k < 6; k++) ctx.fillRect((k * 83 + this.t * 0.2) % (W + 40) - 40, 8 + (k * 23) % 50, 34, 6);
-    ctx.fillStyle = mm.bground || (lab ? '#a9a6c4' : dark ? '#6fb86a' : '#9ad67a'); ctx.fillRect(0, 112, W, 128);
-    ctx.fillStyle = lab ? '#9895b6' : dark ? '#5fa85a' : '#8cc96c';
-    for (let y = 116; y < 176; y += 8) for (let x = (y / 8 % 2) * 12; x < W; x += 24) ctx.fillRect(x, y, 6, 2);
-    const pc = lab ? '#8a86ac' : '#7cc25e', pe = lab ? '#6a6690' : '#5a9e44';
-    drawPlatform(EPOS.x + 32, EPOS.y + 62, 62, 9, pc, pe);
-    drawPlatform(PPOS.x + 32, PPOS.y + 64, 66, 10, pc, pe);
-    // enemy
-    if (!this.caught) {
-      const ex = EPOS.x + (1 - this.eIn) * 160 - (this.lungeE > 0 ? Math.round(Math.sin(this.lungeE / 10 * Math.PI) * 10) : 0)
+    const sh = this.shake > 0 ? (this.shake % 4 < 2 ? 2 : -2) : 0;   // a hard hit shakes the scene
+    ctx.save(); ctx.translate(sh, 0);
+    drawBattleScene(this);
+    // the other pet (a new friend stays and hops for joy)
+    {
+      const ex = EPOS.x + (1 - this.eIn) * 160 - (this.lungeE > 0 ? Math.round(Math.sin(this.lungeE / 10 * Math.PI) * 14) : 0)
         + (this.wiggle > 0 ? (Math.floor(this.wiggle / 4) % 2 ? 3 : -3) : 0);
-      const blink = this.hitE > 0 && this.hitE % 6 < 3;
+      const blink = this.hitE > 0 && this.hitE <= 16 && this.hitE % 6 < 3, joy = this.caught ? -Math.round(Math.abs(Math.sin(this.t / 7)) * 8) : 0;
       if (!blink && this.faintE < 1) {
         ctx.save();
-        ctx.beginPath(); ctx.rect(0, 0, W, EPOS.y + 64); ctx.clip();
-        drawPetSprite(this.enemy.sp, ex, EPOS.y + this.faintE * 64, 2, this.eating ? { alpha: 0.85 } : {});
+        ctx.beginPath(); ctx.rect(-4, 0, W + 8, EPOS.y + 64); ctx.clip();
+        if (!this.faintE) drawShadow(ex + 32, EPOS.y + 62, 30, 7);
+        drawPetSprite(this.enemy.sp, ex, EPOS.y + this.faintE * 64 + joy, 2, this.hitE > 16 ? { silhouette: '#ffffff' } : {});   // hit flash
         ctx.restore();
       }
+      if (this.caught && this.t % 14 === 0) fxSpawn(this, EPOS.x + 32, EPOS.y + 20, 2, { cols: ['#f0689a', '#ffb3a8'], kind: 'heart', up: true, speed: 1.1, life: 30, g: -0.01, spread: 30 });
     }
     // player
     if (this.showPlayer && this.player) {
-      const px = PPOS.x - (1 - this.pIn) * 160 + (this.lungeP > 0 ? Math.round(Math.sin(this.lungeP / 10 * Math.PI) * 10) : 0);
-      const blink = this.hitP > 0 && this.hitP % 6 < 3;
+      const px = PPOS.x - (1 - this.pIn) * 160 + (this.lungeP > 0 ? Math.round(Math.sin(this.lungeP / 10 * Math.PI) * 14) : 0);
+      const blink = this.hitP > 0 && this.hitP <= 16 && this.hitP % 6 < 3;
       if (!blink && this.faintP < 1) {
         ctx.save();
-        ctx.beginPath(); ctx.rect(0, 0, W, PPOS.y + 66); ctx.clip();
-        drawPet(this.player, px, PPOS.y + this.faintP * 64 + emoteHop(this.emote) * 2, 2, { back: true });
+        ctx.beginPath(); ctx.rect(-4, 0, W + 8, PPOS.y + 66); ctx.clip();
+        if (!this.faintP) drawShadow(px + 32, PPOS.y + 64, 32, 7);
+        drawPet(this.player, px, PPOS.y + this.faintP * 64 + emoteHop(this.emote) * 2, 2, this.hitP > 16 ? { back: true, silhouette: '#ffffff' } : { back: true });
         ctx.restore();
         if (this.emote) { ctx.save(); ctx.translate(Math.round(px + 32), PPOS.y + 8 + emoteHop(this.emote) * 2); ctx.scale(2, 2); drawEmote(this.emote, 0, 0); ctx.restore(); }
       }
@@ -6457,9 +6585,16 @@ class BattleScreen {
     if (this.treat) {
       const f = clamp(this.treat.t / 30, 0, 1);
       const x = 120 + (EPOS.x + 24 - 120) * f, y = 120 + (EPOS.y + 30 - 120) * f - Math.sin(f * Math.PI) * 60;
-      if (f < 1) ctx.drawImage(TREAT_SPR[this.treat.key] || SPR_TREAT, Math.round(x), Math.round(y), 16, 16);
+      if (f < 1) {   // the treat tumbles through the air, trailing sparkles
+        const img = TREAT_SPR[this.treat.key] || SPR_TREAT, spin = Math.floor(this.treat.t / 4) % 4;
+        ctx.save(); ctx.translate(Math.round(x) + 8, Math.round(y) + 8); ctx.rotate(spin * Math.PI / 2); ctx.drawImage(img, -8, -8, 16, 16); ctx.restore();
+        if (this.treat.t % 3 === 0) fxSpawn(this, x + 8, y + 8, 1, { cols: ['#ffffff', '#fff29a'], speed: 0.4, life: 10, g: 0.02, spread: 6 });
+      } else if (!this.treat.landed) { this.treat.landed = true; fxSpawn(this, EPOS.x + 32, EPOS.y + 44, 8, { cols: ['#fffbe9', '#f6e6bc'], speed: 1.4, life: 12, g: 0.05 }); }
     }
-    if (this.eating && this.t % 20 < 10) drawText('♥', EPOS.x + 54, EPOS.y + 4, COL.red);
+    if (this.eating && this.t % 12 === 0) fxSpawn(this, EPOS.x + 32, EPOS.y + 22, 1, { cols: ['#f0689a', '#ffb3a8'], kind: 'heart', up: true, speed: 0.9, life: 28, g: -0.01, spread: 26 });
+    fxDraw(this);
+    ctx.restore();
+    if (this.flash > 0) { ctx.fillStyle = 'rgba(255,255,255,' + Math.min(0.8, this.flash / 12 * 0.85).toFixed(2) + ')'; ctx.fillRect(0, 0, W, BATTLE_H); }   // super effective!
     // enemy info
     if (!this.caught && this.eIn >= 1) {
       box(10, 12, 178, 40);
@@ -6589,6 +6724,7 @@ async function attack(B, isPlayer, moveId) {
   def.hp = Math.max(0, def.hp - dmg);
   sfx(mult > 1 ? 'superHit' : mult < 1 ? 'weakHit' : 'hit');
   if (isPlayer) B.hitE = 24; else B.hitP = 24;
+  battleImpact(B, isPlayer ? 'E' : 'P', mult);
   await settleHP(B);
   await wait(8);
   if (mult > 1) await bsay('It\'s super effective!');
@@ -6675,6 +6811,7 @@ async function throwTreat(B, key) {
   if (ok) {
     sfx('catchOk');
     B.caught = true;
+    fxSpawn(B, EPOS.x + 32, EPOS.y + 36, 18, { cols: ['#ffffff', '#fff29a', '#ffd94a', '#f0689a'], kind: 'star', speed: 2.6, life: 26 });
     e.pending = [];
     G.stats.caught++;
     await bsay('Yay! ' + petName(e) + ' became your friend!');
@@ -7055,6 +7192,9 @@ function runSelfTest() {
     const evo = SPECIES[sp].evo || SPECIES[sp].machineEvo;
     if (evo && PET_DEF[evo] && filled(PET48[evo].front[0]) <= filled(set.front[0])) grErr.push(evo + ' should be bigger than ' + sp);
   }
+  for (const k in MAPS) if (!SCENE[k]) grErr.push(k + ' has no battle scene');
+  for (const kind of new Set(Object.values(SCENE).concat(['gold']))) { const bd = battleBackdrop(kind, [[100, 150, 40, 8]]); if (bd.width !== W || bd.height !== BATTLE_H || bd.pix.d.some(c => !c)) grErr.push('battle scene ' + kind); }
+  { const fake = { o: {}, t: 0 }; battleImpact(fake, 'E', 2); if (!(fake.flash > 0) || !(fake.shake > 0) || fake.fx.length < 20) grErr.push('super effective impact'); const n = fake.fx.length; for (let i = 0; i < 80; i++) fxUpdate(fake); if (fake.fx.length || !n) grErr.push('particles never end'); }
   check('Graphics: the ground of all ' + Object.keys(MAPS).length + ' maps paints fully, in palette, with a biome each', !grErr.length, grErr.slice(0, 4).join('; '));
   // Tasks: every giver is a helpful (non-trainer) character, every lost item/pet sits on an open, reachable tile.
   const qErr = [], qSaved = G;
@@ -7544,6 +7684,12 @@ function devView(v) {
       return k + (b ? (lead ? ' doubled' : ' bell at bar ' + (Math.floor(b.ev.findIndex(Boolean) / sg.parts[k].barSteps) + 1)) : ' none'); }).join(', '); });
     document.getElementById('testout').textContent = 'SIGNATURE\n' + lines.join('\n');
   }
+  else if (v === 'battlein') {   // #view=battlein&<map>&<your pet>&<other pet>[&hit|super|caught] : a battle in any biome
+    const [, mk, mine, foe, fxk] = location.hash.split('&');
+    world.map = MAPS[mk] || MAPS.pawsville; G.party[0] = createPet(mine || 'rocky', 14);
+    const B = battleWith(createPet(foe || 'cream', 12)); push(new ActionMenu(B, () => {}));
+    if (fxk === 'hit') { B.hitE = 12; battleImpact(B, 'E', 1); } else if (fxk === 'super') { B.hitE = 20; battleImpact(B, 'E', 2); B.flash = 7; } else if (fxk === 'caught') { B.caught = true; fxSpawn(B, EPOS.x + 32, EPOS.y + 36, 18, { cols: ['#ffffff', '#fff29a', '#ffd94a', '#f0689a'], kind: 'star', speed: 2.6, life: 26 }); }
+  }
   else if (v === 'petsheet') { const page = +(location.hash.split('&')[1] || 0); push({ opaque: true, update() {}, hint() { return 'pets ' + (page * 9 + 1) + '+ : front, back (48), menu (32), overworld (16)'; }, draw() {
     ctx.fillStyle = PALETTE[PI.grass[1]]; ctx.fillRect(0, 0, W, 110); ctx.fillStyle = PALETTE[PI.water[0]]; ctx.fillRect(0, 110, W, 120);
     Object.keys(PET_DEF).slice(page * 9, page * 9 + 9).forEach((k, i) => { const x = i * 48;
@@ -7930,10 +8076,12 @@ async function runSmoke() {
     await key('ArrowRight'); await key('Enter');    // Bag
     await wait(5);
     ok('The Bag marks Seeds with a heart for a wild gerbil', topScreen() instanceof ChoiceScreen && topScreen().opts[2].label.startsWith('\u2665') && !topScreen().opts[0].label.startsWith('\u2665'));
-    await key('ArrowDown'); await key('ArrowDown'); await key('Enter');   // Seeds
-    await mash(idle, 800);
+    { const rollDice = Math.random; Math.random = () => 0.1;   // the treat works (in play it can fail 1 time in 20)
+      await key('ArrowDown'); await key('ArrowDown'); await key('Enter');   // Seeds
+      await mash(idle, 800);
+      Math.random = rollDice; }
     ok('Seeds used (' + treats + ' -> ' + G.bag.seeds + ')', G.bag.seeds === treats - 1 || G.bag.seeds === treats - 2);
-    ok('Caught pet joins the party (party ' + p0 + ' -> ' + G.party.length + ')', G.party.length >= p0 + (G.stats.caught ? 1 : 0) && G.stats.caught <= 1);
+    ok('Caught pet joins the party (party ' + p0 + ' -> ' + G.party.length + ')', G.party.length === p0 + 1 && G.stats.caught === 1);
     // Trainer battle: Treat is refused and Run is refused without losing the turn.
     G.party = [createPet('buddy', 2)];
     for (const id of RIBBON_IDS) G.flags[id] = false;
