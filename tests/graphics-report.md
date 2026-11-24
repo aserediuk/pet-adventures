@@ -12,9 +12,9 @@ Branch `v0.4-graphics`. Every graphic in `pet-adventures.html` is now generated 
 | Map reachability | Unchanged (the self-test's flood fill passes on all 11 maps) |
 | Text fit at 432×240 | Pass (font metrics unchanged; type tags re-checked with icons) |
 | Crisp pixels | All 38 screenshots have uniform 2×2 or 3×3 pixel blocks |
-| Frame time, Whisker Woods, all effects on | 0.6 ms average, 1.0 ms at the 95th percentile, 4.3 ms worst of 600 frames |
-| Startup (all art built) | About 180 ms |
-| Painting a map's ground on entry | 36–58 ms, once per map, then cached |
+| Frame time, Whisker Woods, all effects on | 0.6 ms average, 0.9 ms at the 95th percentile, 2.8 ms worst of 600 frames |
+| Startup (all art built) | About 200 ms |
+| Painting a map's ground on entry | 72–114 ms, once per map, then cached (the detail pass roughly doubled this) |
 
 Frame times were measured in headless Chrome on this Mac with `#view=perf` (update + render + a forced flush per frame). I could not run Safari or a real MacBook Air from here, so those are not measured.
 
@@ -34,7 +34,7 @@ Scores are my own reading of the screenshots, 1–5.
 | Props | 4 | All listed props exist. The mailbox, picket fence and garden beds are part of the building pictures, because the maps could not change. |
 | Buildings | 5 | Blue-roof cottage with flower boxes, mint clinic with a heart-and-paw sign, shop with striped awning and bone sign, plus a barn. |
 | Characters | 4 | 15 looks, 4 directions, 4-frame walk, 2-frame idle. Player wears a green hoodie and backpack. |
-| Pets | 4 | 33 pets, front and back at 48×48, plus 32 and 16 px. Back views are plainer than the fronts. |
+| Pets | 4 | 33 pets, front and back at 48×48, plus 32 and 16 px. Back views show fur tufts and the collar, but are still plainer than the fronts. |
 | Animation | 4 | Water sparkles, swaying tall grass and flower beds, chest, evolution rays, idle pets. |
 | Biome moods | 4 | Every map has a mood. Whisker Woods has no stream in its map, so the stepping stones are in Meadow Path. |
 | Battle scenes | 4 | A backdrop per biome, impact sparks, flash and shake, treat toss, hearts. |
@@ -46,6 +46,18 @@ Scores are my own reading of the screenshots, 1–5.
 1. **Evolution scene** was a flat dark screen. It now has turning rays of light, a pulsing glow, the white silhouette flicker and a star burst on reveal.
 2. **Menu backgrounds** (party, Pet Pen, summary, dress-up) were flat old colours. They now use a striped paw-print backdrop from the master palette.
 3. **Flower beds** did not sway. They are now a two-frame overlay.
+
+## Detail pass (after first feedback)
+
+The first version was called short on detail, with hard edges and overlaps. This pass changed:
+
+- **Ground:** three layers of grass tone blended with dither, single blades, clover, pebbles, bare patches, mushrooms, fallen leaves and twigs. Paths have worn tracks, flat stones, cracks and sprigs of grass. Water has shallows, ripples, foam and stones at the bank.
+- **Borders:** grass blades hang over paths, sand and banks, and the dark rim around paths is gone. Shadows fade out through a dither.
+- **Tall grass:** blades are rooted at scattered heights in a picture that overhangs its tile, so fields no longer show rows or square edges. Snowy shrubs are now low bushes with snow caps.
+- **Trees:** five crown shapes with lumpy outlines, sunlit leaf sprays, bark, roots and grass at the foot. Trees inside a forest are a step darker than the front row. The top border has a ragged lower edge.
+- **Buildings:** staggered shingles with moss, ridge cap, barge boards and fascia; clapboard walls with corner posts and a stone course; shutters, curtains, a lantern, a brick chimney, ivy, and grass against the wall.
+- **Battles:** hazy far range, piled clouds, tree lines made of real crowns (forests show trunks and undergrowth), ground tufts, flowers and stones that grow toward the viewer, and standing patches that blend into the ground. The horizon moved up so the far pet's patch sits on the ground, not in the trees.
+- **Overlaps removed:** the title prompt no longer covers the shop, the win screen's score card sits in the sky and the team stands on the path, the pond no longer sits under the credit line, and bunting hangs only between roofs.
 
 ## Departures from the brief
 
