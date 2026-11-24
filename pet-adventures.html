@@ -1835,12 +1835,42 @@ function buildingPix(grid, style) {
   }
   return p;
 }
+// A chunky yellow arrow that bounces at each way out of a map, pointing off the edge.
+const EXIT_ARROW = {};
+function exitArrow(dir) {
+  if (!EXIT_ARROW[dir]) {
+    const p = new Pix(13, 13), put = (x, y, c) => { const [X, Y] = dir === 'right' ? [x, y] : dir === 'left' ? [12 - x, y] : dir === 'down' ? [y, x] : [y, 12 - x]; p.set(X, Y, c); };
+    for (let dy = -4; dy <= 4; dy++) for (let dx = 0; dx <= 4 - Math.abs(dy); dx++) put(6 + dx, 6 + dy, PI.yellow[1]);   // head
+    for (let dy = -1; dy <= 1; dy++) for (let dx = 2; dx < 6; dx++) put(dx, 6 + dy, PI.yellow[1]);                          // tail
+    for (let y = 0; y < 13; y++) for (let x = 0; x < 13; x++) if (p.get(x, y) && (!p.get(x, y - 1) || !p.get(x - 1, y))) p.set(x, y, PI.yellow[0]);
+    for (let y = 0; y < 13; y++) for (let x = 0; x < 13; x++) if (p.get(x, y) === PI.yellow[1] && (!p.get(x, y + 1) || !p.get(x + 1, y))) p.set(x, y, PI.orange[1]);
+    EXIT_ARROW[dir] = p.outline(PI.ink[0]).toCanvas();
+  }
+  return EXIT_ARROW[dir];
+}
+function exitDir(m, e) { return e.dir || (e.x <= 0 ? 'left' : e.y <= 0 ? 'up' : e.x + e.w >= m.rows[0].length ? 'right' : 'down'); }
+function drawExitArrow(e, cx, cy) {
+  const dir = exitDir(world.map, e), v = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] }[dir], off = [0, 1, 2, 3, 2, 1][Math.floor(frame / 7) % 6] - 1;
+  const x = Math.round((e.x + e.w / 2) * TS - cx - 6.5 + v[0] * off), y = Math.round((e.y + e.h / 2) * TS - cy - 6.5 + v[1] * off);
+  if (x < -13 || y < -13 || x > W || y > HINT_Y) return;
+  ctx.drawImage(exitArrow(dir), clamp(x, 1, W - 14), clamp(y, 1, HINT_Y - 14));   // kept fully on screen, clear of the hint bar
+}
 // Everything tall on a map, built once: tree strips (one per row) and buildings.
 const WORLD_OBJ = {};
 function worldObjects(m) {
   const k = mapKey(m);
   if (WORLD_OBJ[k]) return WORLD_OBJ[k];
   const rows = m.rows, cols = rows[0].length, B = biomeOf(m), out = { strips: [], buildings: [] };
+  // Ways out of the map must be easy to spot: trees whose crowns would hang over an exit, or over the few steps leading to it, are drawn as low bushes.
+  const low = new Set(), seenWay = new Set(), way = [];
+  for (const e of m.exits || []) for (let y = e.y; y < e.y + e.h; y++) for (let x = e.x; x < e.x + e.w; x++) way.push([x, y, 0]);
+  while (way.length) {
+    const [x, y, d] = way.shift(), key = x + ',' + y;
+    if (seenWay.has(key) || y < 0 || x < 0 || y >= rows.length || x >= cols || /[TJYRBKHWDrqc|~M]/.test(rows[y][x])) continue;
+    seenWay.add(key);
+    for (let dy = 0; dy <= 2; dy++) for (let dx = -1; dx <= 1; dx++) low.add((x + dx) + ',' + (y + dy));
+    if (d < 3) way.push([x + 1, y, d + 1], [x - 1, y, d + 1], [x, y + 1, d + 1], [x, y - 1, d + 1]);
+  }
   rows.forEach((row, ty) => {
     if (!STRIP_RE.test(row)) return;
     const strip = new Pix(cols * TS, TREE_H);
@@ -1853,11 +1883,13 @@ function worldObjects(m) {
       if (ch === 'c') { strip.blit(cactusPix(v), tx * TS, TREE_H - 26); continue; }
       if (ch === '|') { const f = (x, y) => (rows[y] || '')[x] === '|'; strip.blit(fencePix((f(tx - 1, ty) ? 1 : 0) | (f(tx + 1, ty) ? 2 : 0) | (f(tx, ty - 1) ? 4 : 0) | (f(tx, ty + 1) ? 8 : 0), false), tx * TS, TREE_H - 20); continue; }
       if (!TREE_CHARS[ch]) continue;
+      if (low.has(tx + ',' + ty)) { strip.blit(bushPix(v, B), tx * TS, TREE_H - 16, hash2(tx, ty, B.seed + 7) < 0.5); continue; }
       // On the top edge of the map the crown sits lower, so the border reads as a wall of leaves, not a row of trunks.
       // Trees with another tree in front of them are a step darker and sit a little higher or lower, so a forest has depth and a ragged skyline.
       strip.blit(treePix(row[tx], tv, B, inner), tx * TS + 8 - TREE_W / 2 + tjx, ty === 0 ? 14 : Math.max(0, tjy), hash2(tx, ty, B.seed + 7) < 0.5);
     }
-    if (ty === 0) for (let x = 0; x < strip.w; x++) {   // the top border is a wall of leaves: give it a ragged, shaded lower edge instead of a ruled line
+    if (ty === 0) for (let x = 0; x < strip.w; x++) {
+      if (low.has((x >> 4) + ',0')) continue;   // the top border is a wall of leaves: give it a ragged, shaded lower edge instead of a ruled line
       const cut = TREE_H - 1 - Math.round(vnoise(x, 0, 6, B.seed + 12) * 5 + vnoise(x, 0, 2.5, B.seed + 13) * 2);
       for (let y = cut + 1; y < TREE_H; y++) strip.set(x, y, 0);
       for (let y = cut - 2; y <= cut; y++) { const c = strip.get(x, y); if (c && c !== PI.teal[2]) strip.set(x, y, DARKER[c]); }
@@ -6211,6 +6243,7 @@ function drawWorld() {
   for (const t of things.slice()) if (t.cx !== undefined) things.push({ y: t.y + 1, draw: () => { ctx.save(); ctx.beginPath(); ctx.rect(t.cx - 8, t.cy - 24, 32, 32); ctx.clip(); t.draw(); ctx.restore(); } });
   things.sort((a, b) => a.y - b.y).forEach(t => t.draw());
   drawMood(m, cx, cy);   // light, shade and weather
+  for (const e of m.exits) drawExitArrow(e, cx, cy);   // a bouncing arrow marks every way out
   for (const l of m.labels) {
     const w = textW(l.text) + 8, lx = Math.round(l.tx * TS - cx - w / 2), ly = Math.round(l.ty * TS - cy);
     ctx.fillStyle = 'rgba(21,67,86,0.35)'; ctx.fillRect(lx + 1, ly + 12, w, 1);                       // a signboard: wooden frame, cream face, soft shadow
@@ -7708,6 +7741,7 @@ function runSelfTest() {
   for (let mask = 0; mask < 16; mask++) if (fencePix(mask, false).w !== 16) grErr.push('fence ' + mask);
   if (SPR_CHEST_C.width !== 16 || SPR_CHEST_O.height !== 16 || !SPR_CHEST_C.pix) grErr.push('chest sprites');
   for (const ch of ['X', 'Z']) if (TILES[ch].length !== 2) grErr.push(ch + ' should animate');
+  for (const k in MAPS) for (const e of MAPS[k].exits) { if (!['left', 'right', 'up', 'down'].includes(exitDir(MAPS[k], e)) || !exitArrow(exitDir(MAPS[k], e)).width) grErr.push('exit arrow ' + k); }   // every way out gets an arrow
   for (const kind of ['T', 'J', 'Y']) for (let v = 0; v < TREE_VARIANTS; v++) for (const tone of [0, 1]) { const t = treePix(kind, v, BIOME.pawsville, tone); if (t.w !== TREE_W || t.h !== TREE_H || !t.get(TREE_W / 2, TREE_H - 5)) grErr.push('tree ' + kind + v); }
   for (const k in LOOKS) if (!LOOK2[k]) grErr.push('no new look for ' + k);
   for (const k in LOOK2) for (const d of ['down', 'up', 'left', 'right']) {

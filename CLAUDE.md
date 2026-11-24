@@ -92,6 +92,7 @@ All art is generated in code at startup. `tests/graphics-report.md` has the scor
 - **Pets (`PET_DEF`, `PET_FAMILY`, `petPix`):** one description per pet renders at 48 (front and back, 2 frames), 32 and 16 px. `drawPetSprite(sp, x, y, s)`: `s = 1` is the 32 px menu sprite, `s = 2` the 48 px battle sprite inside the old 64 px box, `s = 4` that sprite doubled. Lizards, ponies and fish are side views. New pets need a `PET_DEF` entry; the self-test checks every species has one.
 - **Battle (`battleBackdrop`, `SCENE`):** one painted backdrop per biome. `HORIZON` is 82 so the far pet's patch sits on the ground. Particles (`fxSpawn`) use their own random generator (`fxRand`), so effects never shift gameplay dice rolls.
 - **Light (`MOOD`, `drawMood`):** pre-rendered sunbeams, vignette, mist and glows, drawn as whole overlays. No per-pixel work happens during play.
+- **Exits must be easy to see** (user feedback): trees whose crowns would hang over an exit or the few steps leading to it are drawn as low bushes (`low` in `worldObjects`), and `drawExitArrow` bounces a yellow arrow on every exit.
 - **No overlaps:** the user asked that panels and text never cover the art. The title and win screens are laid out around `DIO_HZ`; check screenshots after moving anything there.
 - **Scenes:** `drawDiorama` (title and win), `roomBackdrop` (Clinic and Shop), `menuBackdrop`, `evolveRays`.
 - **Previews:** `#view=palette`, `people`, `people2`, `petsheet&0`–`3`, `petzoom&a,b,c,d`, `battlein&<map>&<your pet>&<other pet>[&hit|super|caught]`, `perf&<map>`.
