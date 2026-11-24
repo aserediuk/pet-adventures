@@ -1359,6 +1359,7 @@ const MainThemes = {
     name: 'Theme 1',
     theme: ['D5', 'A5', 'G5', 'F#5', 'D5'], intervals: [0, 7, 5, 4, 0], minor: [0, 7, 5, 3, 0],   // up a fifth, then step back down home
     sting: ['D5', 'A5', 'D6'],
+    signature: true,   // on the other songs: the quote gets snap bends, a bell doubles it, pet chirps answer (see addSignature)
     songs: { title: 'titleK', win: 'winK', champion: 'championK', victory: 'victoryK' },   // songs that Theme 1 swaps
     title, riff, hook, groove, chirps,
   };
@@ -1706,8 +1707,9 @@ function semiName(semi) { return SEMI_NAMES[((semi % 12) + 12) % 12] + (4 + Math
 function quoteToken(layer, m, themeKey) {
   const q = (layer.q || [])[m[2] === 'T' ? 0 : 1];
   if (!q) return null;
-  const iv = q.iv[themeKey] || MainThemes[themeKey].intervals;
-  return m[1] + semiName(noteSemi(q.root[themeKey]) + iv[parseInt(m[3], 10) - 1]) + m[4];
+  const T = MainThemes[themeKey], iv = q.iv[themeKey] || T.intervals, n = parseInt(m[3], 10);
+  // A theme with signature sounds accents the quote's first note and snap-bends its 2nd and 4th.
+  return (T.signature && n === 1 ? '>' : m[1]) + semiName(noteSemi(q.root[themeKey]) + iv[n - 1]) + m[4] + (T.signature && (n === 2 || n === 4) ? '^' : '');
 }
 function noteFreq(n) {
   const m = /^([A-G])([#b]?)(\d)$/.exec(n); if (!m) return 0;
@@ -1749,8 +1751,57 @@ function compileLayer(layer) {
     ev[i] = { f, acc: !!m[1], dur, hold, arp, quarter: !!m[5], bend: fx.includes('/'), vib: fx.includes('~') };
     if (fx.includes('^')) ev[i].snap = true;
     if (fx.includes('%')) ev[i].wob = true;
+    if (qm) ev[i].q = parseInt(qm[3], 10);   // this note is part of a theme quote
   });
   return { ev, errors };
+}
+// Signature sounds: how a theme makes itself heard in every other song, without touching that song's groove or harmony.
+//  1. Where the lead quotes the theme, a bell doubles the quote an octave up and a pet chirp answers it.
+//  2. In the song's other parts, the bell plays the quote once more, at the first bar where every note agrees with
+//     the bass and the lead sounding under it (a unison, third, fourth, fifth or sixth). If no bar fits, it stays out.
+function addSignature(parts) {
+  const CONSONANT = [0, 3, 4, 5, 7, 8, 9], kinds = ['y', 'm', 'q'];
+  const apart = (a, b) => ((Math.round(12 * Math.log2(a / b)) % 12) + 12) % 12;
+  const sounding = (layer, step) => {   // the note of this layer heard at a step (for the bass: its latest note)
+    if (!layer) return null;
+    const n = layer.ev.length;
+    for (let k = 0; k < n; k++) { const e = layer.ev[(((step + (layer.off || 0) - k) % n) + n) % n]; if (e) return (k === 0 || (e.hold && k < e.dur) || layer.voice === 'tri') ? e : null; }
+    return null;
+  };
+  const bellNote = (e, first) => ({ f: e.f * 2, acc: first, dur: e.dur, hold: e.hold, snap: e.snap });
+  const add = (part, n, bell, chirp) => part.layers.push(
+    { voice: 'p2', label: 'THEME', sig: true, steps: '', loopLength: n, ev: bell },
+    { voice: 'chirp', label: 'PETS', sig: true, steps: '', loopLength: n, ev: chirp });
+  let pattern = null, kind = 0;
+  for (const k in parts) {
+    const part = parts[k], lead = part.layers.find(l => l.voice === 'p1' && l.ev.some(e => e && e.q));
+    if (!lead || lead.ev.length <= 10) continue;   // a short loop that is all quote needs no highlight
+    const n = lead.ev.length, bell = new Array(n).fill(null), chirp = new Array(n).fill(null);
+    lead.ev.forEach((e, i) => {
+      if (!e || !e.q) return;
+      bell[i] = bellNote(e, e.q === 1);
+      const after = i + Math.max(1, e.dur);
+      if (e.q === 5 && after < n) chirp[after] = { chirp: kinds[kind++ % 3], acc: false, dur: 1 };
+    });
+    if (!pattern) { const qs = []; lead.ev.forEach((e, i) => { if (e && e.q && qs.length < 5) qs.push({ d: i, e }); }); if (qs.length === 5) pattern = qs.map(x => ({ d: x.d - qs[0].d, e: x.e })); }
+    add(part, n, bell, chirp); part.signed = true;
+  }
+  if (!pattern) return;
+  const span = pattern[4].d + Math.max(1, pattern[4].e.dur);
+  for (const k in parts) {
+    const part = parts[k];
+    if (part.signed) continue;
+    const lead = part.layers.find(l => l.voice === 'p1'), bass = part.layers.find(l => l.voice === 'tri');
+    for (let start = 0; start + span < part.len; start += part.barSteps) {
+      const fits = pattern.every(nt => [bass, lead].every(l => { const e = sounding(l, start + nt.d); return !e || !e.f || CONSONANT.includes(apart(nt.e.f * 2, e.f)); }));
+      if (!fits) continue;
+      const bell = new Array(part.len).fill(null), chirp = new Array(part.len).fill(null);
+      pattern.forEach((nt, j) => { bell[start + nt.d] = bellNote(nt.e, j === 0); });
+      chirp[start + span] = { chirp: kinds[kind++ % 3], acc: false, dur: 1 };
+      add(part, part.len, bell, chirp); part.signed = true;
+      break;
+    }
+  }
 }
 const compiledSongs = {};
 function compileSong(name) {
@@ -1763,6 +1814,7 @@ function compileSong(name) {
     parts[k] = { len: p.bars * barSteps, bars: p.bars, barSteps, meter: p.meter || s.meter, echo: p.echo,
       layers: p.layers.map(l => Object.assign({}, l, { ev: compileLayer(l).ev })) };
   }
+  if (activeTheme().signature && !s.only && !s.oneShot) addSignature(parts);
   const trem = Object.values(s.parts).some(pt => pt.layers.some(l => l.trem));
   return (compiledSongs[key] = { name, title: s.title, bpm: s.bpm, sd: 60 / s.bpm / s.spb, oneShot: !!s.oneShot, echo: s.echo || 0, form: s.form.split(' '), parts, trem, long: !!s.long });
 }
@@ -2328,13 +2380,13 @@ class MusicRoomScreen {
       drawText('Section ' + partName[0] + '   bar ' + (barsBefore + bar + 1) + '/' + secs.bars + '   ' + part.meter.split(' ')[0] + '   part ' + partName, MR_X, 78, COL.white);
     } else drawText('Part ' + partName + '  bar ' + (bar + 1) + '/' + part.bars + '  step ' + (pos.step + 1) + '/' + part.len, MR_X, 78, COL.white);
     part.layers.forEach((layer, k) => {
-      const y = 94 + k * 26, n = layer.ev.length, at = (pos.step + (layer.off || 0)) % n;
-      drawText(VOICE_LABEL[layer.voice] + '  loops every ' + n + (layer.trem ? '  (tremolo)' : ''), MR_X, y, COL.barText);
+      const gap = part.layers.length > 5 ? 19 : 26, y = 94 + k * gap, n = layer.ev.length, at = (pos.step + (layer.off || 0)) % n;
+      drawText((layer.label || VOICE_LABEL[layer.voice]) + '  loops every ' + n + (layer.trem ? '  (tremolo)' : ''), MR_X, y, COL.barText);
       const show = Math.min(n, 32), first = n > 32 ? Math.floor(at / 32) * 32 : 0;
       for (let c = 0; c < show && first + c < n; c++) {
         const ev = layer.ev[first + c], x = MR_X + c * 8;
         ctx.fillStyle = first + c === at ? '#ffd84a' : ev ? (ev.quarter || ev.bend || ev.snap || ev.wob ? '#ff7a59' : ev.arp ? '#b07ad0' : ev.chirp ? '#7dff9a' : ev.drum === 'g' ? '#3e4a78' : '#5a8ad8') : '#2e2c44';
-        ctx.fillRect(x, y + 11, 7, ev && ev.acc ? 10 : 7);
+        ctx.fillRect(x, y + 10, 7, ev && ev.acc ? 8 : 6);
       }
     });
   }
@@ -5787,6 +5839,17 @@ function runSelfTest() {
   const t2Err = [];
   { const keep = { theme: activeThemeKey, stored: storedTheme, players: MUS.players, cur: MUS.cur };
     activeThemeKey = 'theme1';
+    // signature sounds: under Theme 1 every other song gets the bell and chirps; under Theme 2 nothing is added
+    const others = logicalSongs().filter(n => !MainThemes.theme1.songs[n]);
+    for (const n of others) {
+      const pts = Object.values(compileSong(n).parts), sig = pts.filter(pt => pt.layers.some(l => l.sig));
+      if (!sig.length) t2Err.push(n + ' has no signature sounds');
+      for (const pt of sig) for (const l of pt.layers.filter(x => x.sig)) if (l.ev.length !== l.loopLength || !l.ev.some(Boolean) && l.voice === 'p2') t2Err.push(n + ' signature layer');
+      for (const pt of pts) if (pt.layers.length > 7) t2Err.push(n + ' has more than 7 layers');
+    }
+    activeThemeKey = 'theme2';
+    for (const n of logicalSongs()) if (Object.values(compileSong(n).parts).some(pt => pt.layers.some(l => l.sig || (l.ev || []).some(e => e && e.snap)))) t2Err.push(n + ' changed under Theme 2');
+    activeThemeKey = 'theme1';
     const s2 = compileSong('titleK'), secs = {};
     s2.form.forEach(k => { const c = k[0]; secs[c] = secs[c] || [0, 0]; secs[c][0] += s2.parts[k].bars; secs[c][1] += s2.parts[k].len; });
     const plan = { A: [4, 28], B: [8, 56], C: [8, 56], D: [2, 15], E: [16, 128], F: [2, 14] };
@@ -6122,6 +6185,13 @@ function devView(v) {
     G.party.forEach((q, k) => { q.acc = { kind: ACC_ORDER[1 + k % 5], color: k % 6 }; });
     G.party[0].nick = 'WWWWWWWWWW';
     push(new PartyScreen(() => {}, { title: 'Your pets' }));
+  }
+  else if (v === 'signature') {   // what Theme 1's signature sounds add to each song
+    activeThemeKey = 'theme1';
+    const lines = logicalSongs().filter(n => !MainThemes.theme1.songs[n]).map(n => { const sg = compileSong(n); return n + ': ' + sg.form.filter((k, i, a) => a.indexOf(k) === i).map(k => {
+      const b = sg.parts[k].layers.find(l => l.sig && l.voice === 'p2'), lead = sg.parts[k].layers.find(l => l.voice === 'p1' && l.ev.some(e => e && e.q));
+      return k + (b ? (lead ? ' doubled' : ' bell at bar ' + (Math.floor(b.ev.findIndex(Boolean) / sg.parts[k].barSteps) + 1)) : ' none'); }).join(', '); });
+    document.getElementById('testout').textContent = 'SIGNATURE\n' + lines.join('\n');
   }
   else if (v === 'events') {   // every song's note events for 2 full loops, as JSON (the golden snapshot in tests/golden is made from this)
     document.getElementById('testout').textContent = 'EVENTS ' + JSON.stringify(songEventDump());

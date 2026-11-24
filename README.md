@@ -89,6 +89,7 @@ Every sound in Pet Adventures is made on the spot by a tracker-style synthesizer
 - **Two main themes.** A main theme is a title track plus a five-note melody that every other song quotes. Switch between them in the pause menu (**Music Theme**) or with **T** in the Jukebox, and the whole soundtrack changes its quotes at once with a smooth crossfade.
   - **Theme 1** (default) is a 70-second piece in klezmer mode on D. A choppy 7/8 riff with quarter-tone "snap" bends and tremolo locks in with the drums, stretches over a 14-beat cycle, then settles into a danceable 4/4 groove. There the layers stack like a looper pedal, the 7-beat riff slides against the 8-beat bars (lining up again every 7 bars), and little pet chirps (yip, mew, squeak) answer the melody.
   - **Theme 2** is the original: E G D A G, in a 7/8 title track.
+  - Under Theme 1, every other song carries its signature sounds: a bell doubles the melody quote an octave up with snap bends, a pet chirp answers it, and the quote returns in the song's other sections where it fits the harmony.
   - Add `?theme=theme2` or `?theme=theme1` to the address to pick one directly.
 - **Expressive notes:** accents, held notes, vibrato, tracker arpeggios, quarter-tones, three kinds of pitch bend, tremolo, tom fills and FM pet voices.
 - **Studio-style output:**
