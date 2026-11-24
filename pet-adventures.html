@@ -1060,7 +1060,7 @@ function buildAllSprites() {
 // ---------------------------------------------------------------------
 // 4. AUDIO (Web Audio: synthesized SFX + tiny step sequencer)
 // ---------------------------------------------------------------------
-const Snd = { ac: null, master: null, sfx: null, musicBus: null, duck: null, muted: false, noiseBuf: null };
+const Snd = { ac: null, master: null, sfx: null, musicIn: null, musicBus: null, duck: null, muted: false, noiseBuf: null };
 function audioUnlock() {
   try {
     if (!Snd.ac) {
@@ -1068,13 +1068,18 @@ function audioUnlock() {
       if (!AC) return;
       Snd.ac = new AC();
       const ac = Snd.ac;
-      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 9000;   // no harsh highs
+      Snd.master = ac.createGain(); Snd.master.gain.value = Snd.muted ? 0 : 1; Snd.master.connect(ac.destination);   // M mutes everything
+      // 8-bit sound effects: square/noise blips with their own gentle 9 kHz lowpass
+      const sfxLP = ac.createBiquadFilter(); sfxLP.type = 'lowpass'; sfxLP.frequency.value = 9000; sfxLP.connect(Snd.master);
+      Snd.sfx = ac.createGain(); Snd.sfx.gain.value = 0.32; Snd.sfx.connect(sfxLP);
+      // 16-bit music: voices -> lowpass 11 kHz -> compressor -> gain 0.18 (N toggles) -> duck under SFX -> master
+      Snd.musicIn = ac.createGain();
+      const musLP = ac.createBiquadFilter(); musLP.type = 'lowpass'; musLP.frequency.value = 11000;
       const comp = ac.createDynamicsCompressor();
-      Snd.master = ac.createGain(); Snd.master.gain.value = Snd.muted ? 0 : 1;
-      Snd.master.connect(lp); lp.connect(comp); comp.connect(ac.destination);
-      Snd.sfx = ac.createGain(); Snd.sfx.gain.value = 0.32; Snd.sfx.connect(Snd.master);
-      Snd.duck = ac.createGain(); Snd.duck.gain.value = 1; Snd.duck.connect(Snd.master);
-      Snd.musicBus = ac.createGain(); Snd.musicBus.gain.value = MUS.musicOn ? 0.18 : 0; Snd.musicBus.connect(Snd.duck);
+      comp.threshold.value = -14; comp.knee.value = 10; comp.ratio.value = 3; comp.attack.value = 0.008; comp.release.value = 0.2;   // glue, but let attacks punch through
+      Snd.musicBus = ac.createGain(); Snd.musicBus.gain.value = MUS.musicOn ? 0.18 : 0;
+      Snd.duck = ac.createGain(); Snd.duck.gain.value = 1;
+      Snd.musicIn.connect(musLP); musLP.connect(comp); comp.connect(Snd.musicBus); Snd.musicBus.connect(Snd.duck); Snd.duck.connect(Snd.master);
       const len = Snd.ac.sampleRate * 0.5;
       Snd.noiseBuf = Snd.ac.createBuffer(1, len, Snd.ac.sampleRate);
       const d = Snd.noiseBuf.getChannelData(0);
@@ -1095,18 +1100,25 @@ function tone(freq, dur, type = 'square', vol = 0.3, when = 0, slideTo = 0, dest
   const o = ac.createOscillator(), g = ac.createGain();
   o.type = type; o.frequency.setValueAtTime(freq, t);
   if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
-  g.gain.setValueAtTime(vol, t);
-  g.gain.linearRampToValueAtTime(vol * 0.6, t + dur * 0.5);
-  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-  o.connect(g); g.connect(dest || Snd.sfx); o.start(t); o.stop(t + dur + 0.03);
+  const mid = t + Math.max(0.006, dur * 0.5), end = t + dur + 0.008;
+  g.gain.isEnv = true;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(vol, t + 0.005);
+  g.gain.linearRampToValueAtTime(vol * 0.6, mid);
+  g.gain.linearRampToValueAtTime(0, Math.max(end, mid + 0.005));
+  o.connect(g); g.connect(dest || Snd.sfx); o.start(t); o.stop(Math.max(end, mid + 0.005) + 0.005);
+  registerNodes(t, Math.max(end, mid + 0.005) + 0.005, [o, g], o);
 }
 function noise(dur, vol = 0.3, when = 0, freq = 1800, dest = null) {
   const ac = Snd.ac; if (!ac || !Snd.noiseBuf) return;
   const t = ac.currentTime + Math.max(0, when);
   const s = ac.createBufferSource(); s.buffer = Snd.noiseBuf;
   const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = freq;
-  const g = ac.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-  s.connect(f); f.connect(g); g.connect(dest || Snd.sfx); s.start(t); s.stop(t + dur + 0.03);
+  const g = ac.createGain(), end = t + Math.max(dur, 0.012);
+  g.gain.isEnv = true;
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.005); g.gain.linearRampToValueAtTime(0, end);
+  s.connect(f); f.connect(g); g.connect(dest || Snd.sfx); s.start(t); s.stop(end + 0.005);
+  registerNodes(t, end + 0.005, [s, f, g], s);
 }
 const SFX = {
   grass()    { noise(0.08, 0.25, 0, 3200); },
@@ -1181,12 +1193,14 @@ const SONGS = {
       A: { bars: 4, layers: [
         L('noise', '>k g s h k k r | k h s k g s h', 14),
         L('tri', 'C3 . G2 C3 A2 . A3 | F2 . C3 F3 G2 . G3', 14),
+        L('pad', 'C4:47- . . . . . . | F3:47- . . . . . .', 14),
         L('p2', 'C5 E5 G5 C6 G5 E5 G5 | F5 A5 C6 F5 C6 A5 C6', 14),
         L('p1', 'E5 . G5 . D5 . A5- | . . G5- . . . . | C6 . A5 . G5 . E5 | D5- . . . . . .', 28),
       ] },
       B: { bars: 4, layers: [
         L('noise', '>k g s h k k r | k h s k g s h', 14),
         L('tri', 'A2 . E3 A2 F2 . F3 | G2 . D3 G2 G2 . D3', 14),
+        L('pad', 'A3:37- . . . . . . | G3:47- . . . . . .', 14),
         L('p2', 'A4 C5 E5 A5 E5 C5 E5 | G4 B4 D5 G5 D5 B4 D5', 14),
         L('p1', 'A5 . C6 . G5 . E5- | . . D5 . E5 . G5 | A5 . G5 . E5 . D5 | G5- . . . . . .', 28),
       ] },
@@ -1199,12 +1213,14 @@ const SONGS = {
       A: { bars: 6, layers: [
         L('noise', '>k g h k s g h . | k . h k r h h g', 16),
         L('tri', 'F2 . F2 C3 . F2 . C3 | G2 . G2 D3 . G2 . B2', 16),
+        L('pad', 'F3:47- . . . . . . . | G3:47- . . . . . . .', 16),
         L('p2', 'A4 C5 E5', 3),
         L('p1', 'A4 . C5 . G4 . D5- . | . . C5- . . . . . | F5 . E5 . D5 . C5 . | B4 . C5 . D5- . . . | E5 . D5 . C5 . A4 . | G4- . . . . . . .', 48, { duty: 0.25 }),
       ] },
       B: { bars: 6, layers: [
         L('noise', '>k g h k s g h . | k . h k r h h g', 16),
         L('tri', 'D3 . D3 A2 . D3 . A2 | C3 . C3 G2 . C3 . E3', 16),
+        L('pad', 'D3:37- . . . . . . . | C3:47- . . . . . . .', 16),
         L('p2', 'F4 A4 C5', 3),
         L('p1', 'D5 . F5 . E5 . C5 . | D5- . . . A4 . C5 . | C5 . E5 . G5 . E5 . | D5 . C5 . G4- . . . | A4 . C5 . G4 . D5 . | C5- . . . . . . .', 48, { duty: 0.25 }),
       ] },
@@ -1263,11 +1279,13 @@ const SONGS = {
     parts: {
       A: { bars: 8, layers: [
         L('tri', 'C3 . . . . . | G2 . . . . .', 12),
+        L('pad', 'C4:47- . . . . . | G3:47- . . . . .', 12),
         L('p2', 'C5 . . G4 . .', 6, { duty: 0.5 }),
         L('p1', 'E5 . G5 . D5 . | A5 . G5- . . . | C6 . B5 . G5 . | A5 . E5- . . .', 24, { duty: 0.125 }),
       ] },
       B: { bars: 8, layers: [
         L('tri', 'F2 . . . . . | G2 . . . . .', 12),
+        L('pad', 'F3:47- . . . . . | G3:47- . . . . .', 12),
         L('p2', 'F4 . . A4 . . | G4 . . B4 . .', 12, { duty: 0.5 }),
         L('p1', 'F5 . A5 . E5 . | D5 . C5- . . . | B4 . D5 . G5 . | E5- . . . . .', 24, { duty: 0.125 }),
       ] },
@@ -1374,18 +1392,21 @@ const SONGS = {
       A: { bars: 4, layers: [
         L('noise', '>k g h k s g h . | k . h k r h h g', 16),
         L('tri', 'C3 . C3 G2 . C3 . G2 | F2 . F2 C3 . G2 . G2', 16),
+        L('pad', 'C4:47- . . . . . . . | F3:47- . . . G3:47- . . .', 16),
         L('p2', 'C5 E5 G5 E5 C5 E5 G5 E5 | A4 C5 F5 C5 B4 D5 G5 D5', 16),
         L('p1', 'E5 . G5 . D5 . A5 . | G5- . . . . . . . | C6 . A5 . G5 . E5 . | D5- . . . . . . .', 32),
       ] },
       B: { bars: 4, barSteps: 7, meter: '7/8 (2+2+3)', layers: [
         L('noise', '>k h s h k h s', 7),
         L('tri', 'C3 . G2 . C3 . . | F2 . G2 . G2 . .', 14),
+        L('pad', 'C4:47- . . . . . . | F3:47- . . G3:47- . . .', 14),
         L('p2', 'C5 E5 G5 C5 E5 G5 E5 | A4 C5 F5 B4 D5 G5 D5', 14),
         L('p1', 'E5 . G5 . D5 . A5 | G5- . . . . . . | C6 . A5 . G5 . E5 | D5- . . . . . .', 28),
       ] },
       C: { bars: 4, layers: [
         L('noise', '>k g h k s g h k | g h k . r h s s', 16),
         L('tri', 'C3 . C3 G2 . C3 A2 . | F2 . F2 C3 . G2 G3 G2', 16),
+        L('pad', 'C4:47- . . . A3:37- . . . | F3:47- . . . G3:47- . . .', 16),
         L('p2', 'C5:47- . . . C5:47- . G5:47- . | F5:47- . . . G5:47- . . .', 16, { duty: 0.125 }),
         L('p1', 'C6 . G5 . E5 . G5 . | A5 . G5 . E5 . D5 . | E5 . G5 . D5 . A5 . | >C6- . . . . . . .', 32),
       ] },
@@ -1464,6 +1485,8 @@ const SONGS = {
     },
   },
 };
+SONGS.title.echo = 0.35; SONGS.woods.echo = 0.4; SONGS.interior.echo = 0.35;   // echo only where it suits (never battles)
+const PAD_SONGS = ['title', 'town', 'interior', 'win'];
 const MUSIC_ALIAS = { hero: 'title', trainer: 'battle', boss: 'champion' };
 const QUARTER_TONE_SONGS = ['woods', 'champion'];
 const STING = ['E5', 'G5', 'D6'];   // the first three motif notes, used as the battle "encounter sting"
@@ -1500,7 +1523,7 @@ function compileLayer(layer) {
     let dur = 1;
     if (hold) while (i + dur < toks.length && toks[i + dur] === '.') dur++;
     const arp = m[6] ? [0, parseInt(m[6], 16), parseInt(m[7], 16)] : null;
-    if (arp && layer.voice !== 'p1' && layer.voice !== 'p2') errors.push('arpeggio on ' + layer.voice);
+    if (arp && !['p1', 'p2', 'pad'].includes(layer.voice)) errors.push('arpeggio on ' + layer.voice);
     ev[i] = { f, acc: !!m[1], dur, hold, arp, quarter: !!m[5], bend: fx.includes('/'), vib: fx.includes('~') };
   });
   return { ev, errors };
@@ -1515,7 +1538,7 @@ function compileSong(name) {
     parts[k] = { len: p.bars * barSteps, bars: p.bars, barSteps, meter: p.meter || s.meter,
       layers: p.layers.map(l => Object.assign({}, l, { ev: compileLayer(l).ev })) };
   }
-  return (compiledSongs[name] = { name, title: s.title, bpm: s.bpm, sd: 60 / s.bpm / s.spb, oneShot: !!s.oneShot, form: s.form.split(' '), parts });
+  return (compiledSongs[name] = { name, title: s.title, bpm: s.bpm, sd: 60 / s.bpm / s.spb, oneShot: !!s.oneShot, echo: s.echo || 0, form: s.form.split(' '), parts });
 }
 
 // ---- scheduler core (pure: works on a time number, plays through an emit callback) ----
@@ -1589,13 +1612,76 @@ function prunePlayers(now) {
   MUS.players = MUS.players.filter(pl => {
     const dead = (pl.stopAt !== undefined && now > pl.stopAt + 0.25) || (pl.done && now > pl.next + 1.5);
     if (dead && pl.gain) { try { pl.gain.disconnect(); } catch (e) { /* already gone */ } }
+    if (dead && pl.echo) { pl.echo.nodes.forEach(nd => { try { nd.disconnect(); } catch (e) { /* gone */ } }); pl.echo.entry.t1 = now; }
     return !dead;
   });
   if (MUS.cur && !MUS.players.includes(MUS.cur)) MUS.cur = null;
 }
 function audiblePlayers(now) { return MUS.players.filter(pl => !pl.done && (pl.stopAt === undefined || pl.stopAt > now)); }
 
-// ---- audio output: the four chip voices ----
+// ---- audio output: a 16-bit FM sound chip ----
+// The song data is unchanged; the voices are mapped: PULSE 1 -> FM LEAD, PULSE 2 -> FM ARP,
+// TRIANGLE -> FM BASS, NOISE -> gated KICK/SNARE/HAT, plus a PAD voice (detuned saws) for calm songs.
+// Every note fades in and out over at least 5 ms (no clicks), and finished notes are disconnected.
+// We keep count of live audio nodes and skip low-priority notes rather than go far past ~40.
+const NODE_CAP = 40;
+const NODES = { list: [], peak: 0, skipped: 0 };
+function aliveAt(t) { let n = 0; for (const e of NODES.list) if (e.t0 <= t + 1e-9 && e.t1 > t) n += e.n; return n; }
+function pruneNodeList(now) { NODES.list = NODES.list.filter(e => e.t1 > now - 0.05); }
+function registerNodes(t0, t1, nodes, src) {
+  NODES.list.push({ t0, t1, n: nodes.length });
+  NODES.peak = Math.max(NODES.peak, aliveAt(t0));
+  if (src) src.onended = () => { for (const nd of nodes) { try { nd.disconnect(); } catch (e) { /* gone */ } } };
+}
+function roomFor(t, need, priority) {
+  if (aliveAt(t) + need <= NODE_CAP + (priority ? 4 : 0)) return true;
+  NODES.skipped++; return false;
+}
+// Volume envelope: 0 -> peak (>= 5 ms), settle toward a sustain level, then back to 0 (>= 5 ms).
+function envelope(g, t, peak, len, o = {}) {
+  const a = Math.max(0.005, o.attack || 0.005), rel = Math.max(0.03, o.release || 0.03), off = t + Math.max(len, a + 0.001);
+  g.isEnv = true;
+  g.setValueAtTime(0, t);
+  g.linearRampToValueAtTime(peak, t + a);
+  if (o.sustain !== undefined && o.sustain !== 1) g.setTargetAtTime(peak * o.sustain, t + a, o.decay || 0.08);
+  g.setTargetAtTime(0, off, rel / 6);
+  return off + rel;
+}
+// Gated "16-bit" drum envelope: 0 -> peak in 5 ms, hold, then a quick (>= 5 ms) cut.
+function gateEnv(g, t, peak, hold, rel = 0.01) {
+  g.isEnv = true;
+  g.setValueAtTime(0, t); g.linearRampToValueAtTime(peak, t + 0.005);
+  g.setValueAtTime(peak, t + Math.max(hold, 0.006)); g.linearRampToValueAtTime(0, t + Math.max(hold, 0.006) + Math.max(rel, 0.005));
+  return t + Math.max(hold, 0.006) + Math.max(rel, 0.005) + 0.005;
+}
+// Two-operator FM: modulator osc -> depth gain -> carrier frequency. The index (depth) envelope makes notes bite, then mellow.
+const FM_VOICES = {
+  p1:  { vol: 0.24, i0: 3.0, i1: 1.0, idec: 0.15, sustain: 0.75, decay: 0.12 },   // FM LEAD: bright bite, then mellow
+  p2:  { vol: 0.15, i0: 2.2, i1: 0.25, idec: 0.12, sustain: 0.05, decay: 0.16 },  // FM ARP: glassy bell / pluck
+  tri: { vol: 0.42, i0: 5.0, i1: 1.2, idec: 0.05, sustain: 0.8, decay: 0.2 },     // FM BASS: growly, punchy
+};
+function fmRatio(layer) {
+  if (layer.voice === 'p2') return layer.duty === 0.5 ? 2 : layer.duty === 0.25 ? 3.5 : 7;   // warm harmony, or a glassy 3.5/7 bell
+  if (layer.voice === 'p1') return layer.duty === 0.125 ? 2 : 1;
+  return 1;
+}
+// ---- Sound styles: pick the voices per channel. "Mix" keeps the 8-bit punch (pulse lead and tapping arps,
+// snappy noise drums) and adds the 16-bit fullness where it helps (FM bass, a sine kick, a light echo).
+const STYLES = {
+  '8bit':  { name: '8-bit', lead: 'pulse', arp: 'pulse', bass: 'tri', drums: 'chip', kick: 'tri',  pad: false, echo: 0 },
+  'mix':   { name: 'Mix',   lead: 'pulse', arp: 'pulse', bass: 'fm',  drums: 'chip', kick: 'sine', pad: false, echo: 0.6 },
+  '16bit': { name: '16-bit', lead: 'fm',   arp: 'fm',    bass: 'fm',  drums: 'gated', kick: 'sine', pad: true, echo: 1 },
+};
+const STYLE_ORDER = ['8bit', 'mix', '16bit'];
+MUS.style = 'mix';
+function setSoundStyle(k) {
+  if (!STYLES[k]) return;
+  MUS.style = k;
+  try { const s = storage(); if (s) s.setItem('petAdventures.settings.v1', JSON.stringify({ style: k })); } catch (e) { /* no storage */ }
+}
+function loadSoundStyle() {
+  try { const s = storage(), d = s && JSON.parse(s.getItem('petAdventures.settings.v1') || '{}'); if (d && STYLES[d.style]) MUS.style = d.style; } catch (e) { /* defaults */ }
+}
 const pulseWaves = {};
 function pulseWave(duty) {
   if (!pulseWaves[duty]) {
@@ -1605,62 +1691,161 @@ function pulseWave(duty) {
   }
   return pulseWaves[duty];
 }
-const VOICE_VOL = { p1: 0.34, p2: 0.2, tri: 0.55 };
+// 8-bit pulse voice (12.5/25/50% duty): punchy envelope, arpeggios, bends, vibrato.
+function playPulse(layer, ev, t, sd, dest) {
+  const ac = Snd.ac, acc = ev.acc ? 1.35 : 1, lead = layer.voice === 'p1';
+  const len = ev.hold ? ev.dur * sd * 0.96 : sd * 0.72;
+  const vib = ev.vib && lead;
+  if (!roomFor(t, vib ? 4 : 2, lead)) return;
+  const o = ac.createOscillator(), g = ac.createGain(), v = (lead ? 0.3 : 0.18) * acc;
+  o.setPeriodicWave(pulseWave(layer.duty || (lead ? 0.25 : 0.125)));
+  g.gain.isEnv = true;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(v, t + 0.005);
+  g.gain.linearRampToValueAtTime(v * 0.6, t + Math.max(0.01, Math.min(0.08, len * 0.5)));
+  g.gain.setValueAtTime(v * 0.6, t + Math.max(len, 0.011));
+  g.gain.linearRampToValueAtTime(0, t + Math.max(len, 0.011) + 0.02);
+  const end = t + Math.max(len, 0.011) + 0.025;
+  o.frequency.setValueAtTime(ev.bend ? ev.f * Math.pow(2, -0.5 / 12) : ev.f, t);
+  if (ev.bend) o.frequency.linearRampToValueAtTime(ev.f, t + Math.min(0.09, len * 0.6));
+  if (ev.arp) for (let k = 1, tt = t + sd / 4; tt < t + len; k++, tt += sd / 4) o.frequency.setValueAtTime(ev.f * Math.pow(2, ev.arp[k % 3] / 12), tt);
+  const nodes = [o, g];
+  if (vib) { const lfo = ac.createOscillator(), lg = ac.createGain(); lfo.frequency.value = 6; lg.gain.value = ev.f * 0.012; lfo.connect(lg); lg.connect(o.frequency); lfo.start(t + 0.08); lfo.stop(end); nodes.push(lfo, lg); }
+  o.connect(g); g.connect(dest); o.start(t); o.stop(end);
+  registerNodes(t, end, nodes, o);
+}
+// 8-bit triangle bass: on/off with 5 ms edges, no velocity.
+function playTriangle(ev, t, sd, dest) {
+  if (!roomFor(t, 2, true)) return;
+  const ac = Snd.ac, len = ev.hold ? ev.dur * sd * 0.96 : sd * 0.72;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = 'triangle'; o.frequency.setValueAtTime(ev.f, t);
+  g.gain.isEnv = true;
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.55, t + 0.005);
+  g.gain.setValueAtTime(0.55, t + Math.max(len, 0.006)); g.gain.linearRampToValueAtTime(0, t + Math.max(len, 0.006) + 0.006);
+  const end = t + Math.max(len, 0.006) + 0.01;
+  o.connect(g); g.connect(dest); o.start(t); o.stop(end);
+  registerNodes(t, end, [o, g], o);
+}
+// 8-bit drums: snappy noise bursts and a fast pitch-drop kick (triangle in 8-bit, sine in Mix).
+function playDrumChip(kind, t, acc, dest, kickWave) {
+  const ac = Snd.ac;
+  const burst = (dur, vol, type, freq) => {
+    if (!roomFor(t, 3, false)) return;
+    const s = ac.createBufferSource(); s.buffer = Snd.noiseBuf;
+    const fl = ac.createBiquadFilter(); fl.type = type; fl.frequency.value = freq;
+    const g = ac.createGain(); g.gain.isEnv = true;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol * acc, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.001, t + Math.max(dur, 0.012)); g.gain.linearRampToValueAtTime(0, t + Math.max(dur, 0.012) + 0.005);
+    const end = t + Math.max(dur, 0.012) + 0.01;
+    s.connect(fl); fl.connect(g); g.connect(dest); s.start(t); s.stop(end);
+    registerNodes(t, end, [s, fl, g], s);
+  };
+  if (kind === 'k') {
+    if (roomFor(t, 2, true)) {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = kickWave; o.frequency.setValueAtTime(kickWave === 'sine' ? 170 : 190, t); o.frequency.exponentialRampToValueAtTime(44, t + 0.055);
+      g.gain.isEnv = true;
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.95 * acc, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.13); g.gain.linearRampToValueAtTime(0, t + 0.135);
+      o.connect(g); g.connect(dest); o.start(t); o.stop(t + 0.14);
+      registerNodes(t, t + 0.14, [o, g], o);
+    }
+    burst(0.03, 0.35, 'lowpass', 500);
+  } else if (kind === 's') burst(0.11, 0.42, 'highpass', 1200);
+  else if (kind === 'g') burst(0.018, 0.07, 'highpass', 6500);
+  else if (kind === 'r') burst(0.028, 0.32, 'bandpass', 3600);
+  else burst(0.03, 0.14, 'highpass', 7000);
+}
 function playChipEvent(layer, ev, t, sd, pl) {
   const ac = Snd.ac; if (!ac || !pl.gain) return;
-  const dest = pl.gain, acc = ev.acc ? 1.35 : 1;
-  if (layer.voice === 'noise') return playDrum(ev.drum, t, acc, dest);
-  const len = ev.hold ? ev.dur * sd * 0.96 : sd * 0.72;
-  const o = ac.createOscillator(), g = ac.createGain();
-  const v = VOICE_VOL[layer.voice] * (layer.voice === 'tri' ? 1 : acc);   // like real chips, the triangle has no velocity
-  if (layer.voice === 'tri') {
-    o.type = 'triangle';
-    // On/off like a real triangle channel, but with a 3-5 ms edge so a note never stops
-    // halfway through a wave (an instant cut there makes an audible pop on low bass notes).
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(v, t + 0.003);
-    g.gain.setValueAtTime(v, t + len);
-    g.gain.linearRampToValueAtTime(0, t + len + 0.005);
-  } else {
-    o.setPeriodicWave(pulseWave(layer.duty || (layer.voice === 'p1' ? 0.25 : 0.125)));
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(v, t + 0.004);
-    g.gain.linearRampToValueAtTime(v * 0.6, t + Math.min(0.08, len * 0.5));
-    g.gain.setValueAtTime(v * 0.6, t + len);
-    g.gain.linearRampToValueAtTime(0, t + len + 0.02);
+  const dest = pl.gain, S = STYLES[MUS.style] || STYLES.mix;
+  if (layer.voice === 'noise') return S.drums === 'gated' ? playDrum(ev.drum, t, ev.acc ? 1.3 : 1, dest) : playDrumChip(ev.drum, t, ev.acc ? 1.3 : 1, dest, S.kick);
+  if (layer.voice === 'pad') return S.pad ? playPad(ev, t, sd, dest) : undefined;
+  if (layer.voice === 'tri' && S.bass === 'tri') return playTriangle(ev, t, sd, dest);
+  if ((layer.voice === 'p1' && S.lead === 'pulse') || (layer.voice === 'p2' && S.arp === 'pulse')) return playPulse(layer, ev, t, sd, dest);
+  return playFM(layer, ev, t, sd, dest);
+}
+function playFM(layer, ev, t, sd, dest) {
+  const ac = Snd.ac;
+  const V = FM_VOICES[layer.voice], acc = ev.acc ? 1.25 : 1, ratio = fmRatio(layer);
+  const len = ev.hold ? ev.dur * sd * 0.96 : sd * 0.8;
+  const vib = ev.vib && layer.voice === 'p1';
+  if (!roomFor(t, vib ? 6 : 4, layer.voice !== 'p2')) return;
+  const car = ac.createOscillator(), mod = ac.createOscillator(), depth = ac.createGain(), amp = ac.createGain();
+  car.type = 'sine'; mod.type = 'sine';
+  const f0 = ev.bend ? ev.f * Math.pow(2, -0.5 / 12) : ev.f;
+  car.frequency.setValueAtTime(f0, t); mod.frequency.setValueAtTime(f0 * ratio, t);
+  if (ev.bend) { const tb = t + Math.min(0.09, len * 0.6); car.frequency.linearRampToValueAtTime(ev.f, tb); mod.frequency.linearRampToValueAtTime(ev.f * ratio, tb); }
+  if (ev.arp) for (let k = 1, tt = t + sd / 4; tt < t + len; k++, tt += sd / 4) {
+    const fa = ev.f * Math.pow(2, ev.arp[k % 3] / 12); car.frequency.setValueAtTime(fa, tt); mod.frequency.setValueAtTime(fa * ratio, tt);
   }
-  o.frequency.setValueAtTime(ev.bend ? ev.f * Math.pow(2, -0.5 / 12) : ev.f, t);
-  if (ev.arp) for (let k = 1, tt = t + sd / 4; tt < t + len; k++, tt += sd / 4) o.frequency.setValueAtTime(ev.f * Math.pow(2, ev.arp[k % 3] / 12), tt);
-  if (ev.bend) o.frequency.linearRampToValueAtTime(ev.f, t + Math.min(0.09, len * 0.6));
-  if (ev.vib && layer.voice === 'p1') {
+  const DMAX = 2500;   // cap the FM swing so high glassy notes stay sweet instead of harsh/aliased
+  depth.gain.setValueAtTime(Math.min(V.i0 * ev.f * ratio, DMAX), t);
+  depth.gain.setTargetAtTime(Math.min(V.i1 * ev.f * ratio, DMAX), t, V.idec);
+  const end = envelope(amp.gain, t, V.vol * acc, layer.voice === 'p2' ? Math.min(len, 0.45) : len, { sustain: V.sustain, decay: V.decay });
+  mod.connect(depth); depth.connect(car.frequency); car.connect(amp); amp.connect(dest);
+  const nodes = [car, mod, depth, amp];
+  if (vib) {
     const lfo = ac.createOscillator(), lg = ac.createGain();
     lfo.frequency.value = 6; lg.gain.value = ev.f * 0.012;
-    lfo.connect(lg); lg.connect(o.frequency); lfo.start(t + 0.08); lfo.stop(t + len + 0.05);
+    lfo.connect(lg); lg.connect(car.frequency); lfo.start(t + 0.08); lfo.stop(end);
+    nodes.push(lfo, lg);
   }
-  o.connect(g); g.connect(dest);
-  o.start(t); o.stop(t + len + 0.05);
+  mod.start(t); car.start(t); mod.stop(end); car.stop(end);
+  registerNodes(t, end, nodes, car);
+}
+// PAD: two slightly detuned saws per chord note, through one soft lowpass. Chords use the ":xy" notation.
+function playPad(ev, t, sd, dest) {
+  const ac = Snd.ac, tones = ev.arp ? [0, ev.arp[1], ev.arp[2]] : [0];
+  if (!roomFor(t, tones.length * 2 + 2, false)) return;
+  const lp = ac.createBiquadFilter(), amp = ac.createGain();
+  lp.type = 'lowpass'; lp.frequency.value = 1300; lp.Q.value = 0.5;
+  const end = envelope(amp.gain, t, 0.06, (ev.hold ? ev.dur : 1) * sd, { attack: 0.25, release: 0.45 });
+  const nodes = [lp, amp];
+  let last = null;
+  for (const st of tones) for (const det of [-7, 7]) {
+    const o = ac.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(ev.f * Math.pow(2, st / 12), t); o.detune.setValueAtTime(det, t);
+    o.connect(lp); o.start(t); o.stop(end); nodes.push(o); last = o;
+  }
+  lp.connect(amp); amp.connect(dest);
+  registerNodes(t, end, nodes, last);
 }
 function playDrum(kind, t, acc, dest) {
   const ac = Snd.ac;
-  const burst = (dur, vol, type, freq) => {
+  const noiseHit = (vol, type, freq, hold, q) => {
+    if (!roomFor(t, 3, false)) return;
     const s = ac.createBufferSource(); s.buffer = Snd.noiseBuf;
-    const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq;
-    const g = ac.createGain(); g.gain.setValueAtTime(vol * acc, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    s.connect(f); f.connect(g); g.connect(dest); s.start(t); s.stop(t + dur + 0.02);
+    const fl = ac.createBiquadFilter(); fl.type = type; fl.frequency.value = freq; if (q) fl.Q.value = q;
+    const g = ac.createGain(), end = gateEnv(g.gain, t, vol * acc, hold);
+    s.connect(fl); fl.connect(g); g.connect(dest); s.start(t); s.stop(end);
+    registerNodes(t, end, [s, fl, g], s);
   };
-  if (kind === 'k') {   // punchy chip kick: a very fast pitch drop on a triangle wave, plus a low noise thump
+  if (kind === 'k') {   // sine pitch-drop kick, gated
+    if (!roomFor(t, 2, true)) return;
     const o = ac.createOscillator(), g = ac.createGain();
-    o.type = 'triangle'; o.frequency.setValueAtTime(190, t); o.frequency.exponentialRampToValueAtTime(46, t + 0.05);
-    g.gain.setValueAtTime(0.9 * acc, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
-    o.connect(g); g.connect(dest); o.start(t); o.stop(t + 0.15);
-    burst(0.03, 0.35, 'lowpass', 500);
-  } else if (kind === 's') burst(0.11, 0.42, 'highpass', 1200);
-  else if (kind === 'g') burst(0.018, 0.07, 'highpass', 6500);         // ghost note: a tiny snappy tick
-  else if (kind === 'r') burst(0.028, 0.32, 'bandpass', 3600);         // rimshot: short, high and crisp
-  else burst(0.03, 0.14, 'highpass', 7000);
+    o.type = 'sine'; o.frequency.setValueAtTime(165, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.06);
+    const end = gateEnv(g.gain, t, 0.95 * acc, 0.09, 0.02);
+    o.connect(g); g.connect(dest); o.start(t); o.stop(end);
+    registerNodes(t, end, [o, g], o);
+  } else if (kind === 's') noiseHit(0.5, 'bandpass', 1900, 0.07, 0.7);   // filtered-noise snare
+  else if (kind === 'h') noiseHit(0.16, 'highpass', 8000, 0.022);         // short hat
+  else if (kind === 'g') noiseHit(0.07, 'highpass', 7000, 0.012);         // ghost note
+  else if (kind === 'r') noiseHit(0.3, 'bandpass', 3600, 0.018, 2);       // rimshot
+}
+// One feedback echo (~1/8 note, feedback 0.3, lowpassed) as a send, for the songs that ask for it.
+function addEcho(pl, ac, now) {
+  if (!pl.song.echo || !(STYLES[MUS.style] || STYLES.mix).echo) return;
+  const send = ac.createGain(), dl = ac.createDelay(1), fb = ac.createGain(), lp = ac.createBiquadFilter();
+  send.gain.value = pl.song.echo * (STYLES[MUS.style] || STYLES.mix).echo; dl.delayTime.value = pl.song.sd; fb.gain.value = 0.3;
+  lp.type = 'lowpass'; lp.frequency.value = 2600;
+  pl.gain.connect(send); send.connect(dl); dl.connect(lp); lp.connect(fb); fb.connect(dl); lp.connect(Snd.musicIn);
+  pl.echo = { nodes: [send, dl, fb, lp], entry: { t0: now, t1: Infinity, n: 4 } };
+  NODES.list.push(pl.echo.entry);
 }
 function playSting(t) {
-  STING.forEach((n, i) => playChipEvent({ voice: 'p1', duty: 0.25 }, { f: noteFreq(n), acc: i === 2, dur: 1, hold: false }, t + i * 0.1, 0.11, { gain: Snd.musicBus }));
+  STING.forEach((n, i) => playChipEvent({ voice: 'p1', duty: 0.25 }, { f: noteFreq(n), acc: i === 2, dur: 1, hold: false }, t + i * 0.1, 0.11, { gain: Snd.musicIn }));
 }
 function musicTick() {
   const ac = Snd.ac;
@@ -1669,13 +1854,15 @@ function musicTick() {
   for (const pl of MUS.players) {
     if (!pl.gain) {
       pl.gain = ac.createGain();
-      pl.gain.connect(Snd.musicBus);
+      pl.gain.connect(Snd.musicIn);
       if (pl.fadeIn) { pl.gain.gain.setValueAtTime(0, now); pl.gain.gain.linearRampToValueAtTime(1, now + 0.4); }
-      else pl.gain.gain.setValueAtTime(1, now);
+      else { pl.gain.gain.setValueAtTime(0, now); pl.gain.gain.linearRampToValueAtTime(1, now + 0.01); }
+      addEcho(pl, ac, now);
     }
     pumpPlayer(pl, now, playChipEvent);
   }
   prunePlayers(now);
+  pruneNodeList(now);
 }
 function startMusicEngine() { if (!MUS.timer) MUS.timer = setInterval(musicTick, 25); }
 function playMusic(name, opts = {}) {
@@ -1709,7 +1896,7 @@ document.addEventListener('visibilitychange', () => {
 
 // ---- #music: the jukebox / music test room ----
 // (tap a song in the list to play it)
-const VOICE_LABEL = { p1: 'PULSE 1', p2: 'PULSE 2', tri: 'TRIANGLE', noise: 'NOISE' };
+const VOICE_LABEL = { p1: 'LEAD', p2: 'ARP', tri: 'BASS', noise: 'DRUMS', pad: 'PAD' };
 class MusicRoomScreen {
   constructor(resolve) { this.opaque = true; this.i = 0; this.names = Object.keys(SONGS); this.t = 0; this.resolve = resolve || null; }
   update(inp) {
@@ -1718,6 +1905,11 @@ class MusicRoomScreen {
       if (a === 'up') { this.i = (this.i + this.names.length - 1) % this.names.length; sfx('move'); }
       else if (a === 'down') { this.i = (this.i + 1) % this.names.length; sfx('move'); }
       else if (a === 'ok') playMusic(this.names[this.i], { cut: true, restart: true });
+      else if (a === 'left' || a === 'right') {
+        const k = STYLE_ORDER.indexOf(MUS.style), n = STYLE_ORDER.length;
+        setSoundStyle(STYLE_ORDER[(k + (a === 'left' ? n - 1 : 1)) % n]); sfx('confirm');
+        if (MUS.cur) playMusic(MUS.cur.name, { cut: true, restart: true });   // hear the new style right away
+      }
       else if (a === 'back') {
         sfx('cancel');
         pop(this);
@@ -1739,6 +1931,7 @@ class MusicRoomScreen {
     const s = SONGS[this.names[this.i]];
     box(138, 24, 290, 202, '#1d1b2e');
     drawText(s.title, 148, 32, COL.white);
+    drawTextR('Sound: < ' + STYLES[MUS.style].name + ' >', 420, 10, '#ffd84a');
     drawText(s.bpm + ' BPM   ' + (s.oneShot ? 'one-shot' : s.form.split(' ').length + ' parts: ' + s.form), 148, 44, COL.barText);
     wrapText(s.meter, 270).slice(0, 2).forEach((ln, k) => drawText(ln, 148, 56 + k * 10, '#8fd3ff'));
     const pl = MUS.cur && MUS.cur.name === this.names[this.i] ? MUS.cur : null;
@@ -1764,7 +1957,7 @@ class MusicRoomScreen {
     const k = Math.floor((y - 25) / 14);
     if (x < 136 && k >= 0 && k < this.names.length) { this.i = k; playMusic(this.names[k], { cut: true, restart: true }); }
   }
-  hint() { return 'W/S: choose   Enter: play   ' + hintKeys() + ': ' + (this.resolve ? 'back to game' : 'title') + '   N: music   M: mute'; }
+  hint() { return 'W/S: song   Enter: play   A/D: sound style   ' + hintKeys() + ': ' + (this.resolve ? 'back' : 'title') + '   N: music'; }
 }
 
 // ---------------------------------------------------------------------
@@ -3488,7 +3681,7 @@ async function showControls() {
   }
   await say('Arrows or WASD: walk and move the cursor.\nEnter, Space or E: talk, open, confirm.\nQ or Esc: back, open this menu.');
   await say('V: emote! Show a heart, star, music note or happy face. In battle your pet celebrates.\nH: go home (it asks first).');
-  await say('M: mute everything.  N: music on/off (sound effects stay on).\nF: fullscreen on/off.');
+  await say('M: mute everything.  N: music on/off (sound effects stay on).\nF: fullscreen on/off.  Menu, Jukebox, Left/Right: 8-bit, Mix or 16-bit sound.');
   await say('Rename and dress up your pets: Menu, Pets, then pick a pet.\nListen to every song: Menu, Jukebox.');
 }
 // Party grid. mode: {title, filter(p)->string|null (null = allowed)}. Returns index or -1.
@@ -4950,7 +5143,7 @@ function runSelfTest() {
   check('500 random battles: stats, HP, XP, levels and evolution stay valid', !bErr.length, bErr.slice(0, 4).join('; '));
   check('Battles take a sensible number of turns (avg ' + (totalTurns / 500).toFixed(1) + ')', totalTurns / 500 > 1.5 && totalTurns / 500 < 15, 'avg ' + totalTurns / 500);
   // ---- Music ----
-  const mErr2 = [], VOICES = ['p1', 'p2', 'tri', 'noise'];
+  const mErr2 = [], VOICES = ['p1', 'p2', 'tri', 'noise', 'pad'];
   const motifOK = notes => { for (let i = 0; i + 4 < notes.length; i++) {
     const d = [1, 2, 3, 4].map(k => Math.round(12 * Math.log2(notes[i + k] / notes[i + k - 1])));
     if (d[0] >= 3 && d[0] <= 4 && d[1] <= -4 && d[1] >= -6 && d[2] >= 5 && d[2] <= 7 && d[3] <= -1 && d[3] >= -2) return true; } return false; };
@@ -4963,6 +5156,8 @@ function runSelfTest() {
       if (!(part.bars >= 1 && part.bars * (s.cycleBars || 1) <= 8)) mErr2.push(name + '.' + pk + ' does not realign within 8 bars');
       const voices = part.layers.map(l => l.voice);
       if (voices.some(v => !VOICES.includes(v)) || new Set(voices).size !== voices.length) mErr2.push(name + '.' + pk + ' voices ' + voices);
+      if (voices.includes('pad') && !PAD_SONGS.includes(name)) mErr2.push(name + ' has a pad (calm songs only)');
+      if (voices.length > 7) mErr2.push(name + ' uses more than 7 voices');
       if (!voices.includes('noise') && !voices.includes('tri')) mErr2.push(name + '.' + pk + ' has no steady pulse');
       for (const l of part.layers) {
         const c = compileLayer(l);
@@ -5026,6 +5221,43 @@ function runSelfTest() {
   const before = MUS.musicOn; toggleMusic(); const off = MUS.musicOn; toggleMusic();
   if (off === before || MUS.musicOn !== before) schErr.push('N toggle');
   MUS.players = savedMUS.players; MUS.cur = savedMUS.cur;
+  // 16-bit FM engine on a fake audio context: every note and SFX fades in/out over >= 5 ms, and live nodes stay near 40.
+  const fmErr = [], peaks = [];
+  { const savedAC = Snd.ac, savedIn = Snd.musicIn, savedNB = Snd.noiseBuf, savedNodes = NODES.list;
+    const params = [];
+    const P = () => { const pr = { value: 0, calls: [] }; for (const k of ['setValueAtTime', 'linearRampToValueAtTime', 'exponentialRampToValueAtTime', 'setTargetAtTime']) pr[k] = (...a) => { pr.calls.push([k, ...a]); return pr; }; pr.cancelScheduledValues = () => pr; params.push(pr); return pr; };
+    const node = (...names) => { const n = { connect() {}, disconnect() {}, start() {}, stop(t) { n.stopAt = t; } }; names.forEach(k => { n[k] = P(); }); return n; };
+    const fake = { currentTime: 0, sampleRate: 44100, state: 'running',
+      createPeriodicWave: () => ({}), createOscillator: () => Object.assign(node('frequency', 'detune'), { setPeriodicWave() {} }), createGain: () => node('gain'),
+      createBiquadFilter: () => node('frequency', 'Q'), createBufferSource: () => node('playbackRate'), createDelay: () => node('delayTime') };
+    Snd.ac = fake; Snd.musicIn = node('gain'); Snd.noiseBuf = {};
+    const checkEnv = (pr, who) => {
+      const c = pr.calls;
+      if (!c.length) return;
+      if (c[0][0] !== 'setValueAtTime' || c[0][1] !== 0) { fmErr.push(who + ' starts above 0'); return; }
+      const up = c.find(x => x[0] === 'linearRampToValueAtTime');
+      if (!up || up[2] - c[0][2] < 0.0049) fmErr.push(who + ' attack shorter than 5 ms');
+      const last = c[c.length - 1];
+      const ok = (last[0] === 'setTargetAtTime' && last[1] === 0 && last[3] * 6 >= 0.0049) || (last[0] === 'linearRampToValueAtTime' && last[1] === 0 && last[2] - c[c.length - 2][2] >= 0.0049);
+      if (!ok) fmErr.push(who + ' does not fade out over 5 ms');
+    };
+    const savedStyle = MUS.style;
+    for (const st of STYLE_ORDER) for (const name in SONGS) {
+      MUS.style = st; Object.keys(pulseWaves).forEach(k => delete pulseWaves[k]);
+      params.length = 0; NODES.list = []; NODES.peak = 0; NODES.skipped = 0;
+      const pl = newPlayer(name, 0.05); pl.gain = node('gain'); addEcho(pl, fake, 0);
+      for (let t = 0; t < 40; t += 0.025) { fake.currentTime = t; pumpPlayer(pl, t, playChipEvent); pruneNodeList(t); if (pl.done) break; }
+      params.filter(pr => pr.isEnv).forEach(pr => checkEnv(pr, st + ' ' + name));
+      peaks.push(NODES.peak);
+      if (NODES.peak > NODE_CAP + 4) fmErr.push(st + ' ' + name + ' peaks at ' + NODES.peak + ' nodes');
+    }
+    MUS.style = savedStyle; Object.keys(pulseWaves).forEach(k => delete pulseWaves[k]);
+    params.length = 0; NODES.list = [];
+    for (const k in SFX) { fake.currentTime = 0; sfx(k); }
+    params.filter(pr => pr.isEnv).forEach(pr => checkEnv(pr, 'sfx'));
+    Snd.ac = savedAC; Snd.musicIn = savedIn; Snd.noiseBuf = savedNB; NODES.list = savedNodes; NODES.peak = 0;
+  }
+  check('8-bit, Mix and 16-bit styles: every note and sound effect fades in/out over 5+ ms; live audio nodes peak at ' + Math.max(...peaks) + ' (cap ~40)', !fmErr.length, [...new Set(fmErr)].slice(0, 4).join('; '));
   check('Music scheduler: 10 min without drift, no burst after tab switch, one song at a time', !schErr.length, schErr.slice(0, 4).join('; '));
   // Difficulty: a Lv 5 starter fighting alone should beat almost every Meadow pet.
   let easyWins = 0;
@@ -5203,7 +5435,8 @@ function devView(v) {
     for (const name of (only === 'tri' ? Object.keys(SONGS) : ['woods', 'town', 'battle'])) for (const voice of (only === 'tri' ? ['tri'] : ['tri', 'p1', 'p2'])) {
       const sr = 44100, secs = 6, oc = new OfflineAudioContext(1, sr * secs, sr);
       const saved = { ac: Snd.ac, bus: Snd.musicBus, nb: Snd.noiseBuf };
-      Snd.ac = oc; Snd.musicBus = oc.createGain(); Snd.musicBus.gain.value = 0.18; Snd.musicBus.connect(oc.destination);
+      Snd.ac = oc; Snd.musicBus = oc.createGain(); Snd.musicBus.gain.value = 0.18; Snd.musicBus.connect(oc.destination); const savedIn = Snd.musicIn; Snd.musicIn = Snd.musicBus;
+      Snd.noiseBuf = oc.createBuffer(1, sr / 2, sr); { const nd = Snd.noiseBuf.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1; }
       Object.keys(pulseWaves).forEach(k => delete pulseWaves[k]);
       const pl = newPlayer(name, 0.05); pl.gain = Snd.musicBus;
       for (let t = 0; t < secs - 0.3; t += 0.025) pumpPlayer(pl, t, (layer, ev, tt, sd, q) => { if (layer.voice === voice) playChipEvent(layer, ev, tt, sd, q); });
@@ -5212,7 +5445,7 @@ function devView(v) {
       for (let i = 1; i < d.length; i++) { peak = Math.max(peak, Math.abs(d[i])); const j = Math.abs(d[i] - d[i - 1]); jump = Math.max(jump, j); }
       // a "click" = a jump much bigger than the steepest a smooth triangle at this level could move
       for (let i = 1; i < d.length; i++) if (Math.abs(d[i] - d[i - 1]) > peak * 0.25) clicks++;
-      Object.assign(Snd, { ac: saved.ac, musicBus: saved.bus, noiseBuf: saved.nb });
+      Object.assign(Snd, { ac: saved.ac, musicBus: saved.bus, noiseBuf: saved.nb, musicIn: savedIn });
       Object.keys(pulseWaves).forEach(k => delete pulseWaves[k]);
       out.push(name + ' ' + voice + ': peak ' + peak.toFixed(3) + '  biggest jump ' + jump.toFixed(3) + '  clicks ' + clicks);
       document.getElementById('testout').textContent = out.join('\n');
@@ -5241,6 +5474,7 @@ function devView(v) {
     for (const q of MUS.players) if (q.next < ac.currentTime) q.next = ac.currentTime + 0.05;
     await real(300);
     log('resume after hidden tab: new steps=' + (MUS.cur.log.length) + ' (no burst)');
+    log('live audio nodes peaked at ' + NODES.peak + ', notes skipped to stay under the cap: ' + NODES.skipped);
     document.getElementById('testout').textContent = out.join('\n');
   }); }
   else if (v === 'labtop') { push(overworld); enterMap('lab', 11, 5, 'up'); world.banner = 0; }
@@ -5553,6 +5787,7 @@ async function runSmoke() {
 // 21. BOOT
 // ---------------------------------------------------------------------
 function boot() {
+  loadSoundStyle();
   buildAllSprites();
   if (TEST_MODE) runSelfTest();
   else if (MUSIC_MODE) push(new MusicRoomScreen());
