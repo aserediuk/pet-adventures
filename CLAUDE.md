@@ -77,7 +77,10 @@ A top-down, turn-based pet-collecting RPG for kids. The whole game is **one self
   - Trainers: `trainer.team`, plus optional `moveTo` (steps aside when beaten, used for gatekeepers), `onWin` (a `STORY_SCRIPTS` key, such as `ribbon`, `champion` or `gizmo`), `ribbon`, `needsRibbons` and `music`.
   - Non-trainers say their lines the first time, then always give a tip (`progressTip`, `BATTLE_TIPS`).
 - **Pets:** `SPECIES[id] = { name, type, fam, base: {hp, atk, def, spd}, evo, evoLv }`. Adult forms have about 1.3× the baby's stats. Learnsets give 6 moves at Lv 1, 1, 7, 9 (a move against the pet's weakness), 13 and 17. A pet object is `{ sp, lv, xp, hp, moves, pending, nick?, acc? }`.
-- **Treats:** `TREAT_LIKES[type]` lists the treats each type likes (real-life diets). A wrong treat is usually refused (`WRONG_TREAT_REFUSE`).
+- **Treats:** `TREAT_LIKES[type]` lists the treats each type likes (real-life diets). A wrong treat is usually refused (`WRONG_TREAT_REFUSE`). Treats are **not sold** (`SHOP_ORDER` leaves them out): they come from chests.
+- **Chests:** each chest gives its own prize the first time (`G.chests[id]`, which also counts for the win screen). Every opening also has a 67% chance (`CHEST_TREAT_CHANCE`) of 2 treats that the area's pets like (`chestTreat`). An opened chest is in `G.chestOpen`; `refillChests()` empties that list on a nap at home, a heal at the Clinic and a blackout, so treats can never run out for good.
+- **Shop prices:** Bandage 150, Big Bandage 500, Fishing Rod 350 (user's numbers).
+- **Bosses:** an NPC with `boss: '<species>'`, `hp: <multiplier>` and a one-pet `trainer.team` is a big wild pet, drawn with the 32 px sprite. It stands two tiles beyond a gatekeeper in a one-tile corridor, fights as a trainer battle (no treats, running works, it stays put), has its HP multiplied (`maxHp` uses `pet.boss`), and steps aside with `moveTo` when beaten. Levels are the user's (raised once to make the game harder): Bramble (Pebble Canyon) Lv 12, Gloop (Misty Marsh) Lv 15, Blizzard (Frosty Peak) Lv 20; Dr. Gizmo's team is Lv 28. Champion Maple's four pets and Lab Helper Bolt's two are Lv 22 (also the user's numbers); the difficulty-curve self-test assumes four pets at Lv 21 for Maple. Tune a boss with its `hp`, not its level; the difficulty-curve self-test includes them.
 - **Fishing Rod:** fish take no treats (`TREAT_LIKES.Fish` is empty, `needsRod`). `ITEMS.rod` costs 350 coins at the Pet Shop, is bought once (`G.bag.rod` is 0 or 1) and is never used up. In a wild battle with a fish, Bag → Fishing Rod runs `castRod` with `rodChance` (the same odds as a favourite treat). Offering a fish a treat is refused without using the treat or the turn. Old saves get 20 coins back per Fish Flakes.
 
 ## Graphics system (sections 3b–3j, marked `// >>> GFX:name` … `// <<< GFX:name`)
@@ -121,14 +124,14 @@ Some grown-up pets have `machineEvo` (a species marked `machineOnly`) instead of
 
   Damage is ×1.5 forward and ×0.67 backward. Normal moves are always ×1.
 - **Stats:**
-  - HP = ⌊base·L/20⌋ + L + 10. Other stats = ⌊base·L/25⌋ + 5. The level cap is 20.
+  - HP = ⌊base·L/20⌋ + L + 10. Other stats = ⌊base·L/25⌋ + 5. The level cap is 30 (`MAX_LV`; the user chose to raise it from 20 so a Lv 28 Dr. Gizmo can be beaten). Trainer pets may be up to `FOE_MAX_LV`. The difficulty-curve self-test assumes six pets at Lv 24 for Dr. Gizmo.
   - XP to the next level = 12·L² (`toNext`; raised 20% from 10·L² at the user's request). The difficulty-curve self-test assumes fixed team levels, so it does not notice slower levelling.
 - **Rewards:** XP per win = (5·L² + 10) × 1.5 (trainers only) × `XP_BONUS` 1.25. Benched pets get half.
 - **Damage:** ⌊((2L/5+2)·Pow·Atk/Def)/50 + 2⌋ × type multiplier × random 0.85–1. Enemies hit at `ENEMY_DAMAGE` (0.85).
 - **Catching:**
   - Catch chance = clamp(0.25 + 0.6·(1 − hp/max), 0.05, 0.95).
   - A favorite treat multiplies it by 1.2. A wrong treat multiplies it by 0.3, after a 75% chance of refusal.
-- **Main road:** Pawsville → Meadow Path → Pebble Canyon (gatekeeper Rex) → Whisker Woods → Misty Marsh (Fen) → Frosty Peak (Bo, then Champion Maple at the summit) → Gizmo's Lab (Bolt, then Dr. Gizmo, then the win screen).
+- **Main road:** Pawsville → Meadow Path → Pebble Canyon (gatekeeper Rex, then boss Bramble) → Whisker Woods → Misty Marsh (Fen, then boss Gloop) → Frosty Peak (Bo, then boss Blizzard, then Champion Maple at the summit) → Gizmo's Lab (Bolt, then Dr. Gizmo, then the win screen).
 - **Side areas:** Sunny Farm, Splash Lake, Sunny Dunes and Parrot Jungle each have a ribbon guardian. Maple needs all 4 **Trail Ribbons**.
 - **Starters:** a puppy (Buddy) or a kitten (Mittens) only.
 - **Difficulty curve:** a self-test simulates a typical team at the level a player usually has for each big fight. Win rates must stay between **45% and 92%**. Retune trainer levels, not the formulas, if it fails.

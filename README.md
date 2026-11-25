@@ -59,7 +59,7 @@ Press **Space** to begin. A short intro from *When Pets Attack Studio Production
 
 **Names and dress-up:** you type your name when you start a new game (change it any time in Menu, Your Name). Give pets nicknames, and dress them up with a bow, top hat, crown, flower or party hat in 6 colors (Menu, Pets, pick a pet).
 
-**Making friends:** offer a tired wild pet a treat it really likes. Pets eat what they like in real life:
+**Making friends:** offer a tired wild pet a treat it really likes. Treats are not sold in the shop: you find them in treasure chests. Each time you open a chest there is a 67% chance of treats inside, and every chest fills up again when you rest at home or at the Clinic. Pets eat what they like in real life:
 
 | Treat | Loved by |
 | --- | --- |
@@ -71,6 +71,10 @@ Press **Space** to begin. A short intro from *When Pets Attack Studio Production
 | Apple | parrots, ponies, pigs |
 | Lettuce | rabbits, turtles, ducks |
 Offer the wrong snack and the pet usually turns up its nose. In battle, the Bag marks the wild pet's favorites with a red ♥.
+
+**Bosses:** on the main road, a giant pet waits beyond the gatekeeper of Pebble Canyon (Bramble, Lv 12), Misty Marsh (Gloop, Lv 15) and Frosty Peak (Blizzard, Lv 20). Each is one tough pet with lots of HP. It can't be befriended, and it steps aside once you beat it. Dr. Gizmo's team is Lv 28, and your own pets can train up to Lv 30, so expect to train a full team of six to about Lv 24 before the last fight.
+
+**The Pet Shop** sells Bandages (150 coins), Big Bandages (500 coins) and the Fishing Rod.
 
 **Fish are different:** they take no treats. Buy the **Fishing Rod** at the Pet Shop for 350 coins, then use it from your Bag in a battle with a wild fish. You only need one, and it never runs out.
 

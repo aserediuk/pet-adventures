@@ -4243,8 +4243,8 @@ const ITEMS = {
   apple:   { name: 'Apple',       pl: 'Apples',      price: 20, treat: true, flavor: 'A juicy apple.' },
   lettuce: { name: 'Lettuce',     pl: 'Lettuce',     price: 20, treat: true, flavor: 'Fresh leafy greens.' },
   rod:     { name: 'Fishing Rod', pl: 'Fishing Rods', price: 350, rod: true, desc: 'Catches wild fish. It never runs out.' },
-  bandage: { name: 'Bandage',     pl: 'Bandages',    price: 30, heal: 20, desc: 'Heals a pet by 20 HP.' },
-  big:     { name: 'Big Bandage', pl: 'Big Bandages', price: 80, heal: 9999, desc: 'Heals a pet all the way.' },
+  bandage: { name: 'Bandage',     pl: 'Bandages',    price: 150, heal: 20, desc: 'Heals a pet by 20 HP.' },
+  big:     { name: 'Big Bandage', pl: 'Big Bandages', price: 500, heal: 9999, desc: 'Heals a pet all the way.' },
 };
 const ITEM_ORDER = ['bone', 'fish', 'seeds', 'bugs', 'carrot', 'apple', 'lettuce', 'rod', 'bandage', 'big'];
 const TREAT_KEYS = ITEM_ORDER.filter(k => ITEMS[k].treat);
@@ -4265,7 +4265,7 @@ for (const k of TREAT_KEYS) {
   const list = fans.length > 1 ? fans.slice(0, -1).join(', ') + ' and ' + fans[fans.length - 1] : fans[0];
   ITEMS[k].desc = ITEMS[k].flavor + ' Loved by ' + list + '.';
 }
-const MAX_LV = 20, PARTY_MAX = 6;
+const MAX_LV = 30, PARTY_MAX = 6;   // raised from 20 when Dr. Gizmo's team went up to Lv 28
 
 // ---------------------------------------------------------------------
 // 6. PET RULES (pure functions, shared by the game and the self-test)
@@ -4279,7 +4279,7 @@ function petStats(p) {
     spd: Math.floor(b.spd * L / 25) + 5,
   };
 }
-function maxHp(p) { return petStats(p).hp; }
+function maxHp(p) { return Math.floor(petStats(p).hp * (p.boss || 1)); }   // p.boss: a boss pet fights alone, so its HP is multiplied (the boss's `hp` in the map data)
 function petName(p) { return p.nick || SPECIES[p.sp].name; }
 const NAME_MAX = 10;
 function cleanName(s) { return String(s || '').replace(/[^A-Za-z0-9 '.\-]/g, '').replace(/\s+/g, ' ').trim().slice(0, NAME_MAX); }
@@ -4289,8 +4289,9 @@ function toNext(lv) { return 12 * lv * lv; }   // 20% more than the first versio
 // Kid-friendly difficulty: enemies hit softer, pets learn faster.
 const ENEMY_DAMAGE = 0.85, XP_BONUS = 1.25;
 function xpReward(enemyLv, trainer) { return Math.floor((5 * enemyLv * enemyLv + 10) * (trainer ? 1.5 : 1) * XP_BONUS); }
-function createPet(sp, lv) {
-  lv = clamp(lv, 1, MAX_LV);
+const FOE_MAX_LV = 30;   // the highest level a trainer's or boss's pet may have
+function createPet(sp, lv, cap = MAX_LV) {
+  lv = clamp(lv, 1, cap);
   const known = learnsetOf(sp).filter(e => e[0] <= lv).map(e => e[1]);
   const p = { sp, lv, xp: 0, hp: 0, moves: known.slice(-4), pending: [] };
   p.hp = maxHp(p);
@@ -4576,12 +4577,12 @@ MAPS.lab = {
   npcs: [
     { id: 'bolt', look: 'bolt', name: 'Lab Helper Bolt', x: 11, y: 10, dir: 'down',
       moveTo: { x: 9, y: 11, dir: 'right' },
-      trainer: { team: [['bandit', 17], ['nugget', 18]] },
+      trainer: { team: [['bandit', 22], ['nugget', 22]] },
       lines: ['Halt! Dr. Gizmo said NO visitors! He\'s very busy doing... science-y things to pets.', 'You want to get past? Then you\'ll have to beat me!'],
       after: ['Okay, okay, you can go in. Honestly? I only took this job because I like pets.'],
       final: ['I\'m going to apply at the Pet Shop now. Wish me luck!'] },
     { id: 'gizmo', look: 'gizmo', name: 'Dr. Gizmo', x: 11, y: 3, dir: 'down', onWin: 'gizmo', music: 'boss',
-      trainer: { team: [['tank', 20], ['spike', 20], ['croaker', 20], ['rocky', 20]] },
+      trainer: { team: [['tank', 28], ['spike', 28], ['croaker', 28], ['rocky', 28]] },
       lines: [
         'Well, well! A child with pets. How delightful... for my EXPERIMENTS!',
         'I am Dr. Gizmo! With my Mega-Zapper, I\'ll turn every pet in Pawsville into my obedient Robo-Pets!',
@@ -4800,8 +4801,8 @@ MAPS.canyon = {
     'rrrr________________rrrr_______________r',
     'r______________________________________r',
     'r______________________________________r',
-    'r;;;;;;__________________________;;;;;;r',
-    'r;;;;;;__________________________;;;;;;r',
+    'r;;;;;;___________r_r____________;;;;;;r',
+    'r;;;;;;___________r_r____________;;;;;;r',
     'rrrrrrrrrrrrrrrrrrr_rrrrrrrrrrrrrrrrrrrr',
     'rrrrrrrrrrrrrrrrr_____rrrrrrrrrrrrrrrrrr',
     'rrrrrrrrrrrrrrr__________rrrrrrrrrrrrrrr',
@@ -4831,6 +4832,9 @@ MAPS.canyon = {
   labels: [],
   npcs: [
     { id: 'hazel', look: 'explorer', name: 'Hiker Hazel', x: 30, y: 26, dir: 'left', lines: ['Phew, what a climb! Lizards love to sunbathe on these warm canyon rocks.'] },
+    { id: 'boss_canyon', hp: 1.15, boss: 'thistle', look: 'explorer', name: 'Bramble', x: 19, y: 9, dir: 'down', moveTo: { x: 21, y: 8, dir: 'down' }, music: 'boss',
+      lines: ['The ground shakes. A giant hedgehog rolls into the pass!', 'It is Bramble, the boss of Pebble Canyon. It will not budge until you beat it!'],
+      after: ['Bramble yawns, curls up beside the path and lets you by.'], trainer: { team: [['thistle', 12]] } },
     { id: 'rex', look: 'explorer', name: 'Climber Rex', x: 19, y: 11, dir: 'down', moveTo: { x: 21, y: 12, dir: 'left' },
       trainer: { team: [['prickle', 10], ['cookie', 10], ['ziggy', 11]] },
       lines: ['Whoa there! This canyon pass is narrow and the woods beyond are wild.', 'Only trainers who can beat me get to climb past. Ready?'],
@@ -4886,6 +4890,9 @@ MAPS.marsh = {
   labels: [],
   npcs: [
     { id: 'bea', look: 'lily', name: 'Botanist Bea', x: 21, y: 27, dir: 'left', lines: ['I study marsh plants! Watch your step, frogs and ducks hide in every reed.'] },
+    { id: 'boss_marsh', hp: 2.4, boss: 'croaker', look: 'explorer', name: 'Gloop', x: 19, y: 14, dir: 'down', moveTo: { x: 20, y: 15, dir: 'down' }, music: 'boss',
+      lines: ['A huge shape rises out of the reeds with a mighty CROAK!', 'It is Gloop, the boss of Misty Marsh. It will not budge until you beat it!'],
+      after: ['Gloop gives a happy croak, hops aside and lets you by.'], trainer: { team: [['croaker', 15]] } },
     { id: 'fen', look: 'fisher', name: 'Warden Fen', x: 19, y: 16, dir: 'down', moveTo: { x: 18, y: 15, dir: 'right' },
       trainer: { team: [['croaker', 14], ['quackers', 14], ['tank', 14]] },
       lines: ['Halt! The bridge over Misty Marsh is only for strong trainers.', 'The mountain past here is cold and the pets are tough. Show me what you\'ve got!'],
@@ -4923,8 +4930,8 @@ MAPS.peak = {
     'Y**^^^^^^^^^^*^^^^****^^^^*^^^^^^^^^^**Y',
     'Y**^^^^^^^^^^**************^^^^^^^^^^**Y',
     'Y**************************************Y',
-    'YYYYYYYYY**********************YYYYYYYYY',
-    'YYYYYYYYY**********************YYYYYYYYY',
+    'YYYYYYYYY*********q*q**********YYYYYYYYY',
+    'YYYYYYYYY*********q*q**********YYYYYYYYY',
     'Yqqqqqqqqqqqqqqqqqq*qqqqqqqqqqqqqqqqqqqY',
     'Y**************************************Y',
     'Y**************************************Y',
@@ -4947,13 +4954,16 @@ MAPS.peak = {
   labels: [{ tx: 19.5, ty: 5.1, text: 'SUMMIT' }],
   npcs: [
     { id: 'sam', look: 'milo', name: 'Snow Scout Sam', x: 21, y: 29, dir: 'left', lines: ['Brr! Snow bunnies blend right in up here. You can only spot them by their noses!'] },
+    { id: 'boss_peak', hp: 1.3, boss: 'hopscotch', look: 'explorer', name: 'Blizzard', x: 19, y: 18, dir: 'down', moveTo: { x: 17, y: 17, dir: 'down' }, music: 'boss',
+      lines: ['Thump! Thump! A giant snow rabbit lands on the trail!', 'It is Blizzard, the boss of Frosty Peak. It will not budge until you beat it!'],
+      after: ['Blizzard twitches its nose, hops aside and lets you by.'], trainer: { team: [['hopscotch', 20]] } },
     { id: 'bo', look: 'farmer', name: 'Mountaineer Bo', x: 19, y: 20, dir: 'down', moveTo: { x: 21, y: 21, dir: 'left' },
       trainer: { team: [['hopscotch', 16], ['bandit', 16], ['rocky', 16]] },
       lines: ['Brrr! The summit is just above this pass, but the cold is no joke.', 'Prove your pets are tough enough for the top of the mountain!'],
       after: ['Go on up. The Champion is waiting at the summit.'] },
       { id: 'maple', look: 'champion', name: 'Champion Maple', x: 19, y: 1, dir: 'down', needsRibbons: 4, champion: true, onWin: 'champion', music: 'champion',
         moveTo: { x: 17, y: 1, dir: 'right' },
-        trainer: { team: [['thunder', 17], ['mango', 18], ['shadow', 18], ['rocky', 19]] },
+        trainer: { team: [['thunder', 22], ['mango', 22], ['shadow', 22], ['rocky', 22]] },
         lines: ['You made it all the way up Frosty Peak, {name}!', 'I\'m Maple, the Pet Champion. Something bad is going on, but first I need to know you\'re strong. Let\'s battle!'],
         after: ['Dr. Gizmo\'s lab is just north of here. Be brave!'],
         final: ['You saved them all! You\'re the greatest Pet Champion ever!'] },
@@ -5239,7 +5249,7 @@ function newGame(starterSp, name) {
     v: 1, big: 1, name: cleanName(name) || 'Hero', map: 'pawsville', x: sp.x, y: sp.y, dir: sp.dir,
     party: [createPet(starterSp, 5)], pen: [],
     bag: starterBag(starterSp), coins: 100,
-    chests: {}, flags: {}, quests: {}, stats: { caught: 0, wins: 0, battles: 0, time: 0, steps: 0 },
+    chests: {}, chestOpen: {}, flags: {}, quests: {}, stats: { caught: 0, wins: 0, battles: 0, time: 0, steps: 0 },
     musicTheme: activeThemeKey,
   };
 }
@@ -5275,6 +5285,7 @@ function loadGame() {
     if (!MAPS[d.map]) { d.map = 'pawsville'; }
     const m = MAPS[d.map];
     d.chests = d.chests || {}; d.flags = d.flags || {};
+    if (!d.chestOpen || typeof d.chestOpen !== 'object') d.chestOpen = Object.assign({}, d.chests);   // older saves: opened chests stay open until the next rest
     d.quests = (d.quests && typeof d.quests === 'object') ? d.quests : {};
     if (!MainThemes[d.musicTheme]) delete d.musicTheme;
     if (!d.big && Number.isFinite(d.x) && Number.isFinite(d.y)) { d.x = gx(d.map, d.x); d.y = gy(d.map, d.y); }   // saves from before the maps grew: move the player to the same spot
@@ -5850,13 +5861,14 @@ async function talkTo(npc) {
     return;
   }
   if (npc.trainer && !G.flags[npc.id]) {
-    for (const l of npc.lines) await say(l, npc.name);
-    const enemies = npc.trainer.team.map(([sp, lv]) => createPet(sp, lv));
+    for (const l of npc.lines) await say(l, npc.boss ? undefined : npc.name);
+    const enemies = npc.trainer.team.map(([sp, lv]) => createPet(sp, lv, FOE_MAX_LV));
+    if (npc.boss) for (const e of enemies) { e.boss = npc.hp; e.nick = npc.name; e.hp = maxHp(e); }   // a boss is one big wild pet: it cannot be befriended
     const res = await startBattle({ wild: false, enemies, trainer: npc, music: npc.music });
     if (res === 'win') {
       if (npc.onWin) await STORY_SCRIPTS[npc.onWin](npc);
       else {
-        await say(npc.after[0], npc.name);
+        await say(npc.after[0], npc.boss ? undefined : npc.name);
         if (npc.moveTo) await stepAside(npc);
       }
       G.flags[npc.id] = true;
@@ -5865,7 +5877,7 @@ async function talkTo(npc) {
     return;
   }
   const lines = (G.flags.gizmo && npc.final) ? npc.final : (npc.trainer ? npc.after : npc.lines);
-  if (npc.trainer) { for (const l of lines) await say(l, npc.name); return; }
+  if (npc.trainer) { for (const l of lines) await say(l, npc.boss ? undefined : npc.name); return; }
   // Helpful characters: their story the first time (or after the big rescue), then always a tip.
   if (!G.flags['met_' + npc.id] || (G.flags.gizmo && npc.final && !G.flags['final_' + npc.id])) {
     for (const l of lines) await say(l, npc.name);
@@ -5920,8 +5932,8 @@ function progressTip() {
   }
   if (!G.flags.fen) return 'Tip: Warden Fen guards the bridge in Misty Marsh, north of Whisker Woods. His pets are Lv 14.' + levelAdvice(13);
   if (!G.flags.bo) return 'Tip: Mountaineer Bo blocks the pass on Frosty Peak with Lv 16 pets.' + levelAdvice(15);
-  if (!G.flags.maple) return 'Tip: Champion Maple waits at the summit of Frosty Peak with four pets up to Lv 19. Bring your best team!' + levelAdvice(17);
-  if (!G.flags.gizmo) return 'Tip: Dr. Gizmo\'s lab is past the summit. His pets are all Lv 20, so heal up and bring six pets!' + levelAdvice(19);
+  if (!G.flags.maple) return 'Tip: Champion Maple waits at the summit of Frosty Peak with four Lv 22 pets. Bring your best team!' + levelAdvice(21);
+  if (!G.flags.gizmo) return 'Tip: Dr. Gizmo\'s lab is past the summit. His pets are all Lv 28, so heal up and bring six pets!' + levelAdvice(24);
   if (G.tipN % 4 === 1 && !G.party.concat(G.pen).some(q => SPECIES[q.sp].machineOnly)) return 'Tip: Dr. Gizmo\'s Super Growth Machine in his lab can turn a Nugget into a Super Hamster!';
   return 'Tip: You saved the pets! There are ' + Object.keys(SPECIES).length + ' kinds of pets. How many have you befriended? You have ' + G.stats.caught + ' so far.';
 }
@@ -5969,15 +5981,30 @@ function chestLabel(c) {
   const n = ITEMS[c.item].name;
   return c.qty > 1 ? c.qty + ' ' + ITEMS[c.item].pl : 'a ' + n;
 }
+// Treats are not sold: they are found in chests. Every chest fills up again when you rest (a nap at home, a heal at the Clinic),
+// and each time one is opened there is a 67% chance of treats inside. The very first time, a chest also holds its own prize.
+const CHEST_TREAT_CHANCE = 0.67, CHEST_TREATS = 2;
+function chestIsOpen(id) { return !!(G.chestOpen && G.chestOpen[id]); }
+function refillChests() { G.chestOpen = {}; }
+function chestTreat(m) {   // a treat that the pets living in this area like
+  const types = new Set();
+  for (const tab of [m.wild, m.pond, ...Object.values(m.byTile || {})]) if (tab) for (const e of tab) types.add(SPECIES[e.sp].type);
+  const keys = TREAT_KEYS.filter(k => !types.size || [...types].some(t => TREAT_LIKES[t].includes(k)));
+  return keys[Math.floor(Math.random() * keys.length)];
+}
+const CHEST_EMPTY = 'Nothing inside this time. Chests fill up again when you rest at home or at the Clinic.';
 async function openChest(c) {
-  if (G.chests[c.id]) { await say('It\'s empty.'); return; }
+  if (chestIsOpen(c.id)) { await say('It\'s empty. Chests fill up again when you rest at home or at the Clinic.'); return; }
   sfx('chest');
   world.chestAnim = { id: c.id, t: 0 };
-  G.chests[c.id] = true;
+  const first = !G.chests[c.id], got = [];
+  G.chests[c.id] = true; (G.chestOpen = G.chestOpen || {})[c.id] = true;
   await wait(24);
-  if (c.coins) { G.coins += c.coins; sfx('coin'); } else G.bag[c.item] += c.qty;
+  if (first) { if (c.coins) G.coins += c.coins; else G.bag[c.item] += c.qty; got.push(chestLabel(c)); }
+  if (Math.random() < CHEST_TREAT_CHANCE) { const k = chestTreat(world.map); G.bag[k] += CHEST_TREATS; got.push(CHEST_TREATS + ' ' + ITEMS[k].pl); }
+  if (got.length) sfx('coin');
   saveGame();
-  await say('You found ' + chestLabel(c) + '!');
+  await say(got.length ? 'You found ' + got.join(' and ') + '!' : CHEST_EMPTY);
 }
 async function enterBuilding(door) {
   sfx('door');
@@ -5985,6 +6012,7 @@ async function enterBuilding(door) {
   if (door.kind === 'home') {
     await say('Home sweet home! You and your pets take a cozy nap.');
     for (const p of G.party) healPet(p);
+    refillChests();
     sfx('heal');
     await say('Everyone feels rested and full of energy!');
   } else {
@@ -6034,7 +6062,7 @@ function drawWorld() {
   // Things that stand on the map, back to front.
   const things = [];
   for (const c of m.chests) things.push({ y: c.y, draw: () => {
-    const open = !!G.chests[c.id];
+    const open = chestIsOpen(c.id);
     let oy = 0;
     if (world.chestAnim && world.chestAnim.id === c.id) oy = world.chestAnim.t < 10 ? -Math.round(Math.sin(world.chestAnim.t / 10 * Math.PI) * 3) : 0;
     ctx.drawImage(open ? SPR_CHEST_O : SPR_CHEST_C, c.x * TS - cx, c.y * TS - cy + oy);
@@ -6049,7 +6077,8 @@ function drawWorld() {
   } });
   for (const n of m.npcs) { const q = npcPos(n); things.push({ y: q.y, cx: q.x * TS - cx, cy: q.y * TS - cy, draw: () => {
     const d = world.npcDir[n.id] || q.dir;
-    drawChar(n.look, d, idleFrame(q.x * 3 + q.y), q.x * TS - cx, q.y * TS - cy);
+    if (n.boss) { drawShadow(q.x * TS - cx + 8, q.y * TS - cy + 14, 24, 7); ctx.drawImage(PET_SPR[n.boss], q.x * TS - cx - 8, q.y * TS - cy - 17 + (Math.floor(frame / 32) % 2)); }   // a boss is a pet twice the usual size
+    else drawChar(n.look, d, idleFrame(q.x * 3 + q.y), q.x * TS - cx, q.y * TS - cy);
     if (n.trainer && !G.flags[n.id] && Math.floor(frame / 30) % 2 === 0) drawText('!', q.x * TS - cx + 6, q.y * TS - cy - 21, COL.red, 1, COL.paper);
     const task = QUEST_BY_GIVER[n.id];
     if (task && (questState(task) === 'new' || questReady(task))) drawText(questReady(task) ? '!' : '?', q.x * TS - cx + 6, q.y * TS - cy - 21 - (Math.floor(frame / 20) % 2), questReady(task) ? '#3cc85a' : '#ffd84a', 1, COL.border);
@@ -6289,7 +6318,7 @@ async function bagMenu(inBattle, battle) {
     if (ITEMS[key].treat && inBattle && battle.wild && needsRod(battle.enemy)) { await say('Fish don\'t take treats! You need a Fishing Rod to catch ' + petName(battle.enemy) + '.' + (G.bag.rod ? '' : ' The Pet Shop sells one.')); continue; }
     if (ITEMS[key].treat) {
       if (!inBattle) { await say('Treats are for making friends with wild pets. Offer one in a wild battle!'); continue; }
-      if (!battle.wild) { await say('You can\'t give Treats to another trainer\'s pet!'); continue; }
+      if (!battle.wild) { await say(battle.enemy.boss ? petName(battle.enemy) + ' is a boss. It won\'t take treats!' : 'You can\'t give Treats to another trainer\'s pet!'); continue; }
       return { treat: key };
     }
     const t = await choosePet({ title: 'Use ' + ITEMS[key].name + ' on which pet?' });
@@ -6332,6 +6361,7 @@ async function clinicScript() {
     if (c === 0) {
       for (const p of G.party) healPet(p);
       for (const p of G.party) p.hp = maxHp(p);
+      refillChests();
       sfx('heal'); bg.flash = 60;
       await wait(40);
       await say('All better! Your pets are full of energy.', 'Nurse Holly');
@@ -6434,20 +6464,22 @@ PenScreen.prototype.tap = function (x, y) {
   this.col = ci; this.row = r; this.select();
 };
 function openPen() { return new Promise(r => push(new PenScreen(r))); }
+const SHOP_ORDER = ITEM_ORDER.filter(k => !ITEMS[k].treat);   // treats are found in chests, not bought
 async function shopScript() {
   const bg = topScreen();
   await say('Hi there! Welcome to the Pet Shop!', 'Shopkeeper Ben');
+  await say('Looking for treats? I don\'t sell those. You find them in treasure chests, and the chests fill up again whenever you rest!', 'Shopkeeper Ben');
   let start = 0;
   for (;;) {
-    const n = ITEM_ORDER.length;
-    const opts = ITEM_ORDER.map(k => ({ label: ITEMS[k].name, right: ITEMS[k].rod && G.bag[k] ? 'Got it' : ITEMS[k].price + 'c' })).concat([{ label: 'Leave' }]);
+    const n = SHOP_ORDER.length;
+    const opts = SHOP_ORDER.map(k => ({ label: ITEMS[k].name, right: ITEMS[k].rod && G.bag[k] ? 'Got it' : ITEMS[k].price + 'c' })).concat([{ label: 'Leave' }]);
     const i = await choose(opts, {
       cancel: n, start, x: W - 160, y: 22, minW: 150, title: 'Buy',
-      info: k => k < n ? ITEMS[ITEM_ORDER[k]].desc + (ITEMS[ITEM_ORDER[k]].rod ? (G.bag.rod ? '  You have one.' : '  You only need one.') : '  You have ' + G.bag[ITEM_ORDER[k]] + '.') : 'Thanks for stopping by!',
+      info: k => k < n ? ITEMS[SHOP_ORDER[k]].desc + (ITEMS[SHOP_ORDER[k]].rod ? (G.bag.rod ? '  You have one.' : '  You only need one.') : '  You have ' + G.bag[SHOP_ORDER[k]] + '.') : 'Thanks for stopping by!',
     });
     start = i;
     if (i === n) { await say('Come back soon!', 'Shopkeeper Ben'); return; }
-    const k = ITEM_ORDER[i];
+    const k = SHOP_ORDER[i];
     if (ITEMS[k].rod && G.bag[k]) { await say('You already have a Fishing Rod, and one is all you need. It never runs out!', 'Shopkeeper Ben'); continue; }
     if (G.coins < ITEMS[k].price) { sfx('bump'); await say('Oops, you need ' + ITEMS[k].price + ' coins for that. Win battles to earn more!', 'Shopkeeper Ben'); continue; }
     G.coins -= ITEMS[k].price; G.bag[k]++;
@@ -7029,7 +7061,7 @@ class BattleScreen {
     // enemy info
     if (!this.caught && this.eIn >= 1) {
       box(10, 12, 178, 40);
-      const label = (this.wild ? 'Wild ' : '') + petName(this.enemy);
+      const label = (this.wild ? 'Wild ' : this.enemy.boss ? 'Boss ' : '') + petName(this.enemy);
       drawText(label, 18, 18, COL.ink);
       drawTextR('Lv ' + this.enemy.lv, 180, 18, COL.ink);
       typeTag(petType(this.enemy), 18, 30);
@@ -7122,7 +7154,7 @@ MoveMenu.prototype.tap = function (x, y) {
 function actionMenu(B) { return new Promise(r => push(new ActionMenu(B, r))); }
 function moveMenu(B) { return new Promise(r => push(new MoveMenu(B, r))); }
 
-function foeName(B, p) { return B.wild ? 'The wild ' + petName(p) : B.o.trainer.name + '\'s ' + petName(p); }
+function foeName(B, p) { return B.wild ? 'The wild ' + petName(p) : B.o.trainer.boss ? petName(p) : B.o.trainer.name + '\'s ' + petName(p); }
 async function chooseAction(B) {
   for (;;) {
     const a = await actionMenu(B);
@@ -7279,6 +7311,7 @@ async function battleTurn(B) {
   if (act.kind === 'run') {
     sfx('run');
     if (B.wild) await bsay('You got away safely!');
+    else if (B.o.trainer.boss) await bsay('You backed away. ' + B.o.trainer.name + ' is still blocking the way.');
     else await bsay('You left the battle. ' + B.o.trainer.name + ' says: "Come back and try again any time!"');
     return 'run';
   }
@@ -7324,6 +7357,7 @@ async function startBattle(o) {
   await fadeTo(0, 10);
   await wait(22);
   if (o.wild) await bsay('A wild ' + petName(B.enemy) + ' jumped out of the grass!');
+  else if (o.trainer.boss) await bsay('Boss ' + o.trainer.name + ' wants to battle!');
   else { await bsay(o.trainer.name + ' wants to battle!'); await bsay(o.trainer.name + ' sends out ' + petName(B.enemy) + '!'); }
   B.setPlayer(lead);
   await wait(14);
@@ -7345,6 +7379,7 @@ async function blackout() {
   const lost = Math.floor(G.coins * 0.25);
   G.coins -= lost;
   for (const p of G.party) healPet(p);
+  refillChests();
   const d = MAPS.pawsville.doors.find(x => x.kind === 'clinic');
   enterMap('pawsville', d.x, d.y + 1, 'down');
   await wait(20);
@@ -7513,7 +7548,7 @@ function runSelfTest() {
   }
   for (const k in MAPS) {
     const m = MAPS[k];
-    for (const n of m.npcs) { if (!PEOPLE[n.look]) dErr.push(n.id + ' bad look'); if (n.trainer) for (const [sp, lv] of n.trainer.team) if (!SPECIES[sp] || lv < 1 || lv > MAX_LV) dErr.push(n.id + ' bad team'); }
+    for (const n of m.npcs) { if (!PEOPLE[n.look]) dErr.push(n.id + ' bad look'); if (n.trainer) for (const [sp, lv] of n.trainer.team) if (!SPECIES[sp] || lv < 1 || lv > FOE_MAX_LV) dErr.push(n.id + ' bad team'); }
     for (const e of m.wild || []) if (!SPECIES[e.sp]) dErr.push(k + ' wild ' + e.sp);
     for (const c of m.chests) if (!c.coins && !ITEMS[c.item]) dErr.push(c.id + ' bad item');
   }
@@ -7992,14 +8027,14 @@ function runSelfTest() {
     return b >= foes.length;
   };
   const allSp = Object.keys(SPECIES).filter(k => !SPECIES[k].machineOnly), curve = [];   // a usual team, before any Super Hamster
-  const fights = [['rex', 3, 9, 'canyon'], ['fen', 3, 13, 'marsh'], ['bo', 3, 15, 'peak'], ['maple', 4, 17, 'peak'], ['gizmo', 4, 19, 'lab']];   // team size + level a player usually has
+  const fights = [['rex', 3, 9, 'canyon'], ['boss_canyon', 3, 9, 'canyon'], ['fen', 3, 13, 'marsh'], ['boss_marsh', 3, 13, 'marsh'], ['bo', 3, 15, 'peak'], ['boss_peak', 3, 15, 'peak'], ['maple', 4, 21, 'peak'], ['gizmo', 6, 24, 'lab']];   // team size + level a player usually has
   let curveOK = true;
   for (const [id, size, lv, mapId] of fights) {
     const npc = MAPS[mapId].npcs.find(n => n.id === id);
     let wins = 0;
     for (let i = 0; i < 300; i++) {
-      const team = Array.from({ length: size }, () => { let sp = pick(allSp); if (lv >= 10 && SPECIES[sp].evo) sp = SPECIES[sp].evo; return createPet(sp, lv); });   // grown up by Lv 10
-      if (simTeams(team, npc.trainer.team.map(([sp, l]) => createPet(sp, l)))) wins++;
+      const team = Array.from({ length: size }, () => { let sp = pick(allSp); if (lv >= 10 && SPECIES[sp].evo) sp = SPECIES[sp].evo; return createPet(sp, lv, FOE_MAX_LV); });   // grown up by Lv 10
+      if (simTeams(team, npc.trainer.team.map(([sp, l]) => { const e = createPet(sp, l, FOE_MAX_LV); if (npc.boss) { e.boss = npc.hp; e.hp = maxHp(e); } return e; }))) wins++;
     }
     const pct = Math.round(wins / 3);
     curve.push(npc.name.split(' ').pop() + ' ' + pct + '%');
@@ -8033,6 +8068,8 @@ function runSelfTest() {
   texts.push(goalText.toString().match(/'Goal:[^']*'/g).join(' '));
   for (const k in MAPS) for (const n of MAPS[k].npcs) { texts.push(...n.lines, ...(n.after || []), ...(n.final || [])); if (textW(n.name) + 10 > DLG.w) uErr.push('name tag ' + n.name); }
   for (const k of ITEM_ORDER) texts.push(ITEMS[k].desc + '  You have 99.', '\u2665 The wild Squeakers loves this! ' + ITEMS[k].desc);
+  texts.push(CHEST_EMPTY, 'It\'s empty. Chests fill up again when you rest at home or at the Clinic.', 'You found 300 coins and 2 Fish Flakes!', 'You found 2 Big Bandages and 2 Lettuce!', 'Looking for treats? I don\'t sell those. You find them in treasure chests, and the chests fill up again whenever you rest!',
+    'Squeakerss is a boss. It won\'t take treats!', 'You backed away. Blizzard is still blocking the way.', 'Boss Blizzard wants to battle!');
   texts.push('\u2665 Just the thing for a wild Squeakers! ' + ITEMS.rod.desc, 'Fish don\'t take treats. A wild Squeakers needs a Fishing Rod.', ITEMS.rod.desc + '  You only need one.',
     'You don\'t have a Fishing Rod. The Pet Shop sells one for 350 coins.', 'The Fishing Rod only works on fish. Offer Squeakers a treat instead!', 'Fish don\'t take treats! You need a Fishing Rod to catch Squeakers. The Pet Shop sells one.',
     'You already have a Fishing Rod, and one is all you need. It never runs out!', 'You bought the Fishing Rod! Use it from your Bag in a battle with a wild fish.', 'You cast your Fishing Rod toward the wild Squeakers!',
@@ -8333,6 +8370,7 @@ function devView(v) {
     document.getElementById('testout').textContent = out.join('\n');
   }); }
   else if (v === 'tasks') { push(overworld); enterMap('pawsville', gx('pawsville', 12), gy('pawsville', 11), 'up'); world.banner = 0; G.quests = { pudding: 'active', glasses: 'found', mouse: 'done' }; runScript(showTasks); }
+  else if (v === 'bossmap') { const k = location.hash.split('&')[1] || 'canyon', b = MAPS[k].npcs.find(n => n.boss); let y = b.y + 1; while (isWalkable(MAPS[k], b.x, y)) y++; while (!isWalkable(MAPS[k], b.x, y)) y++; push(overworld); enterMap(k, b.x, y, 'up'); world.banner = 0; }   // a boss waiting beyond its gatekeeper
   else if (v === 'taskmap') { push(overworld); G.quests = { pudding: 'active' }; enterMap('meadow', gx('meadow', 37), gy('meadow', 25), 'right'); world.banner = 0; }
   else if (v === 'labtop') { push(overworld); enterMap('lab', gx('lab', 11), gy('lab', 5), 'up'); world.banner = 0; }
   else if (v === 'boss') { world.map = MAPS.lab; G.party[0] = createPet('mango', 14); const gz = MAPS.lab.npcs.find(n => n.id === 'gizmo'); const B = new BattleScreen({ wild: false, trainer: gz, enemies: gz.trainer.team.map(([s, l]) => createPet(s, l)) }); B.eIn = 1; B.setPlayer(G.party[0]); B.pIn = 1; push(B); push(new MessageScreen(gz.lines[1], () => {}, 'Dr. Gizmo')); }
@@ -8465,6 +8503,19 @@ async function runSmoke() {
       ok('Whisker Woods now leads to Misty Marsh, and the marsh to Frosty Peak', MAPS.woods.exits.some(e => e.to === 'marsh') && MAPS.marsh.exits.some(e => e.to === 'peak') && MAPS.peak.exits.some(e => e.to === 'lab'));
       ok('Trail Ribbon guardians wait in the Farm, Lake, Dunes and Jungle', RIBBON_IDS.every(id => Object.values(MAPS).some(mm => mm.npcs.some(n => n.id === id && n.ribbon))));
       enterMap('pawsville', HOME.x, HOME.y, 'down'); await wait(5); }
+    // Bosses: one big pet waits beyond each gatekeeper on the main road and must be beaten to pass.
+    { const boss = MAPS.canyon.npcs.find(n => n.id === 'boss_canyon'), savedParty = G.party, flags0 = Object.assign({}, G.flags), coins0 = G.coins, stats0 = Object.assign({}, G.stats);
+      G.flags.rex = true; G.party = [createPet('rocky', 20), createPet('shadow', 20)];
+      G.party.forEach(q => q.moves.sort((x, y) => MOVES[y].power - MOVES[x].power));
+      enterMap('canyon', boss.x, boss.y + 1, 'up'); await wait(5);
+      ok('Beyond Climber Rex, the boss Bramble blocks the pass', npcAt(MAPS.canyon, G.x, G.y - 1) === boss && !isWalkable(MAPS.canyon, G.x, G.y - 1) && !isWalkable(MAPS.canyon, G.x - 1, G.y) && !isWalkable(MAPS.canyon, G.x + 1, G.y));
+      runScript(() => talkTo(boss));
+      await mash(() => topScreen() instanceof ActionMenu, 300);
+      const BB = stack.find(s => s instanceof BattleScreen), e = BB && BB.enemy;
+      ok('The boss is one big Lv 12 pet with extra HP that cannot be befriended', !!e && e.lv === 12 && e.boss === boss.hp && maxHp(e) > petStats(e).hp && !BB.wild && petName(e) === 'Bramble');
+      ok('Beating the boss makes it step aside', await mash(idle, 1500) && G.flags.boss_canyon === true && isWalkable(MAPS.canyon, gx('canyon', 19), gy('canyon', 9)));
+      ok('Bosses: canyon Lv 12, marsh Lv 15, peak Lv 20, Dr. Gizmo Lv 28', ['canyon', 'marsh', 'peak'].map(k => MAPS[k].npcs.find(n => n.boss).trainer.team[0][1]).join() === '12,15,20' && MAPS.lab.npcs.find(n => n.id === 'gizmo').trainer.team.every(t => t[1] === 28) && MAX_LV === 30);
+      G.flags = flags0; G.party = savedParty; G.coins = coins0; Object.assign(G.stats, stats0); enterMap('pawsville', HOME.x, HOME.y, 'down'); await wait(5); }
     // Leaving a trainer battle, and tips from helpful characters.
     { const rex = MAPS.canyon.npcs.find(n => n.id === 'rex'), savedParty = G.party;
       G.party = [createPet('buddy', 9)]; G.flags.rex = false;
@@ -8659,19 +8710,31 @@ async function runSmoke() {
     ok('Lost 25% of coins (' + coins0 + ' -> ' + G.coins + ') and the party is healed', G.coins === coins0 - Math.floor(coins0 * 0.25) && G.party.every(p => p.hp === maxHp(p)));
     ok('Champion not marked as beaten', !G.flags.maple);
     // Chest
-    enterMap('pawsville', gx('pawsville', 9), gy('pawsville', 3), 'up');
-    await key('Enter');
-    await mash(idle, 40);
-    ok('Chest gives 3 Treats and stays open', G.chests.paw1 === true);
-    await key('Enter'); await wait(5);
-    ok('Opened chest says it is empty', topScreen() instanceof MessageScreen && topScreen().pages[0][0].includes('empty'));
-    await mash(idle, 20);
+    // The first time, a chest holds its own prize. Every opening has a 67% chance of treats, and chests fill up again when you rest.
+    { const roll = Math.random, carrots0 = G.bag.carrot, treats = () => TREAT_KEYS.reduce((s, k) => s + G.bag[k], 0);
+      enterMap('pawsville', gx('pawsville', 9), gy('pawsville', 3), 'up');
+      Math.random = () => 0.9;                                                // the treat roll misses
+      await key('Enter'); await mash(idle, 40);
+      ok('The first opening gives the chest its own prize (3 Carrots) and it stays open', G.chests.paw1 === true && chestIsOpen('paw1') && G.bag.carrot === carrots0 + 3);
+      await key('Enter'); await wait(5);
+      ok('Opened chest says it is empty', topScreen() instanceof MessageScreen && topScreen().pages[0][0].includes('empty'));
+      await mash(idle, 20);
+      refillChests(); const t0 = treats(); Math.random = () => 0.1;           // rested, and the roll hits
+      await key('Enter'); await mash(idle, 40);
+      ok('After a rest the chest is full again, and a lucky roll gives 2 treats', !roll.x && treats() === t0 + 2 && chestIsOpen('paw1'));
+      refillChests(); const t1 = treats(); Math.random = () => 0.9;
+      await key('Enter'); await wait(34);
+      const nothing = topScreen() instanceof MessageScreen && topScreen().pages.flat().join(' ').includes('Nothing inside');
+      await mash(idle, 20);
+      Math.random = roll;
+      ok('...and an unlucky roll gives nothing (the chance is 67%)', nothing && treats() === t1 && CHEST_TREAT_CHANCE === 0.67);
+      ok('The Pet Shop sells no treats; a Bandage costs 150 and a Big Bandage 500', SHOP_ORDER.length === 3 && !SHOP_ORDER.some(k => ITEMS[k].treat) && ITEMS.bandage.price === 150 && ITEMS.big.price === 500); }
     // Evolution + learning after level-up
     G.party = [createPet('cookie', 9)]; G.party[0].xp = toNext(9) - 1;
     runScript(() => startBattle({ wild: true, enemies: [createPet('buddy', 2)] }));
     ok('Battle finished and Cookie evolved into Cream', await mash(idle, 1500) && G.party[0].sp === 'cream');
     // Beat the Champion: she reveals Dr. Gizmo and steps aside from the lab path.
-    G.party = ['rocky', 'shadow', 'nugget', 'cream', 'spike', 'mango'].map(sp => createPet(sp, 20));   // an end-game team
+    G.party = ['rocky', 'shadow', 'nugget', 'cream', 'spike', 'mango'].map(sp => createPet(sp, 30));   // an end-game team
     G.party.forEach(q => q.moves.sort((x, y) => MOVES[y].power - MOVES[x].power));   // mashing Enter uses the first move, so put the strongest first, like a real player would pick
     ok('The lab path is blocked before the Champion is beaten', !isWalkable(MAPS.peak, gx('peak', 19), gy('peak', 1)));
     enterMap('peak', gx('peak', 19), gy('peak', 2), 'up');
