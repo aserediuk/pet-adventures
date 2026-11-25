@@ -76,7 +76,7 @@ Offer the wrong snack and the pet usually turns up its nose. In battle, the Bag 
 
 **Trainers and puzzles:** eleven more trainers stand along the roads and challenge you when you walk in front of them. There is a puzzle to find in Pebble Canyon (the Echo Stones), Splash Lake (the Three Lanterns), Parrot Jungle (a parrot's memory game) and Frosty Peak (the Snow Owl's questions), each with a prize, and Dr. Gizmo hides behind a force field until you work out his three-number code from the notes in his lab.
 
-**The Pet Shop** sells Bandages (150 coins), Big Bandages (500 coins) and the Fishing Rod.
+**The Pet Shop** sells Bandages (150 coins), Big Bandages (500 coins) and the Fishing Rod. Bandages cannot be used in the big battles: bosses, Trail Ribbon guardians, the Champion and Dr. Gizmo.
 
 **Fish are different:** they take no treats. Buy the **Fishing Rod** at the Pet Shop for 350 coins, then use it from your Bag in a battle with a wild fish. You only need one, and it never runs out.
 

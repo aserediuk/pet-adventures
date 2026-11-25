@@ -6506,6 +6506,9 @@ function bagOptions(battle) {
   const wild = battle && battle.wild ? battle.enemy : null;
   return ITEM_ORDER.map(k => ({ label: (wild && (ITEMS[k].rod ? needsRod(wild) : ITEMS[k].treat && likesTreat(wild, k)) ? '\u2665 ' : '  ') + ITEMS[k].name, right: ITEMS[k].rod ? (G.bag[k] ? 'Yes' : 'No') : '\u00D7' + G.bag[k] }));
 }
+// The big fights (bosses, Trail Ribbon guardians, the Champion and Dr. Gizmo) allow no Bandages (user's rule).
+function noBandages(npc) { return !!npc && !!(npc.boss || npc.ribbon || npc.champion || npc.id === 'gizmo'); }
+const NO_BANDAGE_TEXT = 'No Bandages in this big battle! Your pets must win on their own.';
 // Returns true if an item was used (in battle this uses the turn).
 async function bagMenu(inBattle, battle) {
   for (;;) {
@@ -6513,7 +6516,7 @@ async function bagMenu(inBattle, battle) {
     const wild = inBattle && battle.wild ? battle.enemy : null;
     const i = await choose(bagOptions(battle).concat([{ label: '  Back' }]), {
       cancel: n, start: bagMenu.last || 0, x: W - 160, y: 22, minW: 150, title: 'Bag',
-      info: k => k >= n ? 'Close the bag.' : (wild && needsRod(wild) && !ITEMS[ITEM_ORDER[k]].heal ? (ITEMS[ITEM_ORDER[k]].rod ? '\u2665 Just the thing for a wild ' + petName(wild) + '! ' + ITEMS.rod.desc : 'Fish don\'t take treats. A wild ' + petName(wild) + ' needs a Fishing Rod.')
+      info: k => k >= n ? 'Close the bag.' : ITEMS[ITEM_ORDER[k]].heal && inBattle && noBandages(battle.o.trainer) ? NO_BANDAGE_TEXT : (wild && needsRod(wild) && !ITEMS[ITEM_ORDER[k]].heal ? (ITEMS[ITEM_ORDER[k]].rod ? '\u2665 Just the thing for a wild ' + petName(wild) + '! ' + ITEMS.rod.desc : 'Fish don\'t take treats. A wild ' + petName(wild) + ' needs a Fishing Rod.')
         : wild && ITEMS[ITEM_ORDER[k]].treat
         ? (likesTreat(wild, ITEM_ORDER[k]) ? '\u2665 The wild ' + petName(wild) + ' loves this! ' : 'The wild ' + petName(wild) + ' likes ' + favoriteTreats(wild).join(' or ') + '. ') + ITEMS[ITEM_ORDER[k]].desc
         : ITEMS[ITEM_ORDER[k]].desc),
@@ -6535,6 +6538,7 @@ async function bagMenu(inBattle, battle) {
       if (!battle.wild) { await say(battle.enemy.boss ? petName(battle.enemy) + ' is a boss. It won\'t take treats!' : 'You can\'t give Treats to another trainer\'s pet!'); continue; }
       return { treat: key };
     }
+    if (inBattle && noBandages(battle.o.trainer)) { await say(NO_BANDAGE_TEXT); continue; }
     const t = await choosePet({ title: 'Use ' + ITEMS[key].name + ' on which pet?' });
     if (t < 0) continue;
     const used = await useHealItem(key, G.party[t]);
@@ -7675,6 +7679,7 @@ async function startBattle(o) {
   if (o.wild) await bsay('A wild ' + petName(B.enemy) + ' jumped out of the grass!');
   else if (o.trainer.boss) await bsay('Boss ' + o.trainer.name + ' wants to battle!');
   else { await bsay(o.trainer.name + ' wants to battle!'); await bsay(o.trainer.name + ' sends out ' + petName(B.enemy) + '!'); }
+  if (noBandages(o.trainer)) await bsay('This is a big battle: no Bandages allowed!');
   B.setPlayer(lead);
   await wait(14);
   await bsay('Go, ' + petName(lead) + '!');
@@ -8943,6 +8948,13 @@ async function runSmoke() {
       await mash(() => topScreen() instanceof ActionMenu, 300);
       const BB = stack.find(s => s instanceof BattleScreen), e = BB && BB.enemy;
       ok('The boss is one big Lv 12 pet with extra HP that cannot be befriended', !!e && e.lv === 12 && e.boss === boss.hp && maxHp(e) > petStats(e).hp && !BB.wild && petName(e) === 'Bramble');
+      { const band0 = G.bag.bandage, hp0 = G.party[0].hp, last0 = bagMenu.last; G.bag.bandage = 3; G.party[0].hp = 1;
+        let r = 'open'; runScript(async () => { r = await bagMenu(true, BB); });
+        await wait(4); for (let k = ITEM_ORDER.indexOf('bandage') - (bagMenu.last || 0); k > 0; k--) await key('ArrowDown');
+        await key('Enter'); await wait(6); const refused = topScreen() instanceof MessageScreen && G.bag.bandage === 3 && G.party[0].hp === 1;
+        for (let k = 0; k < 60 && r === 'open'; k++) { await key(topScreen() instanceof MessageScreen ? 'Enter' : 'Escape'); await wait(4); }
+        ok('No Bandages in boss, guardian, Champion and Dr. Gizmo battles', refused && r === false && noBandages(boss) && noBandages(MAPS.lab.npcs.find(n => n.id === 'gizmo')) && noBandages(MAPS.farm.npcs.find(n => n.id === 'dale')) && Object.values(MAPS).some(mm => mm.npcs.some(n => n.champion && noBandages(n))) && !noBandages(MAPS.canyon.npcs.find(n => n.id === 'rex')) && !noBandages(null));
+        G.bag.bandage = band0; G.party[0].hp = hp0; bagMenu.last = last0; }
       ok('Beating the boss makes it step aside', await mash(idle, 1500) && G.flags.boss_canyon === true && isWalkable(MAPS.canyon, gx('canyon', 19), gy('canyon', 9)));
       ok('Bosses: canyon Lv 12, marsh Lv 15, peak Lv 20, Dr. Gizmo Lv 28', ['canyon', 'marsh', 'peak'].map(k => MAPS[k].npcs.find(n => n.boss).trainer.team[0][1]).join() === '12,15,20' && MAPS.lab.npcs.find(n => n.id === 'gizmo').trainer.team.every(t => t[1] === 28) && MAX_LV === 30);
       G.flags = flags0; G.party = savedParty; G.coins = coins0; Object.assign(G.stats, stats0); enterMap('pawsville', HOME.x, HOME.y, 'down'); await wait(5); }
