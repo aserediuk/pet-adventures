@@ -30,7 +30,7 @@ Press **Space** to begin. A short intro from *When Pets Attack Studio Production
 | N | Music on/off (sound effects stay on) |
 | F | Fullscreen on/off |
 
-**Super Hamster:** once Dr. Gizmo is beaten, he rewires his Mega-Zapper into the Super Growth Machine. Bring a Nugget (a grown-up Alvin), face the machine and press A to turn it into a Super Hamster, the strongest pet in the game.
+**Super Hamster:** once Dr. Gizmo is beaten, he rewires his Mega-Zapper into the Super Growth Machine. Bring a Nugget (a grown-up Alvin), face the machine and press A to turn it into a Super Hamster, the strongest pet in the game. Bring a Shadow (a grown-up Mittens) instead and it becomes a Tiger.
 
 **Tasks:** characters with a yellow **?** over their head need help: find a lost item, bring home a lost pet, or befriend a certain kind of pet to show them. Accept with Yes, check progress under **Tasks** in the menu, and come back (green **!**) for a reward.
 
@@ -55,7 +55,7 @@ Press **Space** to begin. A short intro from *When Pets Attack Studio Production
 | Frosty Peak | north of Misty Marsh | snow bunnies, mice, ferrets, dogs and cats, plus the Champion at the summit |
 | Parrot Jungle | east of Whisker Woods | parrots, lizards and frogs |
 
-**33 pets**: the Super Hamster, plus 16 babies that each grow up at Lv 10: Scout (a black terrier pup), Mittens (cat), Alvin (hamster), Cookie (gerbil), Ziggy (lizard), Kiwi (parrot), Clover (rabbit), Nibbles (mouse), Noodle (ferret), Prickle (hedgehog), Shelly (turtle), Bubbles (goldfish), Ribbit (frog), Daisy (pony), Puddles (duckling) and Truffle (piglet). Water pets hide in the reeds by the pond and the stream.
+**34 pets**: the Super Hamster and the Tiger, plus 16 babies that each grow up at Lv 10: Scout (a dark brown terrier pup), Mittens (cat), Alvin (hamster), Cookie (gerbil), Ziggy (lizard), Kiwi (parrot), Clover (rabbit), Nibbles (mouse), Noodle (ferret), Prickle (hedgehog), Shelly (turtle), Bubbles (goldfish), Ribbit (frog), Daisy (pony), Puddles (duckling) and Truffle (piglet). Water pets hide in the reeds by the pond and the stream.
 
 **Names and dress-up:** when you start a new game you choose to be a boy or a girl, type your name and make your hero your own: hair, skin, hoodie colour and an extra (a cap, beanie, sun hat, glasses, scarf, crown or cape, in six colours). Change any of it, your name included, at any time in Menu, Customize. Give pets nicknames, and dress them up with a bow, top hat, crown, flower or party hat in 6 colors (Menu, Pets, pick a pet).
 
@@ -72,7 +72,7 @@ Press **Space** to begin. A short intro from *When Pets Attack Studio Production
 | Lettuce | rabbits, turtles, ducks |
 Offer the wrong snack and the pet usually turns up its nose. In battle, the Bag marks the wild pet's favorites with a red ♥.
 
-**Bosses:** on the main road, a giant pet waits beyond the gatekeeper of Pebble Canyon (Bramble, Lv 12), Misty Marsh (Gloop, Lv 15) and Frosty Peak (Blizzard, Lv 20). Each is one tough pet with lots of HP. It can't be befriended, and it steps aside once you beat it. Dr. Gizmo's team is Lv 28, and your own pets can train up to Lv 30, so expect to train a full team of six to about Lv 24 before the last fight.
+**Bosses:** on the main road, a giant pet waits beyond the gatekeeper of Pebble Canyon (Bramble, Lv 12), Misty Marsh (Gloop, Lv 15) and Frosty Peak (Blizzard, Lv 20). Each is one tough pet with lots of HP. It can't be befriended, and it steps aside once you beat it. In Parrot Jungle a Tiger called Rumble (Lv 15) guards the bridge to Keeper Kai. Dr. Gizmo's team is Lv 28, and your own pets can train up to Lv 30, so expect to train a full team of six to about Lv 24 before the last fight.
 
 **Trainers and puzzles:** eleven more trainers stand along the roads and challenge you when you walk in front of them. There is a puzzle to find in Pebble Canyon (the Echo Stones), Splash Lake (the Three Lanterns), Parrot Jungle (a parrot's memory game) and Frosty Peak (the Snow Owl's questions), each with a prize, and Dr. Gizmo hides behind a force field until you work out his three-number code from the notes in his lab.
 

@@ -651,7 +651,7 @@ function buildPeople() {
 // ---- Battle pets (32x32, left half mirrored + asymmetric tail overlays) ----
 const PET_ART = {
   buddy: {
-    pal: { o: '#14121c', 1: '#2a3050', 2: '#2a3050', 3: '#ffffff', 6: '#2a3050', e: '#8f5e44', w: '#ffffff', n: '#6f5a80', p: '#ef7f8f', 4: '#d83a3a', 5: '#f2c94c' },
+    pal: { o: '#14121c', 1: '#633a38', 2: '#3a2630', 3: '#ffffff', 6: '#633a38', e: '#1b1b1b', w: '#ffffff', n: '#2b2b2b', p: '#ef7f8f', 4: '#d83a3a', 5: '#f2c94c' },
     half: [
       '..........oooooo', '........oo111111', '.......o11111111', '..oooo.o11111111',
       '.o2222oo11111111', 'o22222o111111111', 'o22222o11ee11111', 'o22222o11ew11111',
@@ -663,7 +663,7 @@ const PET_ART = {
     tail: { x: 26, y: 19, rows: ['....oo', '...o1o', '..o11o', '.o11o.', 'o11o..', 'o1o...'] },
   },
   rocky: {
-    pal: { o: '#14121c', 1: '#2a3050', 2: '#2a3050', 3: '#ffffff', 6: '#2a3050', e: '#8f5e44', w: '#ffffff', n: '#6f5a80', p: '#ef7f8f', 4: '#3e6fd8', 5: '#e8e8f0' },
+    pal: { o: '#14121c', 1: '#633a38', 2: '#3a2630', 3: '#ffffff', 6: '#633a38', e: '#1b1b1b', w: '#ffffff', n: '#2b2b2b', p: '#ef7f8f', 4: '#3e6fd8', 5: '#e8e8f0' },
     half: [
       '..o.............', '..oo............', '..o2o...........', '..o22o....oooooo',
       '..o2p2o.oo222222', '..o2pp2o11122222', '..o2ppo111111222', '..o22o1111111112',
@@ -1020,6 +1020,16 @@ for (const [id, animal, s, adult, pal] of NEW_PETS) {
   for (let y = 0; y < 32; y++) cape.push(y < 8 ? '.'.repeat(16) : y === 8 || y === 31 ? 'qqqq' + 'r'.repeat(12) : 'q' + (y >= 27 && y <= 30 ? 'rsr' : 'rrr') + 'r'.repeat(12));
   PET_ART.superham = { pal: Object.assign({}, n.pal, { 1: '#f8cc50', 2: '#d09a30', k: '#d8302c', r: '#d8302c' }), half, tail: n.tail,
     cape: { rows: cape, pal: { q: '#6a1018', r: '#d8302c', s: '#a81c24' } } };
+}
+// Tiger: Shadow's drawing in orange with a pale front, plus stripes on the forehead, cheeks, sides and tail.
+{
+  const c = PET_ART.shadow, half = c.half.map(r => r.split(''));
+  const stripe = (y, xs) => { for (const x of xs) if (half[y][x] === '1') half[y][x] = 's'; };
+  stripe(6, [12, 15]); stripe(7, [12, 15]); stripe(8, [15]);   // forehead
+  stripe(10, [2, 3, 4]); stripe(12, [2, 3]);                    // cheeks
+  for (const y of [17, 20, 23, 26]) { const o = c.half[y].indexOf('o'); stripe(y, [o + 1, o + 2, o + 3]); }   // sides
+  PET_ART.tiger = { pal: Object.assign({}, c.pal, { 1: '#f08232', 2: '#bf703a', 3: '#fffbe9', s: '#232a4a', g: '#fff29a', p: '#f0689a' }), half: half.map(r => r.join('')),
+    tail: { x: c.tail.x, y: c.tail.y, rows: c.tail.rows.map((r, y) => y % 3 === 2 ? r.replace(/1/g, 's') : r) } };
 }
 const PET_SPR = {};
 // ---- Pet accessories (Customize): drawn on top of the head, in a colour the player picks ----
@@ -4207,7 +4217,8 @@ const SPECIES = {
   buddy:   { name: 'Scout',   type: 'Dog',     fam: 'dog',     base: { hp: 50, atk: 52, def: 46, spd: 48 }, evo: 'rocky',  evoLv: 10, desc: 'A happy, loyal terrier pup who loves to play.' },
   rocky:   { name: 'Rocky',   type: 'Dog',     fam: 'dog',     base: { hp: 65, atk: 68, def: 60, spd: 62 } },
   mittens: { name: 'Mittens', type: 'Cat',     fam: 'cat',     base: { hp: 46, atk: 52, def: 42, spd: 58 }, evo: 'shadow', evoLv: 10, desc: 'A quick, curious kitten with white paws.' },
-  shadow:  { name: 'Shadow',  type: 'Cat',     fam: 'cat',     base: { hp: 60, atk: 68, def: 55, spd: 75 } },
+  shadow:  { name: 'Shadow',  type: 'Cat',     fam: 'cat',     base: { hp: 60, atk: 68, def: 55, spd: 75 }, machineEvo: 'tiger' },
+  tiger:   { name: 'Tiger',   type: 'Cat',     fam: 'cat',     base: { hp: 75, atk: 84, def: 68, spd: 90 }, machineOnly: true },   // only from the Super Growth Machine in Gizmo's Lab
   alvin:   { name: 'Alvin',   type: 'Hamster', fam: 'hamster', base: { hp: 56, atk: 46, def: 54, spd: 42 }, evo: 'nugget', evoLv: 10, desc: 'A chubby hamster with stuffed cheeks.' },
   nugget:  { name: 'Nugget',  type: 'Hamster', fam: 'hamster', base: { hp: 73, atk: 60, def: 70, spd: 55 }, machineEvo: 'superham' },
   superham: { name: 'Super Hamster', type: 'Hamster', fam: 'hamster', base: { hp: 88, atk: 74, def: 84, spd: 68 }, machineOnly: true },   // only from the Super Growth Machine in Gizmo's Lab
@@ -4598,7 +4609,7 @@ MAPS.lab = {
         'Mwa-ha-ha! Your pets will be my next test subjects. Battle me if you dare!'],
       after: ['I\'m working on a new invention: a machine that makes endless treats. For good this time, I promise!'],
       final: ['I rewired my Mega-Zapper into a Super Growth Machine. It only helps pets grow now, I promise!',
-        'Bring a Nugget, press A at the machine, and watch it become a Super Hamster!'] },
+        'Bring a Nugget and it becomes a Super Hamster. Bring a Shadow and it becomes a Tiger! Just press A at the machine.'] },
   ],
   chests: [],
   wild: null,
@@ -4767,8 +4778,8 @@ MAPS.jungle = {
     'J..................................J',
     'JjjjjjjjjjjjjjjjjJJjjjjjjjjjjjjjjjjJ',
     'J,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,J',
-    'J~~~~~~~bb~~~~~~~~~~~~~~~~~~~~~~~~~J',
-    'J~~~~~~~bb~~~~~~~~~~~~~~~~~~~~~~~~~J',
+    'J~~~~~~~b~~~~~~~~~~~~~~~~~~~~~~~~~~J',
+    'J~~~~~~~b~~~~~~~~~~~~~~~~~~~~~~~~~~J',
     'J,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,J',
     'Jjjjjjjj..jjjjjjjjjjjjjjjjjjjjjjjjjJ',
     'Jjjjjjjj..jjjjjJJJjjjjjjjjjjjjjjjjjJ',
@@ -4794,6 +4805,9 @@ MAPS.jungle = {
       'Welcome to Parrot Jungle, {name}! Colorful parrots fly through the treetops, and lizards and frogs hide in the leaves.',
       'Parrots love Apples and Seeds. Frogs and lizards want Bugs!',
       'Cross the bridge over the river to explore the north side.'] },
+    { id: 'boss_jungle', hp: 1.1, boss: 'tiger', look: 'explorer', name: 'Rumble', x: 8, y: 9, dir: 'down', moveTo: { x: 10, y: 8, dir: 'down' }, music: 'boss',
+      lines: ['The leaves rustle. A great striped cat pads onto the bridge with a ROAR!', 'It is Rumble, the boss of Parrot Jungle. It will not budge until you beat it!'],
+      after: ['Rumble purrs like thunder, stretches out on the bank and lets you by.'], trainer: { team: [['tiger', 15]] } },
     { id: 'kai', look: 'champion', name: 'Keeper Kai', x: 30, y: 6, dir: 'down', ribbon: 'Jungle Ribbon', onWin: 'ribbon',
       trainer: { team: [['kiwi', 12], ['ziggy', 12], ['mango', 13]] },
       lines: ['I keep watch over Parrot Jungle. Only the bravest trainers earn the Jungle Ribbon!'],
@@ -6040,11 +6054,11 @@ function machinePets(list) { return list.filter(q => SPECIES[q.sp].machineEvo); 
 async function useMachine() {
   if (!G.flags.gizmo) { sfx('zap'); await say('The Mega-Zapper crackles and fizzes. Better not touch it while Dr. Gizmo is around!'); return; }
   sfx('hum');
-  await say('SUPER GROWTH MACHINE. It helps a grown-up Nugget grow into a Super Hamster!');
+  await say('SUPER GROWTH MACHINE. It turns a Nugget into a Super Hamster, and a Shadow into a Tiger!');
   const ready = machinePets(G.party);
   if (!ready.length) {
-    if (machinePets(G.pen).length) await say('Your Nugget is resting in the Pet Pen. Put it in your party at the Pet Clinic, then come back!');
-    else await say('You don\'t have a Nugget yet. Raise an Alvin to Lv 10 so it grows into a Nugget, then come back!');
+    if (machinePets(G.pen).length) await say('A pet that can use the machine is resting in the Pet Pen. Put it in your party at the Pet Clinic, then come back!');
+    else await say('You need a Nugget (a grown-up Alvin) or a Shadow (a grown-up Mittens). Raise one to Lv 10, then come back!');
     return;
   }
   let p = ready[0];
@@ -6143,7 +6157,7 @@ function progressTip() {
   if (!G.flags.bo) return 'Tip: Mountaineer Bo blocks the pass on Frosty Peak with Lv 16 pets.' + levelAdvice(15);
   if (!G.flags.maple) return 'Tip: Champion Maple waits at the summit of Frosty Peak with four Lv 22 pets. Bring your best team!' + levelAdvice(21);
   if (!G.flags.gizmo) return 'Tip: Dr. Gizmo\'s lab is past the summit. His pets are all Lv 28, so heal up and bring six pets!' + levelAdvice(24);
-  if (G.tipN % 4 === 1 && !G.party.concat(G.pen).some(q => SPECIES[q.sp].machineOnly)) return 'Tip: Dr. Gizmo\'s Super Growth Machine in his lab can turn a Nugget into a Super Hamster!';
+  if (G.tipN % 4 === 1 && !G.party.concat(G.pen).some(q => SPECIES[q.sp].machineOnly)) return 'Tip: Dr. Gizmo\'s Super Growth Machine in his lab turns a Nugget into a Super Hamster, and a Shadow into a Tiger!';
   return 'Tip: You saved the pets! There are ' + Object.keys(SPECIES).length + ' kinds of pets. How many have you befriended? You have ' + G.stats.caught + ' so far.';
 }
 function nextTip() {
@@ -8367,7 +8381,7 @@ function runSelfTest() {
   for (const k of TREAT_KEYS) if (!TYPES.some(t => TREAT_LIKES[t].includes(k))) trErr.push('nobody likes ' + k);
   for (const k in SPECIES) { const q = createPet(k, 8); q.hp = 1; for (const tk of TREAT_KEYS) if (likesTreat(q, tk) ? treatChance(q, tk) < catchChance(q) : treatChance(q, tk) >= catchChance(q) * 0.5) trErr.push(k + '/' + tk); }
   check(TREAT_KEYS.length + ' kinds of treats: every pet has a favorite and the wrong snack rarely works', !trErr.length, trErr.slice(0, 4).join('; '));
-  check(Object.keys(SPECIES).length + ' pets, ' + TYPES.length + ' types, ' + Object.keys(MOVES).length + ' moves', Object.keys(SPECIES).length === 33, 'expected 33 pets');
+  check(Object.keys(SPECIES).length + ' pets, ' + TYPES.length + ' types, ' + Object.keys(MOVES).length + ' moves', Object.keys(SPECIES).length === 34, 'expected 34 pets');
   // Difficulty curve: a typical team at the expected level should usually (but not always) win each big fight.
   const simTeams = (team, foes) => {
     let a = 0, b = 0;
@@ -8382,7 +8396,7 @@ function runSelfTest() {
     return b >= foes.length;
   };
   const allSp = Object.keys(SPECIES).filter(k => !SPECIES[k].machineOnly), curve = [];   // a usual team, before any Super Hamster
-  const fights = [['rex', 3, 9, 'canyon'], ['boss_canyon', 3, 9, 'canyon'], ['fen', 3, 13, 'marsh'], ['boss_marsh', 3, 13, 'marsh'], ['bo', 3, 15, 'peak'], ['boss_peak', 3, 15, 'peak'], ['maple', 4, 21, 'peak'], ['gizmo', 6, 24, 'lab']];   // team size + level a player usually has
+  const fights = [['rex', 3, 9, 'canyon'], ['boss_canyon', 3, 9, 'canyon'], ['fen', 3, 13, 'marsh'], ['boss_marsh', 3, 13, 'marsh'], ['bo', 3, 15, 'peak'], ['boss_peak', 3, 15, 'peak'], ['boss_jungle', 3, 12, 'jungle'], ['maple', 4, 21, 'peak'], ['gizmo', 6, 24, 'lab']];   // team size + level a player usually has
   let curveOK = true;
   for (const [id, size, lv, mapId] of fights) {
     const npc = MAPS[mapId].npcs.find(n => n.id === id);
@@ -8441,9 +8455,9 @@ function runSelfTest() {
   for (const k in SPECIES) texts.push((SPECIES[k].desc || ''), 'Champion Maple\'s ' + SPECIES[k].name + ' used Whisker Swipe!', SPECIES[k].name + ' wants to learn Pouch Cannon! But a pet can only know 4 moves.');
   texts.push('Your party is full, so ' + longName + ' went to rest in the Pet Pen at the Clinic.');
   texts.push('The music now uses Theme 1. Every song plays its melody!');
-  texts.push('SUPER GROWTH MACHINE. It helps a grown-up Nugget grow into a Super Hamster!', 'You don\'t have a Nugget yet. Raise an Alvin to Lv 10 so it grows into a Nugget, then come back!',
-    'Your Nugget is resting in the Pet Pen. Put it in your party at the Pet Clinic, then come back!', '{name} hops in. You pull the big lever... BZZZT! It tickles!', 'Put {name} in the machine?',
-    '{name} grew into a Super Hamster! It looks stronger than ever!', 'Tip: Dr. Gizmo\'s Super Growth Machine in his lab can turn a Nugget into a Super Hamster!',
+  texts.push('SUPER GROWTH MACHINE. It turns a Nugget into a Super Hamster, and a Shadow into a Tiger!', 'You need a Nugget (a grown-up Alvin) or a Shadow (a grown-up Mittens). Raise one to Lv 10, then come back!',
+    'A pet that can use the machine is resting in the Pet Pen. Put it in your party at the Pet Clinic, then come back!', '{name} hops in. You pull the big lever... BZZZT! It tickles!', 'Put {name} in the machine?',
+    '{name} grew into a Super Hamster! It looks stronger than ever!', '{name} grew into a Tiger! It looks stronger than ever!', 'Tip: Dr. Gizmo\'s Super Growth Machine in his lab turns a Nugget into a Super Hamster, and a Shadow into a Tiger!',
     'The Mega-Zapper crackles and fizzes. Better not touch it while Dr. Gizmo is around!', ...MAPS.lab.npcs.find(n => n.id === 'gizmo').final);
   let maxPages = 0;
   const longest = 'W'.repeat(NAME_MAX);
@@ -8731,7 +8745,7 @@ function devView(v) {
     document.getElementById('testout').textContent = out.join('\n');
   }); }
   else if (v === 'tasks') { push(overworld); enterMap('pawsville', gx('pawsville', 12), gy('pawsville', 11), 'up'); world.banner = 0; G.quests = { pudding: 'active', glasses: 'found', mouse: 'done' }; runScript(showTasks); }
-  else if (v === 'bossmap') { const k = location.hash.split('&')[1] || 'canyon', b = MAPS[k].npcs.find(n => n.boss); let y = b.y + 1; while (isWalkable(MAPS[k], b.x, y)) y++; while (!isWalkable(MAPS[k], b.x, y)) y++; push(overworld); enterMap(k, b.x, y, 'up'); world.banner = 0; }   // a boss waiting beyond its gatekeeper
+  else if (v === 'bossmap') { const k = location.hash.split('&')[1] || 'canyon', b = MAPS[k].npcs.find(n => n.boss); const lim = MAPS[k].rows.length; let y = b.y + 1; while (y < lim && isWalkable(MAPS[k], b.x, y)) y++; while (y < lim && !isWalkable(MAPS[k], b.x, y)) y++; if (y >= lim) y = b.y + 2; push(overworld); enterMap(k, b.x, y, 'up'); world.banner = 0; }   // a boss waiting beyond its gatekeeper
   else if (v === 'puzmap') { const p = PUZZLES.find(q => q.id === (location.hash.split('&')[1] || 'stones')), o = p.objs[Math.min(2, p.objs.length - 1)]; push(overworld); if (location.hash.includes('lit')) G.puz = { stones: { step: 2 }, lanterns: { done: true } }; enterMap(p.map, o.x, o.y + 2, 'up'); world.banner = 0; }   // a puzzle's objects on the map
   else if (v === 'hero') { const a = location.hash.split('&'), L = defaultLook(a[1]); if (a[2]) { L.acc = +a[2]; L.accCol = +(a[3] || 0); L.top = +(a[4] || L.top); L.hair = +(a[5] || L.hair); } push(new HeroScreen(() => {}, { name: 'Sam', look: L, row: 5 })); }
   else if (v === 'heroes') { push({ opaque: true, update() {}, hint() { return 'boy and girl with every extra: front, side, back'; }, draw() {
@@ -8752,6 +8766,7 @@ function devView(v) {
   else if (v === 'win') { const s = push(new WinScreen(() => {})); s.t = 100; }
   else if (v === 'evolve') { const s = push(new EvolveScreen('cookie', 'cream')); s.t = 25; }
   else if (v === 'superbattle') { G.party[0] = createPet('superham', 20); const e = createPet('superham', 20); e.hp = 30; const B = battleWith(e); push(new ActionMenu(B, () => {})); }
+  else if (v === 'tiger') { const s = push(new EvolveScreen('shadow', 'tiger')); s.done = true; }
   else if (v === 'superham') { const s = push(new EvolveScreen('nugget', 'superham')); s.done = true; }
   else if (v === 'dialog') { push(overworld); enterMap('pawsville', gx('pawsville', 11), gy('pawsville', 9), 'right'); world.banner = 0; push(new MessageScreen(MAPS.pawsville.npcs[0].lines[1], () => {}, 'Granny Rose')); }
   else if (v === 'menu') { push(overworld); enterMap('meadow', gx('meadow', 9), gy('meadow', 18), 'down'); world.banner = 0; push(new ChoiceScreen(['Pets', 'Bag', 'Save', 'Controls', 'Close'], () => {}, { x: W - 96, y: 22, minW: 90, title: G.coins + ' coins', info: () => 'Pets caught: 3   Chests: 2/8   Time: 0h 12m' })); }
@@ -9009,6 +9024,11 @@ async function runSmoke() {
       for (let i = 0; i < 20 && !(topScreen() instanceof ChoiceScreen); i++) { await key('Enter'); await wait(4); }
       await key('Enter');   // Yes
       ok('After Dr. Gizmo is beaten, the machine turns Nugget into a Super Hamster', await mash(idle, 1500) && G.party[0].sp === 'superham' && G.party[0].hp === maxHp(G.party[0]));
+      G.party = [createPet('shadow', 15)].concat(keepParty.slice(0, 5));
+      await key('Enter');
+      for (let i = 0; i < 20 && !(topScreen() instanceof ChoiceScreen); i++) { await key('Enter'); await wait(4); }
+      await key('Enter');   // Yes
+      ok('...and it turns Shadow into a Tiger', await mash(idle, 1500) && G.party[0].sp === 'tiger' && SPECIES.tiger.type === 'Cat' && G.party[0].hp === maxHp(G.party[0]));
       G.party = keepParty; G.flags.gizmo = keepGizmo; enterMap('pawsville', HOME.x, HOME.y, 'down'); await wait(5); }
     // Jukebox in the pause menu.
     await key('KeyQ'); await wait(5);
