@@ -2098,8 +2098,8 @@ const LOOK2 = {
   fisher:   { skin: 1, hair: 'white', style: 'short', top: 'yellow', bottom: 'navy', shoes: 'brown', hat: 'bucket', hatCol: 'tan', beard: true },
   explorer: { skin: 2, hair: 'brown', style: 'bob', top: 'tan', bottom: 'brown', shoes: 'brown', hat: 'safari', hatCol: 'tan', scarf: 'red' },
 };
-function personPix(look, dir, frame) {
-  const L = LOOK2[look], p = new Pix(PW, PH);
+function personPix(look, dir, frame) {   // look: a key of LOOK2, or a description object (the player's own look)
+  const L = typeof look === 'string' ? LOOK2[look] : look, p = new Pix(PW, PH), lookSeed = typeof look === 'string' ? look.length : 6;
   const skin = [PI.skin, PI.skin2, PI.skin3][L.skin], hair = hairRamp(L.hair), top = clothRamp(L.top), bot = clothRamp(L.bottom), shoe = clothRamp(L.shoes)[2];
   const bob = frame === 4 ? 1 : 0, step = frame === 1 ? 1 : frame === 3 ? -1 : 0;    // step: +1 = left foot forward, -1 = right foot
   const hy = 1 + bob, ty = hy + 11;                                                   // top of the head, top of the torso
@@ -2113,7 +2113,7 @@ function personPix(look, dir, frame) {
       R(x, 19, 3, 3 - up, bot[1]); R(x + 2, 19, 1, 3 - up, bot[2]);
       R(x - (s < 0 ? 1 : 0), 22 - up, 4, 1, shoe);
     }
-    if (L.dress || L.coat) { R(4, 18, 8, 3, L.coat ? PI.snow[1] : bot[1]); R(4, 20, 8, 1, L.coat ? PI.snow[2] : bot[2]); R(4, 18, 1, 3, L.coat ? PI.snow[0] : bot[0]); }
+    if (L.dress || L.coat || L.skirt) { R(4, 18, 8, 3, L.coat ? PI.snow[1] : bot[1]); R(4, 20, 8, 1, L.coat ? PI.snow[2] : bot[2]); R(4, 18, 1, 3, L.coat ? PI.snow[0] : bot[0]); }
   } else {
     if (step === 0) { R(6, 19, 4, 3, bot[1]); R(9, 19, 1, 3, bot[2]); R(6, 22, 5, 1, shoe); }
     else {
@@ -2121,7 +2121,7 @@ function personPix(look, dir, frame) {
       R(f ? 8 : 4, 19, 3, 3, bot[f ? 1 : 2]); R(f ? 8 : 4, 22, 4, 1, shoe);            // front leg
       R(f ? 4 : 8, 19, 3, 2, bot[f ? 2 : 1]); R(f ? 3 : 8, 21, 4, 1, shoe);            // back leg, lifted
     }
-    if (L.dress || L.coat) { R(5, 18, 6, 3, L.coat ? PI.snow[1] : bot[1]); R(5, 20, 6, 1, L.coat ? PI.snow[2] : bot[2]); }
+    if (L.dress || L.coat || L.skirt) { R(5, 18, 6, 3, L.coat ? PI.snow[1] : bot[1]); R(5, 20, 6, 1, L.coat ? PI.snow[2] : bot[2]); }
   }
   // ---- backpack or cape behind the body (seen from the front it only peeks out) ----
   const packC = L.pack ? clothRamp(L.pack) : null, capeC = L.cape ? clothRamp(L.cape) : null;
@@ -2166,7 +2166,7 @@ function personPix(look, dir, frame) {
   p.ell(hx, cy, 5.4, 5.3, [skin[0], skin[1], skin[1], skin[2]], { tex: 0 });
   // hair: a cap over the top and back of the head, then the face shows through
   const bald = L.style === 'bald', big = L.style === 'curly' ? 0.7 : L.style === 'bob' || L.style === 'long' ? 0.4 : 0;
-  if (!bald) p.ell(side ? 7.4 : 8, hy + 4.6 - big * 0.3, 5.9 + big, 5.2 + big * 0.6, hair, { tex: L.style === 'curly' ? 0.7 : 0.25, seed: look.length * 7 });
+  if (!bald) p.ell(side ? 7.4 : 8, hy + 4.6 - big * 0.3, 5.9 + big, 5.2 + big * 0.6, hair, { tex: L.style === 'curly' ? 0.7 : 0.25, seed: lookSeed * 7 });
   else { R(side ? 3 : 2, hy + 5, 2, 3, hair[1]); if (!side) R(12, hy + 5, 2, 3, hair[2]); }
   if (!back) {
     if (side) p.ell(10.2, hy + 7, 3.5, 3.7, [skin[0], skin[1], skin[1]], { tex: 0 });
@@ -2190,7 +2190,7 @@ function personPix(look, dir, frame) {
   if (L.style === 'bun') p.ell(side ? 5 : 8, hy + (side ? 2 : 0), 2.4, 2, hair, { tex: 0 });
   if (L.style === 'pony' && side) R(3, hy + 3, 2, 3, hair[1]);
   if (L.circlet) { R(side ? 5 : 3, hy + 2, side ? 8 : 10, 1, PI.yellow[1]); p.set(side ? 11 : 8, hy + 1, PI.yellow[0]); }
-  // hats (never on the player)
+  // hats (the player can choose one in Menu > Customize)
   if (L.hat) {
     const hc = clothRamp(L.hatCol);
     if (L.hat === 'straw' || L.hat === 'safari' || L.hat === 'bucket') {
@@ -2199,6 +2199,10 @@ function personPix(look, dir, frame) {
       p.ell(side ? 8 : 8, hy + 1, 4.4, 2.6, [hc[0], hc[1], hc[1]], { tex: 0 });                            // crown
       R(side ? 4 : 4, hy + 2, side ? 8 : 8, 1, L.hat === 'straw' ? PI.red[0] : hc[2]);                     // band
     } else if (L.hat === 'beanie') { p.ell(side ? 7.6 : 8, hy + 1.6, 5.6, 3.2, hc, { tex: 0.3 }); R(side ? 3 : 3, hy + 3, 10, 1, hc[2]); p.set(side ? 7 : 8, hy - 1 < 0 ? 0 : hy - 1, hc[0]); }
+    else if (L.hat === 'ball') {   // a peaked cap
+      p.ell(side ? 7.8 : 8, hy + 1.8, 5.6, 3, hc, { tex: 0 }); R(side ? 3 : 3, hy + 3, side ? 9 : 10, 1, hc[2]);
+      if (side) R(11, hy + 3, 3, 1, hc[1]); else if (!back) { R(5, hy + 4, 6, 1, hc[1]); p.set(8, hy, hc[0]); }
+    }
     else if (L.hat === 'cap') { p.ell(8, hy + 1.2, 4.2, 2.2, [PI.snow[0], PI.snow[0], PI.snow[1]], { tex: 0 }); if (!back) { R(side ? 9 : 7, hy, 2, 3, PI.pink[1]); R(side ? 8 : 6, hy + 1, 4, 1, PI.pink[1]); } }
   }
   p.outline(PI.ink[0]);
@@ -2326,7 +2330,7 @@ const SCENE_CACHE = {};
 function battleBackdrop(kind, ovals) {
   const key = kind + (ovals ? JSON.stringify(ovals) : '');
   if (SCENE_CACHE[key]) return SCENE_CACHE[key];
-  const p = new Pix(W, BATTLE_H), sd = kind.length * 13, leaf = PI.leaf;
+  const p = new Pix(W, H), sd = kind.length * 13, leaf = PI.leaf;   // the scene fills the whole screen; the panels are drawn over its lower part
   const CW = [PI.snow[0], PI.snow[0], PI.snow[1], PI.blue[0]], CWARM = [PI.cream[0], PI.cream[0], PI.yellow[0], PI.orange[0]], CMINT = [PI.snow[0], PI.cream[0], PI.mint[0], PI.mint[1]];
   const S = {
     field:  { sky: [PI.blue[1], PI.blue[0], PI.snow[1], PI.cream[0]], haze: [PI.mint[0], PI.mint[1]], far: [leaf[3], leaf[4]], near: [leaf[4], leaf[5], leaf[6]], g: [leaf[0], leaf[1], leaf[2], leaf[3]], trees: 1, cloud: CW, detail: 'grass', flowers: 26 },
@@ -2416,8 +2420,8 @@ function battleBackdrop(kind, ovals) {
     }
   }
   // ground, with texture that gets finer toward the horizon and paler in the distance
-  for (let y = HORIZON; y < BATTLE_H; y++) for (let x = 0; x < W; x++) {
-    const depth = (y - HORIZON) / (BATTLE_H - HORIZON), sy = HORIZON + (y - HORIZON) * (2.4 - depth * 1.2);
+  for (let y = HORIZON; y < H; y++) for (let x = 0; x < W; x++) {
+    const depth = Math.min(1, (y - HORIZON) / (BATTLE_H - HORIZON)), sy = HORIZON + (y - HORIZON) * (2.4 - depth * 1.2);
     if (S.lab) { const tx = Math.floor((x - W / 2) / (10 + depth * 26) + 100), ty = Math.floor(sy / 14); p.set(x, y, (y - HORIZON) % Math.max(4, Math.round(6 + depth * 12)) === 0 ? PI.snow[2] : (tx + ty) % 2 ? PI.snow[0] : PI.snow[1]); continue; }
     const v = vnoise(x, sy, 22, sd + 6) * 0.42 + vnoise(x, sy, 7, sd + 7) * 0.28 + speckle(x, y, sd + 8) * 0.2 + (bay(x, y) - 0.5) * 0.1 + depth * 0.12;
     let c = v < 0.3 ? S.g[0] : v < 0.52 ? S.g[1] : v < 0.82 ? S.g[2] : S.g[3];
@@ -2428,8 +2432,8 @@ function battleBackdrop(kind, ovals) {
     p.set(x, y, c);
   }
   // things growing and lying on the ground: small far away, bigger up close
-  if (!S.lab) for (let k = 0; k < 150; k++) {
-    const dp = Math.pow(hash2(k, 1, sd + 50), 1.4), x = Math.floor(hash2(k, 2, sd + 51) * W), y = HORIZON + 4 + Math.floor(dp * (BATTLE_H - HORIZON - 6)), big = dp > 0.45, here = p.get(x, y);
+  if (!S.lab) for (let k = 0; k < 230; k++) {
+    const dp = Math.pow(hash2(k, 1, sd + 50), 1.4), x = Math.floor(hash2(k, 2, sd + 51) * W), y = HORIZON + 4 + Math.floor(dp * (H - HORIZON - 8)), big = dp > 0.3, here = p.get(x, y);
     if (here === PI.water[2] || here === PI.water[3] || here === PI.water[1]) { if (k % 3 === 0) { p.set(x, y, PI.grass[3]); p.set(x, y - 1, PI.grass[3]); p.set(x, y - 2, PI.grass[2]); p.set(x, y - 3, PI.wood[3]); } continue; }   // a reed in a pool
     if (S.detail === 'grass') {
       if (S.flowers && k < S.flowers) { const fc = FLOWER_COLS()[k % 6]; p.set(x, y, fc); if (big) { p.set(x - 1, y, fc); p.set(x + 1, y, fc); p.set(x, y - 1, LIGHTER[fc]); p.set(x, y, PI.yellow[1]); p.set(x, y + 1, S.g[3]); p.set(x, y + 2, S.g[3]); } else p.set(x, y + 1, S.g[3]); continue; }
@@ -2526,7 +2530,6 @@ function drawBattleScene(B) {
   ctx.drawImage(battleBackdrop(kind, [[EPOS.x + 32, EPOS.y + 62, 40, 8], [PPOS.x + 32, PPOS.y + 64, 46, 9]]), 0, 0);
   if (kind !== 'lab' && kind !== 'forest' && kind !== 'jungle') drawClouds(B.t, 4, kind === 'marsh' ? 2 : 4);
   const bd = battleBackdrop(kind, [[EPOS.x + 32, EPOS.y + 62, 40, 8], [PPOS.x + 32, PPOS.y + 64, 46, 9]]);
-  ctx.drawImage(bd, 0, BATTLE_H - 1, W, 1, 0, BATTLE_H, W, H - BATTLE_H);   // the ground carries on under the panels
 }
 // <<< GFX:battle
 
@@ -4465,6 +4468,8 @@ const MAPS = {
     doors: [],
     labels: [{ tx: 40.5, ty: 25.1, text: 'DUNES >' }],
     npcs: [
+    { id: 'tess', look: 'lily', name: 'Kite Flyer Tess', x: 11, y: 5, dir: 'left', sight: 5,
+      lines: ['Hey! My kite got away, so let us have a battle instead!'], after: ['You are good! I will go and look for my kite now.'], trainer: { team: [['nibbles', 5], ['puddles', 6]] } },
       { id: 'pat', look: 'waddle', name: 'Picnic Pat', x: 30, y: 9, dir: 'down', lines: ['Lovely day for a picnic! Bunnies, mice and hedgehogs keep trying to steal my sandwiches.'] },
       { id: 'pip', look: 'pip', name: 'Scout Pip', x: 15, y: 18, dir: 'down',
         trainer: { team: [['clover', 3], ['kiwi', 4], ['mittens', 5]] },
@@ -4530,6 +4535,10 @@ const MAPS = {
     doors: [],
     labels: [{ tx: 43, ty: 13.1, text: 'JUNGLE >' }],
     npcs: [
+    { id: 'tansy', look: 'moss', name: 'Beetle Fan Tansy', x: 27, y: 18, dir: 'right', sight: 5,
+      lines: ['Shh! I was watching a beetle... but a battle sounds fun too!'], after: ['Wow. Even the beetles are impressed.'], trainer: { team: [['prickle', 11], ['ribbit', 11], ['clover', 12]] } },
+    { id: 'marlo', look: 'explorer', name: 'Trail Guide Marlo', x: 20, y: 3, dir: 'right', sight: 5,
+      lines: ['The marsh is up ahead. Show me you are ready for it!'], after: ['You are ready. Watch out for the big frog!'], trainer: { team: [['bandit', 12], ['squeakers', 12]] } },
       { id: 'wren', look: 'granny', name: 'Birdwatcher Wren', x: 13, y: 7, dir: 'down', lines: ['Shh! I\'m listening for owls. These woods are full of ferrets and hedgehogs too.'] },
       { id: 'moss', look: 'moss', name: 'Forester Moss', x: 14, y: 23, dir: 'down',
         trainer: { team: [['noodle', 10], ['ziggy', 10], ['buddy', 11]] },
@@ -4625,6 +4634,8 @@ MAPS.farm = {
   doors: [],
   labels: [{ tx: 5.5, ty: 1.3, text: 'BARN' }, { tx: 17.5, ty: 1.3, text: 'PIG PEN' }],
   npcs: [
+    { id: 'gus', look: 'farmer', name: 'Farmhand Gus', x: 6, y: 8, dir: 'down', sight: 5,
+      lines: ['Howdy! My piglets have been training all week!'], after: ['Well, I never. Back to training, piglets!'], trainer: { team: [['daisy', 5], ['truffle', 6]] } },
     { id: 'rosa', look: 'farmer', name: 'Farmer Rosa', x: 12, y: 9, dir: 'down', lines: [
       'Howdy, {name}! Welcome to Sunny Farm.',
       'Puppies, kittens, ponies and bunnies play in the wheat. Piglets roll around in the mud pen, and ducklings paddle in the pond.',
@@ -4674,6 +4685,8 @@ MAPS.lake = {
   doors: [],
   labels: [],
   npcs: [
+    { id: 'sal', look: 'fisher', name: 'Paddler Sal', x: 28, y: 12, dir: 'down', sight: 5,
+      lines: ['Splash! My pets love the water. Do yours?'], after: ['Nice one! The lake is all yours.'], trainer: { team: [['puddles', 8], ['shelly', 9]] } },
     { id: 'finn', look: 'fisher', name: 'Fisher Finn', x: 27, y: 10, dir: 'left', lines: [
       'Ahoy, {name}! Splash Lake is home to turtles, goldfish, frogs and ducks. They hide in the reeds by the water.',
       'Goldfish only come to a Fishing Rod. The Pet Shop sells one for 350 coins.',
@@ -4724,6 +4737,8 @@ MAPS.dunes = {
   doors: [],
   labels: [{ tx: 26.5, ty: 7.1, text: 'OASIS' }],
   npcs: [
+    { id: 'noor', look: 'explorer', name: 'Dune Walker Noor', x: 4, y: 10, dir: 'down', sight: 5,
+      lines: ['The dunes are hot, and so is my team!'], after: ['Cooled right down, I have. Well played!'], trainer: { team: [['alvin', 8], ['ziggy', 9]] } },
     { id: 'juno', look: 'explorer', name: 'Explorer Juno', x: 8, y: 12, dir: 'down', lines: [
       'Phew, it\'s hot! Welcome to Sunny Dunes, {name}.',
       'Gerbils, hamsters, lizards and desert hedgehogs hide in the dry brush. Frogs and ducklings cool off at the oasis.',
@@ -4773,6 +4788,8 @@ MAPS.jungle = {
   doors: [],
   labels: [],
   npcs: [
+    { id: 'robin', look: 'lily', name: 'Feather Finder Robin', x: 5, y: 12, dir: 'down', sight: 5,
+      lines: ['Squawk! Oh, sorry, I spend a lot of time with parrots. Battle?'], after: ['You win! The parrots will hear about this.'], trainer: { team: [['kiwi', 11], ['ribbit', 12]] } },
     { id: 'ivy', look: 'explorer', name: 'Explorer Ivy', x: 20, y: 14, dir: 'left', lines: [
       'Welcome to Parrot Jungle, {name}! Colorful parrots fly through the treetops, and lizards and frogs hide in the leaves.',
       'Parrots love Apples and Seeds. Frogs and lizards want Bugs!',
@@ -4831,8 +4848,10 @@ MAPS.canyon = {
   doors: [],
   labels: [],
   npcs: [
+    { id: 'rusty', look: 'explorer', name: 'Rock Hound Rusty', x: 15, y: 19, dir: 'right', sight: 5,
+      lines: ['I collect shiny rocks. Do you collect wins? Let us see!'], after: ['A fine battle! Here is a tip: Climber Rex likes lizards.'], trainer: { team: [['ziggy', 9], ['prickle', 9]] } },
     { id: 'hazel', look: 'explorer', name: 'Hiker Hazel', x: 30, y: 26, dir: 'left', lines: ['Phew, what a climb! Lizards love to sunbathe on these warm canyon rocks.'] },
-    { id: 'boss_canyon', hp: 1.15, boss: 'thistle', look: 'explorer', name: 'Bramble', x: 19, y: 9, dir: 'down', moveTo: { x: 21, y: 8, dir: 'down' }, music: 'boss',
+    { id: 'boss_canyon', hp: 1.18, boss: 'thistle', look: 'explorer', name: 'Bramble', x: 19, y: 9, dir: 'down', moveTo: { x: 21, y: 8, dir: 'down' }, music: 'boss',
       lines: ['The ground shakes. A giant hedgehog rolls into the pass!', 'It is Bramble, the boss of Pebble Canyon. It will not budge until you beat it!'],
       after: ['Bramble yawns, curls up beside the path and lets you by.'], trainer: { team: [['thistle', 12]] } },
     { id: 'rex', look: 'explorer', name: 'Climber Rex', x: 19, y: 11, dir: 'down', moveTo: { x: 21, y: 12, dir: 'left' },
@@ -4889,8 +4908,12 @@ MAPS.marsh = {
   doors: [],
   labels: [],
   npcs: [
+    { id: 'tad', look: 'fisher', name: 'Frog Fan Tad', x: 16, y: 22, dir: 'right', sight: 5,
+      lines: ['Ribbit! That is frog for LET US BATTLE!'], after: ['Croak... that is frog for YOU WIN.'], trainer: { team: [['ribbit', 13], ['croaker', 13]] } },
+    { id: 'sedge', look: 'lily', name: 'Reed Cutter Sedge', x: 22, y: 8, dir: 'left', sight: 5,
+      lines: ['Nobody crosses my reed patch without a battle!'], after: ['All right, all right. Cross away!'], trainer: { team: [['quackers', 14], ['tank', 14], ['bandit', 14]] } },
     { id: 'bea', look: 'lily', name: 'Botanist Bea', x: 21, y: 27, dir: 'left', lines: ['I study marsh plants! Watch your step, frogs and ducks hide in every reed.'] },
-    { id: 'boss_marsh', hp: 2.4, boss: 'croaker', look: 'explorer', name: 'Gloop', x: 19, y: 14, dir: 'down', moveTo: { x: 20, y: 15, dir: 'down' }, music: 'boss',
+    { id: 'boss_marsh', hp: 2.5, boss: 'croaker', look: 'explorer', name: 'Gloop', x: 19, y: 14, dir: 'down', moveTo: { x: 20, y: 15, dir: 'down' }, music: 'boss',
       lines: ['A huge shape rises out of the reeds with a mighty CROAK!', 'It is Gloop, the boss of Misty Marsh. It will not budge until you beat it!'],
       after: ['Gloop gives a happy croak, hops aside and lets you by.'], trainer: { team: [['croaker', 15]] } },
     { id: 'fen', look: 'fisher', name: 'Warden Fen', x: 19, y: 16, dir: 'down', moveTo: { x: 18, y: 15, dir: 'right' },
@@ -4953,8 +4976,12 @@ MAPS.peak = {
   doors: [],
   labels: [{ tx: 19.5, ty: 5.1, text: 'SUMMIT' }],
   npcs: [
+    { id: 'skye', look: 'milo', name: 'Sledder Skye', x: 16, y: 22, dir: 'right', sight: 5,
+      lines: ['Brr! A battle will warm us both up!'], after: ['Phew, now I am toasty. Thanks!'], trainer: { team: [['squeakers', 16], ['shadow', 16], ['bandit', 17]] } },
+    { id: 'kit', look: 'pip', name: 'Snow Scout Kit', x: 22, y: 6, dir: 'left', sight: 5,
+      lines: ['The Champion is just ahead. Practice on me first!'], after: ['You might really beat her. Good luck!'], trainer: { team: [['hopscotch', 19], ['rocky', 20]] } },
     { id: 'sam', look: 'milo', name: 'Snow Scout Sam', x: 21, y: 29, dir: 'left', lines: ['Brr! Snow bunnies blend right in up here. You can only spot them by their noses!'] },
-    { id: 'boss_peak', hp: 1.3, boss: 'hopscotch', look: 'explorer', name: 'Blizzard', x: 19, y: 18, dir: 'down', moveTo: { x: 17, y: 17, dir: 'down' }, music: 'boss',
+    { id: 'boss_peak', hp: 1.35, boss: 'hopscotch', look: 'explorer', name: 'Blizzard', x: 19, y: 18, dir: 'down', moveTo: { x: 17, y: 17, dir: 'down' }, music: 'boss',
       lines: ['Thump! Thump! A giant snow rabbit lands on the trail!', 'It is Blizzard, the boss of Frosty Peak. It will not budge until you beat it!'],
       after: ['Blizzard twitches its nose, hops aside and lets you by.'], trainer: { team: [['hopscotch', 20]] } },
     { id: 'bo', look: 'farmer', name: 'Mountaineer Bo', x: 19, y: 20, dir: 'down', moveTo: { x: 21, y: 21, dir: 'left' },
@@ -4997,7 +5024,7 @@ function chestAt(map, x, y) { return map.chests.find(c => c.x === x && c.y === y
 function isWalkable(map, x, y) {
   const info = TILE_INFO[tileAt(map, x, y)];
   if (!info || !info.walk) return false;
-  if (npcAt(map, x, y) || chestAt(map, x, y) || questObjAt(map, x, y)) return false;
+  if (npcAt(map, x, y) || chestAt(map, x, y) || questObjAt(map, x, y) || puzzleObjAt(map, x, y)) return false;
   return true;
 }
 function nearWater(map, x, y) {
@@ -5115,6 +5142,45 @@ const QUESTS = [
 ];
 
 // ---------------------------------------------------------------------
+// 7c2. PUZZLES: one in Pebble Canyon, Splash Lake, Parrot Jungle and Frosty Peak (each with a prize),
+// and Dr. Gizmo's code lock in the lab, which must be solved before he can be battled.
+// Objects stand on the map all the time and block their tile. State lives in G.puz[id].
+// Positions are written coordinates (growMaps moves them with the rest of the map).
+// ---------------------------------------------------------------------
+const PUZZLES = [
+  { id: 'stones', map: 'canyon', reward: { coins: 300, big: 1 }, win: 'A hidden drawer slides out of the last stone.',
+    objs: [{ k: 'sign', x: 28, y: 7 }, { k: 'stone', sym: 'star', x: 30, y: 7 }, { k: 'stone', sym: 'leaf', x: 32, y: 7 }, { k: 'stone', sym: 'sun', x: 34, y: 7 }, { k: 'stone', sym: 'moon', x: 36, y: 7 }] },
+  { id: 'lanterns', map: 'lake', reward: { coins: 350 }, win: 'All three lanterns shine across the lake! A little box pops open under the sign.',
+    objs: [{ k: 'sign', x: 25, y: 2 }, { k: 'lantern', n: 0, x: 26, y: 2 }, { k: 'lantern', n: 1, x: 27, y: 2 }, { k: 'lantern', n: 2, x: 28, y: 2 }] },
+  { id: 'parrot', map: 'jungle', reward: { coins: 300, apple: 3 }, win: 'The parrot flaps happily and drops a bundle from its perch.',
+    objs: [{ k: 'parrot', x: 12, y: 3 }] },
+  { id: 'owl', map: 'peak', reward: { coins: 400, big: 2 }, win: 'The owl hoots with joy and lifts a wing. Something was hidden under it!',
+    objs: [{ k: 'owl', x: 10, y: 5 }] },
+  { id: 'code', map: 'lab', win: 'BEEP BEEP! The force field around Dr. Gizmo flickers and disappears!',
+    objs: [{ k: 'panel', x: 12, y: 5 }, { k: 'note', n: 0, x: 3, y: 5 }, { k: 'note', n: 1, x: 20, y: 5 }, { k: 'note', n: 2, x: 14, y: 12 }] },
+];
+const STONE_ORDER = ['sun', 'moon', 'star', 'leaf'], LANTERN_START = [0, 1, 0], GIZMO_CODE = ['4', '6', '2'], PARROT_COLOURS = ['Red', 'Blue', 'Green', 'Yellow'];
+const PUZ_TEXT = {
+  stonesSign: ['THE ECHO STONES. Touch the four stones in the right order:', 'First the one that wakes the day. Next the one that lights the night.', 'Then the one you wish upon. Last the one that grows on trees.'],
+  stonesDone: 'THE ECHO STONES. All four are glowing. You solved it!',
+  stoneWrong: 'Clunk! The stones go dark. That wasn\'t the right order. Read the sign and try again.', stoneLit: 'The stone is warm and glowing.',
+  lanternsSign: ['THE THREE LANTERNS. Light all three at once!', 'Careful: touching a lantern also flips the lanterns right next to it.'],
+  lanternsDone: 'THE THREE LANTERNS. All three are shining. You solved it!', lanternLit: 'The lantern is shining brightly.',
+  parrotIntro: 'A wise old parrot sits on the stone. "Squawk! Listen well, then say it back!"', parrotWrong: '"Squawk! Not quite. Come back and listen again!"', parrotDone: '"Squawk! Clever friend! Clever friend!"',
+  owlIntro: 'A snow owl carved from ice blinks its golden eyes. "Hoo! Answer my three questions."', owlWrong: '"Hoo... not quite. Think it over and ask me again."', owlDone: '"Hoo! You are wise indeed."',
+  notes: ['Dr. Gizmo\'s note: "Code, part 1: the number of Trail Ribbons."', 'Dr. Gizmo\'s note: "Code, part 2: how many pets can walk with you at once."', 'Dr. Gizmo\'s note: "Code, part 3: the number of legs on a parrot."'],
+  codeAsk: ['First number?', 'Second number?', 'Third number?'], codeWrong: 'BZZT! Wrong code. Dr. Gizmo\'s notes around the lab hold the answer.', codeDone: 'The control panel shows a green light. The force field is off.',
+  field: ['A shimmering force field surrounds Dr. Gizmo!', '"Ha ha! You will never guess my three-number code!" Look for the control panel and his notes.'],
+};
+// The Snow Owl's questions: [question, right answer, wrong, wrong]. All true of this game.
+const OWL_QUIZ = [
+  ['Which treat do rabbits love?', 'Carrot', 'Bone', 'Bugs'],
+  ['Dogs are strong against which pets?', 'Cats', 'Gerbils', 'Hamsters'],
+  ['How do you catch a wild fish?', 'With a Fishing Rod', 'With Seeds', 'With a Bone'],
+  ['What fills the chests again?', 'A rest at home', 'Winning a battle', 'Buying treats'],
+  ['Cats are strong against which pets?', 'Hamsters', 'Dogs', 'Lizards'],
+];
+// ---------------------------------------------------------------------
 // 7d. BIGGER MAPS: every outdoor map is stretched to 1.5 times its written size, once, at startup.
 // The maps above are written at their original size. Here every second row and column (spread evenly) is doubled,
 // and every position in the map data (exits, doors, people, chests, labels, tasks) is moved to match.
@@ -5139,6 +5205,7 @@ function growAxis(n, blocked) {
 function gx(map, x) { const g = MAP_GROW[map]; if (!g) return x; const i = clamp(Math.floor(x), 0, g.x.at.length - 2); return g.x.at[i] + (x - i); }
 function gy(map, y) { const g = MAP_GROW[map]; if (!g) return y; const i = clamp(Math.floor(y), 0, g.y.at.length - 2); return g.y.at[i] + (y - i); }
 function growMaps() {
+  for (const k in MAPS) MAPS[k].npcs = MAPS[k].npcs.filter(n => !n.sight).concat(MAPS[k].npcs.filter(n => n.sight));   // sight trainers go last, so the older characters keep their places in the list
   for (const k in MAPS) {
     if (NO_GROW[k]) continue;
     const m = MAPS[k], w = m.rows[0].length, h = m.rows.length, bx = new Array(w).fill(false), by = new Array(h).fill(false);
@@ -5160,6 +5227,7 @@ function growMaps() {
     m.rows.forEach((r, y) => { let s = ''; for (let x = 0; x < g.w; x++) s += g.x.dup[x] ? r[x] + r[x] : r[x]; rows.push(s); if (g.y.dup[y]) rows.push(s); });
     m.rows = rows;
   }
+  for (const p of PUZZLES) for (const o of p.objs) { const x = o.x, y = o.y; o.x = gx(p.map, x); o.y = gy(p.map, y); }
   for (const q of QUESTS) if (q.x !== undefined) { const x = q.x, y = q.y; q.x = gx(q.map, x); q.y = gy(q.map, y); }
 }
 growMaps();
@@ -5243,13 +5311,13 @@ function starterBag(sp) {
   bag[TREAT_LIKES[SPECIES[sp].type][0]] += 2;   // extra snacks your first pet's kind loves
   return bag;
 }
-function newGame(starterSp, name) {
+function newGame(starterSp, name, look) {
   const sp = MAPS.pawsville.spawn;
   return {
-    v: 1, big: 1, name: cleanName(name) || 'Hero', map: 'pawsville', x: sp.x, y: sp.y, dir: sp.dir,
+    v: 1, big: 1, look: cleanLook(look), name: cleanName(name) || 'Hero', map: 'pawsville', x: sp.x, y: sp.y, dir: sp.dir,
     party: [createPet(starterSp, 5)], pen: [],
     bag: starterBag(starterSp), coins: 100,
-    chests: {}, chestOpen: {}, flags: {}, quests: {}, stats: { caught: 0, wins: 0, battles: 0, time: 0, steps: 0 },
+    chests: {}, chestOpen: {}, flags: {}, quests: {}, puz: {}, stats: { caught: 0, wins: 0, battles: 0, time: 0, steps: 0 },
     musicTheme: activeThemeKey,
   };
 }
@@ -5287,6 +5355,8 @@ function loadGame() {
     d.chests = d.chests || {}; d.flags = d.flags || {};
     if (!d.chestOpen || typeof d.chestOpen !== 'object') d.chestOpen = Object.assign({}, d.chests);   // older saves: opened chests stay open until the next rest
     d.quests = (d.quests && typeof d.quests === 'object') ? d.quests : {};
+    d.puz = (d.puz && typeof d.puz === 'object') ? d.puz : {};
+    d.look = cleanLook(d.look);   // saves from before you could customize your hero get the original boy
     if (!MainThemes[d.musicTheme]) delete d.musicTheme;
     if (!d.big && Number.isFinite(d.x) && Number.isFinite(d.y)) { d.x = gx(d.map, d.x); d.y = gy(d.map, d.y); }   // saves from before the maps grew: move the player to the same spot
     d.big = 1;
@@ -5718,6 +5788,7 @@ async function goHome() {
 }
 const AMBIENT = { pawsville: 'chirp', meadow: 'chirp', woods: 'hoot', lab: 'hum', farm: 'chirp', lake: 'chirp', jungle: 'chirp', marsh: 'hoot' };
 function enterMap(id, x, y, dir) {
+  applyLook();   // the hero's sprites follow the saved look
   const m = MAPS[id] || MAPS.pawsville;
   world.map = m; world.mapId = MAPS[id] ? id : 'pawsville';
   if (!isWalkable(m, x, y)) { x = m.spawn.x; y = m.spawn.y; dir = m.spawn.dir; }
@@ -5807,6 +5878,18 @@ function onStep() {
     runScript(async () => { for (const p of G.party) healPet(p); sfx('heal'); await say(STORY.healPad); saveGame(); });
     return;
   }
+  const seen = sightTrainer();
+  if (!seen) world.sightOff = null;
+  else if (world.sightOff !== seen.id) {
+    runScript(async () => {
+      G.dir = OPPOSITE[seen.dir]; sfx('blip');
+      world.emote = { t: 0, kind: 'star' };
+      await wait(18);
+      await talkTo(seen);
+      if (!G.flags[seen.id]) world.sightOff = seen.id;
+    });
+    return;
+  }
   const info = TILE_INFO[tileAt(m, G.x, G.y)];
   if (info && info.grass) {
     sfx('grass');
@@ -5815,6 +5898,129 @@ function onStep() {
       if (wild) runScript(() => startBattle({ wild: true, enemies: [wild] }));
     }
   }
+}
+// ---- puzzles: state, scripts and pictures (data is in section 7c2) ----
+function puzSt(id) { G.puz = G.puz || {}; return G.puz[id] || (G.puz[id] = {}); }
+function puzDone(id) { return !!(G && G.puz && G.puz[id] && G.puz[id].done); }
+function puzzleObjAt(map, x, y) { for (const p of PUZZLES) if (MAPS[p.map] === map) for (const o of p.objs) if (o.x === x && o.y === y) return { p, o }; return null; }
+let puzSeed = 2468;   // puzzles roll their own dice, so they never disturb the game's
+function puzRand() { puzSeed = (puzSeed * 1103515245 + 12345) >>> 0; return (puzSeed >>> 8) / 16777216; }
+function lanternsOn() { const st = puzSt('lanterns'); return st.on || (st.on = LANTERN_START.slice()); }
+async function puzSolved(p) {
+  puzSt(p.id).done = true;
+  sfx('catchOk');
+  if (p.reward) { if (p.reward.coins) G.coins += p.reward.coins; for (const k in p.reward) if (k !== 'coins') G.bag[k] += p.reward[k]; }
+  await say('Puzzle solved! ' + p.win + (p.reward ? ' You got ' + rewardText(p.reward) + '.' : ''));
+  saveGame();
+}
+async function usePuzzle(p, o) {
+  const st = puzSt(p.id), T = PUZ_TEXT;
+  sfx('confirm');
+  if (p.id === 'stones') {
+    if (o.k === 'sign') { if (st.done) await say(T.stonesDone); else for (const l of T.stonesSign) await say(l); return; }
+    if (st.done) { await say(T.stoneLit); return; }
+    if (o.sym !== STONE_ORDER[st.step || 0]) { st.step = 0; sfx('bump'); await say(T.stoneWrong); return; }
+    st.step = (st.step || 0) + 1; sfx('switch');
+    if (st.step >= STONE_ORDER.length) await puzSolved(p); else await say('The ' + o.sym + ' stone hums and starts to glow!');
+  } else if (p.id === 'lanterns') {
+    if (o.k === 'sign') { if (st.done) await say(T.lanternsDone); else for (const l of T.lanternsSign) await say(l); return; }
+    if (st.done) { await say(T.lanternLit); return; }
+    const on = lanternsOn();
+    for (const k of [o.n - 1, o.n, o.n + 1]) if (k >= 0 && k < on.length) on[k] = on[k] ? 0 : 1;
+    sfx('switch');
+    if (on.every(Boolean)) await puzSolved(p);
+  } else if (p.id === 'parrot') {
+    if (st.done) { await say(T.parrotDone); return; }
+    await say(T.parrotIntro);
+    const seq = world.puzSeq = Array.from({ length: 4 }, () => PARROT_COLOURS[Math.floor(puzRand() * 4)]);
+    await say('"' + seq.join(', ') + '!"');
+    for (let i = 0; i < seq.length; i++) {
+      const c = await choose(PARROT_COLOURS, { prompt: 'Which colour came ' + ['first', 'second', 'third', 'last'][i] + '?' });
+      if (PARROT_COLOURS[c] !== seq[i]) { sfx('bump'); await say(T.parrotWrong); return; }
+    }
+    await puzSolved(p);
+  } else if (p.id === 'owl') {
+    if (st.done) { await say(T.owlDone); return; }
+    await say(T.owlIntro);
+    const pool = OWL_QUIZ.slice(), asked = world.puzQuiz = [];
+    for (let i = 0; i < 3; i++) {
+      const [q, right, w1, w2] = pool.splice(Math.floor(puzRand() * pool.length), 1)[0], opts = [right, w1, w2];
+      for (let k = opts.length - 1; k > 0; k--) { const j = Math.floor(puzRand() * (k + 1)); [opts[k], opts[j]] = [opts[j], opts[k]]; }
+      asked.push(opts.indexOf(right));
+      const c = await choose(opts, { prompt: q });
+      if (opts[c] !== right) { sfx('bump'); await say(T.owlWrong); return; }
+    }
+    await puzSolved(p);
+  } else if (p.id === 'code') {
+    if (o.k === 'note') { await say(T.notes[o.n]); return; }
+    if (st.done) { await say(T.codeDone); return; }
+    const digits = ['2', '4', '6', '8'], got = [];
+    for (let i = 0; i < 3; i++) got.push(digits[await choose(digits, { prompt: T.codeAsk[i] })]);
+    if (got.join() !== GIZMO_CODE.join()) { sfx('zap'); await say(T.codeWrong); return; }
+    await puzSolved(p);
+  }
+}
+// Pictures: 16 wide and 20 tall, standing on their tile. `lit` is the glowing / switched-on look.
+const PUZ_SPR = {}, PUZ_SYM = { sun: ['#.#.#', '.###.', '#####', '.###.', '#.#.#'], moon: ['.###.', '##...', '#....', '##...', '.###.'], star: ['..#..', '#####', '.###.', '.#.#.', '#...#'], leaf: ['...##', '.####', '####.', '###..', '#....'] };
+function puzSprite(kind, a, lit) {
+  const key = kind + '|' + a + '|' + (lit ? 1 : 0);
+  if (PUZ_SPR[key]) return PUZ_SPR[key];
+  const p = new Pix(16, 20), ST = [PI.stone[0], PI.stone[1], PI.stone[2], PI.stone[3]];
+  if (kind === 'sign') {
+    p.rect(7, 12, 2, 8, PI.wood[3]); p.rect(7, 12, 1, 8, PI.wood[2]);
+    p.rect(1, 3, 14, 9, PI.wood[1]); p.rect(1, 3, 14, 1, PI.wood[0]); p.rect(1, 11, 14, 1, PI.wood[3]); p.rect(14, 4, 1, 7, PI.wood[2]);
+    p.rect(3, 5, 10, 1, PI.cream[0]); p.rect(3, 7, 8, 1, PI.cream[0]); p.rect(3, 9, 9, 1, PI.cream[0]);
+  } else if (kind === 'stone') {
+    p.ell(8, 13, 7.6, 6.6, ST, { tex: 0.25, seed: a.length, bump: 0.08 }); p.ell(8, 11.5, 5.8, 4.2, [PI.stone[0], PI.stone[1]], { tex: 0, only: (x, y) => p.get(x, y) > 0 });
+    const col = lit ? { sun: PI.yellow[1], moon: PI.blue[1], star: PI.orange[1], leaf: PI.grass[2] }[a] : PI.stone[3];
+    PUZ_SYM[a].forEach((r, j) => { for (let i = 0; i < 5; i++) if (r[i] === '#') p.set(6 + i, 9 + j, col); });
+    if (lit) for (const [x, y] of [[2, 6], [13, 5], [8, 3], [14, 12], [1, 13]]) p.set(x, y, PI.yellow[0]);
+  } else if (kind === 'lantern') {
+    p.rect(7, 11, 2, 9, PI.wood[3]); p.rect(7, 11, 1, 9, PI.wood[2]); p.rect(5, 18, 6, 2, PI.wood[4]);
+    p.rect(4, 3, 8, 8, lit ? PI.yellow[1] : PI.blue[3]); p.rect(5, 4, 3, 5, lit ? PI.yellow[0] : PI.blue[2]); p.rect(6, 5, 1, 2, lit ? PI.snow[0] : PI.blue[1]);
+    p.rect(3, 2, 10, 1, PI.ink[0]); p.rect(3, 11, 10, 1, PI.ink[0]); p.rect(3, 3, 1, 8, PI.ink[0]); p.rect(12, 3, 1, 8, PI.ink[0]); p.rect(6, 0, 4, 2, PI.wood[4]);
+    if (lit) for (const [x, y] of [[1, 4], [14, 6], [2, 9], [14, 2], [0, 7]]) p.set(x, y, PI.yellow[0]);
+  } else if (kind === 'parrot') {
+    p.rect(4, 10, 8, 10, PI.stone[1]); p.rect(4, 10, 2, 10, PI.stone[0]); p.rect(10, 10, 2, 10, PI.stone[2]); p.rect(3, 9, 10, 2, PI.stone[0]); p.rect(3, 10, 10, 1, PI.stone[2]); p.rect(3, 18, 10, 2, PI.stone[2]);
+    p.set(6, 14, PI.grass[3]); p.set(7, 15, PI.grass[2]); p.set(9, 13, PI.grass[3]);
+  } else if (kind === 'owl') {
+    p.rect(3, 17, 10, 3, PI.snow[2]); p.rect(3, 17, 10, 1, PI.snow[1]);
+    p.ell(8, 10.5, 5.6, 7.4, [PI.snow[0], PI.snow[0], PI.snow[1], PI.snow[2], PI.blue[0]], { tex: 0.15 });
+    p.poly([[3, 6], [4, 1], [7, 4]], PI.snow[1]); p.poly([[13, 6], [12, 1], [9, 4]], PI.snow[2]);
+    for (const x of [5, 9]) { p.rect(x, 7, 3, 3, PI.yellow[1]); p.set(x + 1, 8, PI.ink[0]); p.set(x, 7, PI.yellow[0]); }
+    p.set(8, 10, PI.orange[2]); p.set(8, 11, PI.orange[2]); p.rect(6, 13, 1, 2, PI.blue[0]); p.rect(8, 14, 1, 2, PI.blue[0]); p.rect(10, 13, 1, 2, PI.blue[0]);
+  } else if (kind === 'note') {
+    p.rect(2, 3, 12, 10, PI.stone[3]); p.rect(3, 4, 10, 8, PI.mint[2]); p.rect(4, 5, 7, 1, PI.mint[0]); p.rect(4, 7, 8, 1, PI.mint[0]); p.rect(4, 9, 5, 1, PI.mint[0]); p.set(11, 10, PI.yellow[1]);
+    p.rect(7, 13, 2, 4, PI.stone[2]); p.rect(4, 17, 8, 2, PI.stone[3]); p.rect(4, 17, 8, 1, PI.stone[1]);
+  } else if (kind === 'panel') {
+    p.rect(2, 6, 12, 13, PI.stone[2]); p.rect(2, 6, 12, 2, PI.stone[0]); p.rect(12, 8, 2, 11, PI.stone[3]); p.rect(2, 18, 12, 1, PI.ink[1]);
+    for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) p.rect(4 + i * 3, 10 + j * 3, 2, 2, PI.snow[0]);
+    p.rect(4, 3, 8, 3, PI.ink[1]); p.rect(5, 4, 6, 1, lit ? PI.grass[1] : PI.red[0]);
+  }
+  return (PUZ_SPR[key] = p.toCanvas());
+}
+function drawPuzzleObj(p, o, X, Y) {
+  const st = (G.puz && G.puz[p.id]) || {};
+  let a = o.sym || '', lit = !!st.done;
+  if (o.k === 'stone' && !lit) lit = STONE_ORDER.indexOf(o.sym) < (st.step || 0);
+  if (o.k === 'lantern' && !lit) lit = !!(st.on || LANTERN_START)[o.n];
+  drawShadow(X + 8, Y + 14, 14, 5);
+  ctx.drawImage(puzSprite(o.k, a, lit), X, Y - 4);
+  if (o.k === 'parrot') ctx.drawImage(PET16.mango, X, Y - 16 + (Math.floor(frame / 28) % 2));
+  if (o === p.objs[0] && !st.done) drawText('?', X + 6, Y - (o.k === 'parrot' ? 27 : 15) - (Math.floor(frame / 20) % 2), '#ffd84a', 1, COL.border);
+}
+// Trainers with `sight` challenge you when you walk into the line they are watching. If you run, they leave you alone until you step out of view.
+function sightTrainer() {
+  for (const n of world.map.npcs) {
+    if (!n.sight || !n.trainer || G.flags[n.id]) continue;
+    const d = DIRS[n.dir];
+    for (let k = 1; k <= n.sight; k++) {
+      const x = n.x + d[0] * k, y = n.y + d[1] * k;
+      if (x === G.x && y === G.y) return n;
+      if (!isWalkable(world.map, x, y)) break;
+    }
+  }
+  return null;
 }
 function interact() {
   const [dx, dy] = DIRS[G.dir];
@@ -5825,6 +6031,8 @@ function interact() {
   if (qo) { runScript(() => pickUpQuestObj(qo)); return; }
   const chest = chestAt(world.map, fx, fy);
   if (chest) { runScript(() => openChest(chest)); return; }
+  const pz = puzzleObjAt(world.map, fx, fy);
+  if (pz) { runScript(() => usePuzzle(pz.p, pz.o)); return; }
   if (world.map.lab && (world.map.rows[fy] || '')[fx] === 'Z') { runScript(useMachine); return; }
 }
 // Dr. Gizmo's Mega-Zapper. Once he's beaten, he rewires it into the Super Growth Machine.
@@ -5860,6 +6068,7 @@ async function talkTo(npc) {
     await say('Beat the guardians of Sunny Farm, Splash Lake, Sunny Dunes and Parrot Jungle. You have ' + ribbonCount() + ' of 4 so far.', npc.name);
     return;
   }
+  if (npc.id === 'gizmo' && !G.flags.gizmo && !puzDone('code')) { sfx('zap'); await say(PUZ_TEXT.field[0]); await say(PUZ_TEXT.field[1]); return; }
   if (npc.trainer && !G.flags[npc.id]) {
     for (const l of npc.lines) await say(l, npc.boss ? undefined : npc.name);
     const enemies = npc.trainer.team.map(([sp, lv]) => createPet(sp, lv, FOE_MAX_LV));
@@ -6088,6 +6297,11 @@ function drawWorld() {
     if (q.kind === 'pet') { drawShadow(X + 8, Y + 14, 12, 5); ctx.drawImage(PET16[q.pet], X, Y - 2 + bob); drawText('?', X + 6, Y - 12, '#ffd84a', 1, COL.border); }
     else { ctx.drawImage(EMOTE_SPR.star, X + 4, Y + 4 + bob); if (frame % 40 < 20) { ctx.fillStyle = '#fff'; ctx.fillRect(X + 2, Y + 3, 2, 2); ctx.fillRect(X + 12, Y + 10, 2, 2); } }
   } });
+  for (const p of PUZZLES) if (MAPS[p.map] === m) for (const o of p.objs) things.push({ y: o.y, draw: () => drawPuzzleObj(p, o, o.x * TS - cx, o.y * TS - cy) });
+  if (m.lab && !G.flags.gizmo && !puzDone('code')) { const gz = m.npcs.find(n => n.id === 'gizmo'); if (gz) things.push({ y: gz.y + 0.2, draw: () => {   // Dr. Gizmo's force field
+    ctx.fillStyle = PALETTE[PI.water[0]];
+    for (let k = 0; k < 44; k++) { const a = k / 44 * Math.PI * 2 + frame / 40; if ((k + Math.floor(frame / 6)) % 4 === 3) continue; ctx.fillRect(Math.round(gz.x * TS - cx + 8 + Math.cos(a) * 13), Math.round(gz.y * TS - cy + 2 + Math.sin(a) * 16), k % 2 ? 1 : 2, 1); }
+  } }); }
   const pp = playerPixel();
   const pf = world.moving && world.mt < 0.55 ? 1 : 0;
   things.push({ y: pp.y / TS + 0.01, cx: Math.round(pp.x) - cx, cy: Math.round(pp.y) - cy, draw: () => {
@@ -6141,7 +6355,7 @@ async function pauseMenu() {
   sfx('menu');
   let start = 0;
   for (;;) {
-    const i = await choose(['Pets', 'Bag', 'Tasks', 'Go Home', 'Your Name', 'Jukebox', 'Music Theme', 'Save', 'Controls', 'Close'], {
+    const i = await choose(['Pets', 'Bag', 'Tasks', 'Go Home', 'Customize', 'Jukebox', 'Music Theme', 'Save', 'Controls', 'Close'], {
       x: W - 102, y: 22, minW: 96, cancel: 9, start, title: G.coins + ' coins',
       info: () => goalText() + '\nRibbons: ' + ribbonCount() + '/4   Tasks: ' + QUESTS.filter(q => questState(q) === 'done').length + '/' + QUESTS.length + '   Pets: ' + G.stats.caught + '   Chests: ' + Object.keys(G.chests).length + '/' + ALL_CHESTS.length + '   Time: ' + fmtTime(G.stats.time),
     });
@@ -6151,8 +6365,8 @@ async function pauseMenu() {
     else if (i === 2) await showTasks();
     else if (i === 3) { if (await goHome()) return; }
     else if (i === 4) {
-      const n = await enterName({ title: 'What should we call you?', initial: G.name, cancel: true });
-      if (n) { G.name = n; sfx('emote_star'); await say('Nice to meet you, {name}!'); saveGame(); }
+      const r = await customizeHero({ name: G.name, look: G.look, row: 1 });
+      if (r) { const renamed = r.name !== G.name; G.name = r.name; G.look = r.look; applyLook(); saveGame(); await say(renamed ? 'Nice to meet you, {name}!' : 'Looking good, {name}!'); }
     }
     else if (i === 5) await openJukebox();
     else if (i === 6) await musicThemeMenu();
@@ -6788,6 +7002,104 @@ class NameEntryScreen {
   }
   hint() { return touchUI ? 'Tap letters (or D-pad + A)   B: delete' + (this.o.cancel ? ' / cancel' : '') : 'Type a name   Enter: OK   Backspace: delete' + (this.o.cancel ? '   Esc: cancel' : ''); }
 }
+// ---------------------------------------------------------------------
+// 14b. YOUR HERO: play as a boy or a girl, and change your name, hair, skin, hoodie and an extra
+// (a hat, glasses, a scarf, a crown or a cape) at any time from Menu > Customize.
+// The look is saved in G.look as indexes into the lists below, and turned into a LOOK2 entry.
+// ---------------------------------------------------------------------
+const HERO_KIND = [['Boy', 'boy'], ['Girl', 'girl']];
+const HERO_HAIR = [['Brown', 'brown'], ['Black', 'dark'], ['Blond', 'blond'], ['Ginger', 'ginger'], ['Red', 'red'], ['Pink', 'pink'], ['Teal', 'teal'], ['White', 'white']];
+const HERO_SKIN = ['Light', 'Medium', 'Deep'];
+const HERO_TOP = [['Green', 'green'], ['Blue', 'blue'], ['Red', 'red'], ['Purple', 'violet'], ['Orange', 'orange'], ['Yellow', 'yellow'], ['Pink', 'pink'], ['Mint', 'mint'], ['White', 'white']];
+const HERO_ACC = [['None', null], ['Cap', 'ball'], ['Beanie', 'beanie'], ['Sun Hat', 'straw'], ['Glasses', 'glasses'], ['Scarf', 'scarf'], ['Crown', 'circlet'], ['Cape', 'cape']];
+const HERO_ACC_COL = [['Red', 'red'], ['Pink', 'pink'], ['Blue', 'blue'], ['Green', 'green'], ['Yellow', 'yellow'], ['Purple', 'violet']];
+function defaultLook(kind) { return { kind: kind === 'girl' ? 'girl' : 'boy', hair: kind === 'girl' ? 2 : 0, skin: 0, top: kind === 'girl' ? 3 : 0, acc: 0, accCol: 0 }; }
+function cleanLook(L) {
+  const d = defaultLook(L && L.kind), n = (v, max, dflt) => (Number.isInteger(v) && v >= 0 && v < max ? v : dflt);
+  if (!L || typeof L !== 'object') return d;
+  return { kind: d.kind, hair: n(L.hair, HERO_HAIR.length, d.hair), skin: n(L.skin, HERO_SKIN.length, 0), top: n(L.top, HERO_TOP.length, d.top), acc: n(L.acc, HERO_ACC.length, 0), accCol: n(L.accCol, HERO_ACC_COL.length, 0) };
+}
+// The character description personPix draws from. Both wear a hoodie and a backpack; the girl has a ponytail and a skirt.
+function heroDef(look) {
+  const L = cleanLook(look), girl = L.kind === 'girl', a = HERO_ACC[L.acc][1], c = HERO_ACC_COL[L.accCol][1];
+  const d = { skin: L.skin, hair: HERO_HAIR[L.hair][1], style: girl ? 'pony' : 'messy', top: HERO_TOP[L.top][1], bottom: girl ? 'violet' : 'navy', shoes: girl ? 'white' : 'wood', hood: true, pack: 'orange', skirt: girl };
+  if (a === 'glasses') d.glasses = true; else if (a === 'scarf') d.scarf = c; else if (a === 'circlet') d.circlet = true; else if (a === 'cape') d.cape = c; else if (a) { d.hat = a; d.hatCol = c; }
+  return d;
+}
+function heroFrames(look) {
+  const d = heroDef(look), mk = dir => [0, 1, 2, 3, 4].map(f => personPix(d, dir, f).toCanvas()), right = mk('right');
+  return { down: mk('down'), up: mk('up'), right, left: right.map(flipCanvas) };
+}
+let heroKey = '';
+function applyLook() {   // rebuild the player's sprites when the saved look is not the one on screen
+  const L = cleanLook(G && G.look), key = JSON.stringify(L);
+  if (key === heroKey) return;
+  heroKey = key; LOOK2.player = heroDef(L); PEOPLE.player = heroFrames(L);
+}
+const HERO_ROWS = ['Name', 'I am a', 'Hair', 'Skin', 'Hoodie', 'Extra', 'Extra color', 'Done'];
+class HeroScreen {
+  // o.name, o.look: what to start from. o.title. Resolves with { name, look }, or null if cancelled.
+  constructor(resolve, o = {}) { this.resolve = resolve; this.o = o; this.opaque = true; this.t = 0; this.row = o.row || 0; this.name = o.name || 'Hero'; this.L = cleanLook(o.look); this.cache = {}; this.busy = false; }
+  frames() { const k = JSON.stringify(this.L); return this.cache[k] || (this.cache[k] = heroFrames(this.L)); }
+  value(k) { const L = this.L; return [this.name, L.kind === 'girl' ? 'Girl' : 'Boy', HERO_HAIR[L.hair][0], HERO_SKIN[L.skin], HERO_TOP[L.top][0], HERO_ACC[L.acc][0], HERO_ACC_COL[L.accCol][0], ''][k]; }
+  change(d) {
+    const L = this.L, turn = (v, n) => (v + d + n) % n;
+    if (this.row === 1) L.kind = L.kind === 'girl' ? 'boy' : 'girl';
+    else if (this.row === 2) L.hair = turn(L.hair, HERO_HAIR.length);
+    else if (this.row === 3) L.skin = turn(L.skin, HERO_SKIN.length);
+    else if (this.row === 4) L.top = turn(L.top, HERO_TOP.length);
+    else if (this.row === 5) L.acc = turn(L.acc, HERO_ACC.length);
+    else if (this.row === 6) L.accCol = turn(L.accCol, HERO_ACC_COL.length);
+    else return;
+    sfx('move');
+  }
+  pick() {
+    if (this.row === 0) { this.busy = true; sfx('confirm'); enterName({ title: 'What should we call you?', initial: this.name, cancel: true }).then(n => { if (n) this.name = n; this.busy = false; }); }
+    else if (this.row === HERO_ROWS.length - 1) { sfx('emote_star'); pop(this); this.resolve({ name: this.name, look: cleanLook(this.L) }); }
+    else this.change(1);
+  }
+  update(inp) {
+    this.t++;
+    if (this.busy) return;
+    for (const a of inp) {
+      if (a === 'up') { this.row = (this.row + HERO_ROWS.length - 1) % HERO_ROWS.length; sfx('move'); }
+      else if (a === 'down') { this.row = (this.row + 1) % HERO_ROWS.length; sfx('move'); }
+      else if (a === 'left') this.change(-1);
+      else if (a === 'right') this.change(1);
+      else if (a === 'ok') { this.pick(); return; }
+      else if (a === 'back') { sfx('cancel'); pop(this); this.resolve(null); return; }
+    }
+  }
+  draw() {
+    ctx.drawImage(menuBackdrop('sky'), 0, 0);
+    box(4, 4, W - 8, 18, COL.sel); drawText(this.o.title || 'Customize your hero', 12, 9, COL.ink);
+    box(14, 30, 124, 168, '#e3eefc');
+    const fr = this.frames(), dir = ['down', 'right', 'up', 'left'][Math.floor(this.t / 70) % 4], f = [1, 2, 3, 2][Math.floor(this.t / 10) % 4];
+    drawShadow(76, 152, 44, 10);
+    ctx.drawImage(fr[dir][f], 44, 58, 64, 96);                                              // the hero, four times life size, walking and turning
+    drawTextC(this.name, 76, 168, COL.ink);
+    ['down', 'right', 'up'].forEach((d, i) => ctx.drawImage(fr[d][0], 44 + i * 24, 36));       // and at the size you see on the map
+    box(146, 30, 272, 168);
+    HERO_ROWS.forEach((label, k) => {
+      const y = 40 + k * 19, sel = k === this.row, last = k === HERO_ROWS.length - 1, off = k === 6 && !['ball', 'beanie', 'straw', 'scarf', 'cape'].includes(HERO_ACC[this.L.acc][1]);
+      if (sel) { ctx.fillStyle = COL.sel; ctx.fillRect(152, y - 5, 260, 18); drawCursor(156, y); }
+      drawText(label, 168, y, COL.ink);
+      if (last) return;
+      if (k > 0) { drawText('<', 276, y, COL.accent); drawTextC('▶', 404, y, COL.accent); }
+      drawTextC(this.value(k), 340, y, off ? COL.dim : COL.ink);
+    });
+  }
+  hint() { return this.row === 0 ? 'Enter: change your name   Up/Down: pick   ' + hintKeys() + ': cancel' : this.row === HERO_ROWS.length - 1 ? 'Enter: keep this look   Up/Down: pick   ' + hintKeys() + ': cancel' : 'Up/Down: pick   Left/Right: change   ' + hintKeys() + ': cancel'; }
+  tap(x, y) {
+    if (this.busy) return;
+    for (let k = 0; k < HERO_ROWS.length; k++) if (x >= 146 && y >= 40 + k * 19 - 6 && y < 40 + k * 19 + 13) {
+      this.row = k;
+      if (k === 0 || k === HERO_ROWS.length - 1) this.pick(); else this.change(x < 300 ? -1 : 1);
+      return;
+    }
+  }
+}
+function customizeHero(o) { return new Promise(r => push(new HeroScreen(r, o))); }
 function enterName(o) { return new Promise(r => push(new NameEntryScreen(r, o))); }
 async function nicknamePet(p, ask = true) {
   if (ask && !(await yesNo('Do you want to give ' + petName(p) + ' a nickname?'))) return;
@@ -6845,7 +7157,7 @@ CustomizeScreen.prototype.tap = function (x, y) {
   if (x < 172 && y > 30 && y < 180) inputQueue.push('ok');   // tap the pet to keep the look
 };
 function customizePet(p) { return new Promise(r => push(new CustomizeScreen(p, r))); }
-let pendingName = null;
+let pendingName = null, pendingLook = null;
 async function titleMenu(title) {
   const canContinue = hasSave();
   for (;;) {
@@ -6861,9 +7173,13 @@ async function titleMenu(title) {
       return;
     }
     if (canContinue && !(await yesNo('Start a brand-new adventure? Your old save will be replaced the next time the game saves.'))) continue;
-    const name = await enterName({ title: 'Hello, new hero! What\'s your name?', cancel: true });
+    const who = await choose(['Boy', 'Girl', 'Back'], { prompt: 'Hello, new hero! Are you a boy or a girl?', cancel: 2 });
+    if (who === 2) continue;
+    const name = await enterName({ title: 'What\'s your name?', cancel: true });
     if (name === null) continue;
-    pendingName = name;
+    const hero = await customizeHero({ name, look: defaultLook(who === 1 ? 'girl' : 'boy'), title: 'Make your hero your own, then choose Done', row: 2 });
+    if (!hero) continue;
+    pendingName = hero.name; pendingLook = hero.look;
     await fadeTo(1, 15);
     pop(title);
     push(new StarterScreen());
@@ -6893,7 +7209,7 @@ class StarterScreen {
     const sp = STARTERS[this.i];
     const ok = await yesNo('Do you want ' + SPECIES[sp].name + ' the ' + SPECIES[sp].type + ' to be your first pet?');
     if (!ok) { this.locked = false; return; }
-    G = newGame(sp, pendingName);
+    G = newGame(sp, pendingName, pendingLook);
     sfx('catchOk');
     await say(SPECIES[sp].name + ' wags happily. You\'re best friends already, ' + G.name + '!');
     await nicknamePet(G.party[0]);
@@ -7622,6 +7938,31 @@ function runSelfTest() {
     for (const n of m.npcs) if (n.moveTo && (!TILE_INFO[tileAt(m, n.moveTo.x, n.moveTo.y)].walk || exitAt(m, n.moveTo.x, n.moveTo.y))) mErr.push(n.id + ' steps aside into a wall');
     check('Map "' + m.name + '" (' + w + 'x' + h + ') is valid and fully reachable', !mErr.length, mErr.slice(0, 4).join('; '));
   }
+  // Puzzles: every object stands on open ground, blocks nothing, can be reached, and every puzzle can be solved.
+  { const pErr = [], spots = new Set();
+    for (const p of PUZZLES) {
+      const m = MAPS[p.map];
+      G = { flags: END_FLAGS, quests: {}, puz: {}, party: [], pen: [] };
+      const seen = new Set([m.spawn.x + ',' + m.spawn.y]), q = [[m.spawn.x, m.spawn.y]];
+      while (q.length) { const [x, y] = q.shift(); for (const d of Object.values(DIRS)) { const key = (x + d[0]) + ',' + (y + d[1]); if (!seen.has(key) && isWalkable(m, x + d[0], y + d[1])) { seen.add(key); q.push([x + d[0], y + d[1]]); } } }
+      for (const o of p.objs) {
+        const key = p.map + o.x + ',' + o.y;
+        if (spots.has(key)) pErr.push(p.id + ' objects overlap'); spots.add(key);
+        if (!TILE_INFO[tileAt(m, o.x, o.y)].walk || TILE_INFO[tileAt(m, o.x, o.y)].grass || exitAt(m, o.x, o.y) || doorAt(m, o.x, o.y) || npcAt(m, o.x, o.y) || chestAt(m, o.x, o.y)) pErr.push(p.id + ' ' + o.k + ' is on a bad tile');
+        if (!Object.values(DIRS).some(d => seen.has((o.x + d[0]) + ',' + (o.y + d[1])))) pErr.push(p.id + ' ' + o.k + ' cannot be reached');
+        if (!puzSprite(o.k, o.sym || '', false).width || !puzSprite(o.k, o.sym || '', true).pix) pErr.push(p.id + ' ' + o.k + ' has no picture');
+      }
+      if (p.reward) for (const k in p.reward) if (k !== 'coins' && !ITEMS[k]) pErr.push(p.id + ' reward ' + k);
+    }
+    const on = LANTERN_START.slice(), flip = n => { for (const k of [n - 1, n, n + 1]) if (k >= 0 && k < 3) on[k] ^= 1; };
+    flip(0); flip(2); if (!on.every(Boolean)) pErr.push('lanterns: two touches should solve it');
+    if (STONE_ORDER.slice().sort().join() !== PUZZLES[0].objs.filter(o => o.sym).map(o => o.sym).sort().join()) pErr.push('stones do not match their order');
+    if (GIZMO_CODE.join() !== [RIBBON_IDS.length, PARTY_MAX, 2].join()) pErr.push('the lab notes no longer give the code');
+    if (!OWL_QUIZ.every(([, a, b, c]) => new Set([a, b, c]).size === 3) || !TREAT_LIKES.Rabbit.includes('carrot') || typeMult('Dog', 'Cat') !== 1.5 || typeMult('Cat', 'Hamster') !== 1.5 || typeMult('Dog', 'Gerbil') > 1 || typeMult('Dog', 'Hamster') > 1 || typeMult('Cat', 'Dog') > 1 || typeMult('Cat', 'Lizard') > 1) pErr.push('an owl question has a wrong answer');
+    const sight = []; for (const k in MAPS) for (const n of MAPS[k].npcs) if (n.sight) { sight.push(n.id); if (!n.trainer || n.moveTo || !DIRS[n.dir]) pErr.push(n.id + ' is not a plain trainer'); }
+    if (sight.length < 10) pErr.push('only ' + sight.length + ' trainers challenge you on sight');
+    G = savedG;
+    check('Puzzles (' + PUZZLES.length + ') can be reached and solved; ' + sight.length + ' trainers challenge you on sight', !pErr.length, pErr.slice(0, 4).join('; ')); }
   // Bigger maps: every outdoor map is about 1.5 times its written size, buildings and doors are untouched, and gatekeepers still block the way.
   { const zErr = [], gates = [];
     for (const k in MAPS) for (const n of MAPS[k].npcs) if (n.moveTo) gates.push([k, n]);
@@ -7690,7 +8031,16 @@ function runSelfTest() {
     if (d !== 'left' && !fr[0].pix.d.includes(PI.ink[0])) grErr.push(k + ' has no outline');
     if (d !== 'left' && fr[1].pix.d.join() === fr[3].pix.d.join()) grErr.push(k + ' ' + d + ' steps A and B are the same');
   }
-  if (LOOK2.player.hat || !LOOK2.player.hood || !LOOK2.player.pack) grErr.push('the player wears a green hoodie and a backpack, no cap');
+  if (!LOOK2.player.hood || !LOOK2.player.pack) grErr.push('the player wears a hoodie and a backpack');
+  // The hero: a boy or a girl, with every hair, skin, hoodie and extra. Every choice builds, is outlined, and changes the picture.
+  { const base = heroFrames(defaultLook('boy')).down[0].pix.d.join(), girl = heroFrames(defaultLook('girl')).down[0].pix.d.join();
+    if (base === girl) grErr.push('the boy and the girl look the same');
+    for (const kind of ['boy', 'girl']) for (let a = 0; a < HERO_ACC.length; a++) { const L = defaultLook(kind); L.acc = a; L.accCol = a % HERO_ACC_COL.length; const f = heroFrames(L);
+      if (['down', 'up', 'right', 'left'].some(d => f[d].length !== 5 || f[d][0].width !== PW) || !f.down[0].pix.d.includes(PI.ink[0])) grErr.push(kind + ' ' + HERO_ACC[a][0] + ' does not build');
+      if (a > 0 && f.down[0].pix.d.join() === (kind === 'boy' ? base : girl)) grErr.push(kind + ' ' + HERO_ACC[a][0] + ' changes nothing'); }
+    for (const [key, list] of [['hair', HERO_HAIR], ['skin', HERO_SKIN], ['top', HERO_TOP]]) for (let i = 1; i < list.length; i++) { const L = defaultLook('boy'); L[key] = i; if (heroFrames(L).down[0].pix.d.join() === base) grErr.push(key + ' ' + i + ' changes nothing'); }
+    const bad = cleanLook({ kind: 'robot', hair: 99, skin: -1, top: 'x', acc: 2.5, accCol: null });
+    if (bad.kind !== 'boy' || bad.hair !== 0 || bad.skin !== 0 || bad.acc !== 0 || cleanLook(null).kind !== 'boy' || cleanLook({ kind: 'girl' }).kind !== 'girl') grErr.push('a broken saved look is not repaired'); }
   // Pets: every species has a 64px battle sprite (2 frames, and mirrored for your own side), a 32px menu sprite and a 16px overworld sprite,
   // all made from the original drawing and all in the master palette.
   for (const sp in SPECIES) {
@@ -7706,7 +8056,7 @@ function runSelfTest() {
     if (!set.front[0].pix.d.includes(PI.ink[0])) grErr.push(sp + ' has no outline');
   }
   for (const k in MAPS) if (!SCENE[k]) grErr.push(k + ' has no battle scene');
-  for (const kind of new Set(Object.values(SCENE).concat(['gold']))) { const bd = battleBackdrop(kind, [[100, 150, 40, 8]]); if (bd.width !== W || bd.height !== BATTLE_H || bd.pix.d.some(c => !c)) grErr.push('battle scene ' + kind); }
+  for (const kind of new Set(Object.values(SCENE).concat(['gold']))) { const bd = battleBackdrop(kind, [[100, 150, 40, 8]]); if (bd.width !== W || bd.height !== H || bd.pix.d.some(c => !c)) grErr.push('battle scene ' + kind); }
   { const fake = { o: {}, t: 0 }; battleImpact(fake, 'E', 2); if (!(fake.flash > 0) || !(fake.shake > 0) || fake.fx.length < 20) grErr.push('super effective impact'); const n = fake.fx.length; for (let i = 0; i < 80; i++) fxUpdate(fake); if (fake.fx.length || !n) grErr.push('particles never end'); }
   for (const k in MAPS) if (!MOOD[k]) grErr.push(k + ' has no mood');
   if (!SUNBEAMS || SUNBEAMS.height !== H || !VIGNETTE || VIGNETTE.width !== W || !MIST || !LIGHT_POOL || !GLOW) grErr.push('light overlays');
@@ -8038,7 +8388,7 @@ function runSelfTest() {
     }
     const pct = Math.round(wins / 3);
     curve.push(npc.name.split(' ').pop() + ' ' + pct + '%');
-    if (pct < 45 || pct > 92) curveOK = false;   // not a wall, not a walkover
+    if (pct < (npc.boss ? 35 : 45) || pct > 92) curveOK = false;   // not a wall, not a walkover (bosses may be a little tougher)
   }
   check('Harder but fair: a typical team wins ' + curve.join(', '), curveOK, curve.join(', '));
   check('Every type beats at least one type and loses to at least one', TYPES.every(t => BEATS[t].length > 0 && weakTo(t).length > 0) && typeMult('Parrot', 'Lizard') === 1.5 && typeMult('Lizard', 'Cat') === 1.5 && typeMult('Cat', 'Parrot') === 1.5, 'unbalanced chart');
@@ -8068,6 +8418,12 @@ function runSelfTest() {
   texts.push(goalText.toString().match(/'Goal:[^']*'/g).join(' '));
   for (const k in MAPS) for (const n of MAPS[k].npcs) { texts.push(...n.lines, ...(n.after || []), ...(n.final || [])); if (textW(n.name) + 10 > DLG.w) uErr.push('name tag ' + n.name); }
   for (const k of ITEM_ORDER) texts.push(ITEMS[k].desc + '  You have 99.', '\u2665 The wild Squeakers loves this! ' + ITEMS[k].desc);
+  for (const k in PUZ_TEXT) texts.push(...[].concat(PUZ_TEXT[k]));
+  for (const p of PUZZLES) texts.push('Puzzle solved! ' + p.win + (p.reward ? ' You got ' + rewardText(p.reward) + '.' : ''));
+  for (const [q] of OWL_QUIZ) texts.push(q);
+  texts.push('"Yellow, Yellow, Yellow, Yellow!"', 'Which colour came second?', 'The star stone hums and starts to glow!');
+  texts.push('Hello, new hero! Are you a boy or a girl?', 'Make your hero your own, then choose Done', 'Looking good, Squeakerss!');
+  if (HERO_ROWS.some(l => textW(l) > 100) || [HERO_HAIR, HERO_TOP, HERO_ACC, HERO_ACC_COL].some(list => list.some(([l]) => textW(l) > 110))) uErr.push('hero screen label too long');
   texts.push(CHEST_EMPTY, 'It\'s empty. Chests fill up again when you rest at home or at the Clinic.', 'You found 300 coins and 2 Fish Flakes!', 'You found 2 Big Bandages and 2 Lettuce!', 'Looking for treats? I don\'t sell those. You find them in treasure chests, and the chests fill up again whenever you rest!',
     'Squeakerss is a boss. It won\'t take treats!', 'You backed away. Blizzard is still blocking the way.', 'Boss Blizzard wants to battle!');
   texts.push('\u2665 Just the thing for a wild Squeakers! ' + ITEMS.rod.desc, 'Fish don\'t take treats. A wild Squeakers needs a Fishing Rod.', ITEMS.rod.desc + '  You only need one.',
@@ -8371,6 +8727,13 @@ function devView(v) {
   }); }
   else if (v === 'tasks') { push(overworld); enterMap('pawsville', gx('pawsville', 12), gy('pawsville', 11), 'up'); world.banner = 0; G.quests = { pudding: 'active', glasses: 'found', mouse: 'done' }; runScript(showTasks); }
   else if (v === 'bossmap') { const k = location.hash.split('&')[1] || 'canyon', b = MAPS[k].npcs.find(n => n.boss); let y = b.y + 1; while (isWalkable(MAPS[k], b.x, y)) y++; while (!isWalkable(MAPS[k], b.x, y)) y++; push(overworld); enterMap(k, b.x, y, 'up'); world.banner = 0; }   // a boss waiting beyond its gatekeeper
+  else if (v === 'puzmap') { const p = PUZZLES.find(q => q.id === (location.hash.split('&')[1] || 'stones')), o = p.objs[Math.min(2, p.objs.length - 1)]; push(overworld); if (location.hash.includes('lit')) G.puz = { stones: { step: 2 }, lanterns: { done: true } }; enterMap(p.map, o.x, o.y + 2, 'up'); world.banner = 0; }   // a puzzle's objects on the map
+  else if (v === 'hero') { const a = location.hash.split('&'), L = defaultLook(a[1]); if (a[2]) { L.acc = +a[2]; L.accCol = +(a[3] || 0); L.top = +(a[4] || L.top); L.hair = +(a[5] || L.hair); } push(new HeroScreen(() => {}, { name: 'Sam', look: L, row: 5 })); }
+  else if (v === 'heroes') { push({ opaque: true, update() {}, hint() { return 'boy and girl with every extra: front, side, back'; }, draw() {
+    ctx.fillStyle = PALETTE[PI.grass[1]]; ctx.fillRect(0, 0, W, H);
+    ['boy', 'girl'].forEach((kind, r) => HERO_ACC.forEach((acc, i) => { const L = defaultLook(kind); L.acc = i; L.accCol = (i + r * 2) % 6; L.skin = (i + r) % 3; L.hair = (i + r * 3) % 8; L.top = (i * 2 + r) % 9; const f = heroFrames(L);
+      ['down', 'right', 'up'].forEach((d, j) => ctx.drawImage(f[d][0], 6 + i * 53 + j * 16, 10 + r * 110, 16, 24)); ctx.drawImage(f.down[1], 6 + i * 53, 44 + r * 110, 32, 48); }));
+  } }); }
   else if (v === 'taskmap') { push(overworld); G.quests = { pudding: 'active' }; enterMap('meadow', gx('meadow', 37), gy('meadow', 25), 'right'); world.banner = 0; }
   else if (v === 'labtop') { push(overworld); enterMap('lab', gx('lab', 11), gy('lab', 5), 'up'); world.banner = 0; }
   else if (v === 'boss') { world.map = MAPS.lab; G.party[0] = createPet('mango', 14); const gz = MAPS.lab.npcs.find(n => n.id === 'gizmo'); const B = new BattleScreen({ wild: false, trainer: gz, enemies: gz.trainer.team.map(([s, l]) => createPet(s, l)) }); B.eIn = 1; B.setPlayer(G.party[0]); B.pIn = 1; push(B); push(new MessageScreen(gz.lines[1], () => {}, 'Dr. Gizmo')); }
@@ -8426,11 +8789,20 @@ async function runSmoke() {
     await wait(10);
     await key('Enter');                       // New Game (Continue disabled)
     await wait(10);
-    ok('New Game asks for your name', topScreen() instanceof NameEntryScreen);
+    ok('New Game first asks whether you are a boy or a girl', topScreen() instanceof ChoiceScreen && topScreen().opts.map(o => o.label).join() === 'Boy,Girl,Back');
+    await key('ArrowDown'); await key('Enter'); await wait(10);   // Girl
+    ok('...then asks for your name', topScreen() instanceof NameEntryScreen);
     await key('Enter'); await wait(3);
     ok('An empty name is not accepted', topScreen() instanceof NameEntryScreen && topScreen().err !== '');
     await typeText('sam'); await key('KeyQ'); await key('Backspace');
     ok('Letters like Q type text instead of opening the menu (' + topScreen().text + ')', topScreen() instanceof NameEntryScreen && topScreen().text === 'Sam');
+    await key('Enter'); await wait(10);
+    ok('...then lets you customize your hero (a girl with a ponytail and a skirt)', topScreen() instanceof HeroScreen && topScreen().L.kind === 'girl' && topScreen().name === 'Sam' && heroDef(topScreen().L).style === 'pony' && heroDef(topScreen().L).skirt);
+    await key('ArrowRight');                                      // next hair colour
+    const hairPick = topScreen().L.hair;
+    await key('ArrowDown'); await key('ArrowDown'); await key('ArrowDown'); await key('ArrowRight'); await key('ArrowRight');   // Extra: a beanie
+    await key('ArrowUp'); await key('ArrowUp'); await key('ArrowUp'); await key('ArrowUp'); await key('ArrowUp'); await key('ArrowUp');   // round to Done
+    ok('Hero screen: Left/Right change a choice and Done is one step above Name', topScreen() instanceof HeroScreen && topScreen().row === HERO_ROWS.length - 1 && HERO_ACC[topScreen().L.acc][1] === 'beanie');
     await key('Enter'); await wait(50);
     ok('Starter screen offers a puppy or a kitten', topScreen() instanceof StarterScreen && STARTERS.join() === 'buddy,mittens');
     await key('ArrowRight');                  // Mittens
@@ -8438,6 +8810,22 @@ async function runSmoke() {
     await key('Enter');                       // Yes
     ok('Reached the overworld after the intro', await mash(idle));
     ok('Your name is Sam and the starter kept its name (empty nickname)', G.name === 'Sam' && petName(G.party[0]) === 'Mittens');
+    ok('The hero you made is the one on the map, and is saved with the game', G.look.kind === 'girl' && G.look.hair === hairPick && LOOK2.player.hat === 'beanie' && LOOK2.player.style === 'pony' && PEOPLE.player.down.length === 5);
+    { const keepLook = G.look, keepName = G.name;                   // Menu > Customize: switch to a boy, rename, keep
+      runScript(pauseMenu); await wait(8);
+      for (let i = 0; i < 4; i++) await key('ArrowDown');
+      const label = topScreen() instanceof ChoiceScreen && topScreen().opts[4].label;
+      await key('Enter'); await wait(8);
+      const opened = topScreen() instanceof HeroScreen && topScreen().row === 1;
+      await key('ArrowRight');                                      // Girl -> Boy
+      await key('ArrowUp'); await key('Enter'); await wait(8);      // Name
+      const naming = topScreen() instanceof NameEntryScreen;
+      for (let i = 0; i < 4; i++) await key('Backspace');
+      await typeText('max'); await key('Enter'); await wait(8);
+      await key('ArrowUp'); await key('Enter'); await wait(8);      // Done
+      await mash(() => topScreen() instanceof ChoiceScreen, 20); await key('Escape'); await mash(idle, 20);
+      ok('Menu > Customize changes boy or girl and your name at any time', label === 'Customize' && opened && naming && G.name === 'Max' && G.look.kind === 'boy' && LOOK2.player.style === 'messy' && !LOOK2.player.skirt);
+      G.look = keepLook; G.name = keepName; applyLook(); }
     // Rename + customize from the pause menu.
     G.party[0].nick = undefined;
     runScript(() => nicknamePet(G.party[0], false)); await wait(5);
@@ -8503,6 +8891,48 @@ async function runSmoke() {
       ok('Whisker Woods now leads to Misty Marsh, and the marsh to Frosty Peak', MAPS.woods.exits.some(e => e.to === 'marsh') && MAPS.marsh.exits.some(e => e.to === 'peak') && MAPS.peak.exits.some(e => e.to === 'lab'));
       ok('Trail Ribbon guardians wait in the Farm, Lake, Dunes and Jungle', RIBBON_IDS.every(id => Object.values(MAPS).some(mm => mm.npcs.some(n => n.id === id && n.ribbon))));
       enterMap('pawsville', HOME.x, HOME.y, 'down'); await wait(5); }
+    // Puzzles: the Echo Stones, the Three Lanterns, the parrot's memory game and the Snow Owl's questions.
+    { const keepPuz = G.puz, coins0 = G.coins, bag0 = Object.assign({}, G.bag), P = id => PUZZLES.find(p => p.id === id);
+      const use = async (p, o) => { runScript(() => usePuzzle(p, o)); await wait(3); };
+      const pick = async n => { for (let i = 0; i < 60 && !(topScreen() instanceof ChoiceScreen); i++) { if (topScreen() instanceof MessageScreen) await key('Enter'); await wait(3); } await wait(3); for (let i = 0; i < n; i++) await key('ArrowDown'); await key('Enter'); await wait(4); };
+      G.puz = {};
+      const st = P('stones'), stone = s => st.objs.find(o => o.sym === s);
+      enterMap('canyon', st.objs[0].x, st.objs[0].y + 1, 'up'); await wait(5);
+      ok('Puzzle objects stand on the map and block their tile', !isWalkable(MAPS.canyon, st.objs[0].x, st.objs[0].y) && puzzleObjAt(MAPS.canyon, st.objs[1].x, st.objs[1].y).o.sym === 'star');
+      await key('Enter'); await wait(4);
+      ok('Pressing A on the sign shows the riddle', topScreen() instanceof MessageScreen && topScreen().pages.flat().join(' ').includes('ECHO STONES'));
+      await mash(idle, 40);
+      await use(st, stone('sun')); await mash(idle, 20); await use(st, stone('star')); await mash(idle, 20);
+      const reset = puzSt('stones').step === 0 && !puzDone('stones');
+      for (const s of STONE_ORDER) { await use(st, stone(s)); await mash(idle, 30); }
+      ok('Echo Stones: a wrong stone resets them; sun, moon, star, leaf solves it and pays out', reset && puzDone('stones') && G.coins === coins0 + 300 && G.bag.big === bag0.big + 1);
+      const la = P('lanterns');
+      await use(la, la.objs[1]); await mash(idle, 10); await use(la, la.objs[3]); await mash(idle, 30);
+      ok('Three Lanterns: touching the left and right ones lights all three', puzDone('lanterns') && G.coins === coins0 + 650);
+      const pa = P('parrot');
+      runScript(() => usePuzzle(pa, pa.objs[0]));
+      for (let i = 0; i < 4; i++) await pick(PARROT_COLOURS.indexOf((world.puzSeq || [])[i]));
+      await mash(idle, 30);
+      ok('Parrot Jungle: repeating the four colours the parrot squawked solves it', puzDone('parrot') && G.bag.apple === bag0.apple + 3);
+      const ow = P('owl');
+      runScript(() => usePuzzle(ow, ow.objs[0]));
+      await pick(((world.puzQuiz = null), 0) + 2);   // a wrong guess is possible here; either way the owl answers
+      await mash(idle, 30);
+      for (let tries = 0; tries < 6 && !puzDone('owl'); tries++) {
+        runScript(() => usePuzzle(ow, ow.objs[0]));
+        for (let i = 0; i < 3 && !puzDone('owl'); i++) { for (let k = 0; k < 60 && !((world.puzQuiz || []).length > i && topScreen() instanceof ChoiceScreen); k++) { if (topScreen() instanceof MessageScreen) await key('Enter'); await wait(3); } await pick(world.puzQuiz[i]); }
+        await mash(idle, 30);
+      }
+      ok('Frosty Peak: three right answers satisfy the Snow Owl', puzDone('owl') && G.bag.big === bag0.big + 3);
+      G.puz = keepPuz; G.coins = coins0; G.bag = bag0; enterMap('pawsville', HOME.x, HOME.y, 'down'); await wait(5); }
+    // Trainers who challenge you on sight.
+    { const gus = MAPS.farm.npcs.find(n => n.id === 'gus'), savedParty = G.party, coins0 = G.coins, stats0 = Object.assign({}, G.stats), flags0 = Object.assign({}, G.flags);
+      G.party = [createPet('rocky', 20)]; G.party[0].moves.sort((x, y) => MOVES[y].power - MOVES[x].power);
+      enterMap('farm', gus.x - 1, gus.y + 2, 'right'); await wait(5);
+      await key('KeyD', 10); await wait(30);
+      const battle = stack.some(s => s instanceof BattleScreen) || topScreen() instanceof MessageScreen;
+      ok('Walking in front of Farmhand Gus starts a battle without talking to him', battle && await mash(idle, 900) && G.flags.gus === true);
+      G.party = savedParty; G.coins = coins0; Object.assign(G.stats, stats0); G.flags = flags0; enterMap('pawsville', HOME.x, HOME.y, 'down'); await wait(5); }
     // Bosses: one big pet waits beyond each gatekeeper on the main road and must be beaten to pass.
     { const boss = MAPS.canyon.npcs.find(n => n.id === 'boss_canyon'), savedParty = G.party, flags0 = Object.assign({}, G.flags), coins0 = G.coins, stats0 = Object.assign({}, G.stats);
       G.flags.rex = true; G.party = [createPet('rocky', 20), createPet('shadow', 20)];
@@ -8750,6 +9180,15 @@ async function runSmoke() {
     runScript(() => talkTo(bolt));
     ok('Beat Bolt and he steps aside', await mash(idle, 2000) && G.flags.bolt === true && isWalkable(MAPS.lab, gx('lab', 11), gy('lab', 10)));
     enterMap('lab', gx('lab', 11), gy('lab', 4), 'up');
+    { G.puz = {};   // Dr. Gizmo's code lock: he cannot be battled until the panel takes 4, 6, 2
+      runScript(() => talkTo(gizmo)); await wait(6);
+      const fieldMsg = topScreen() instanceof MessageScreen && topScreen().pages.flat().join(' ').includes('force field');
+      await mash(idle, 30);
+      const panel = PUZZLES.find(p => p.id === 'code'), tryCode = async keys => { runScript(() => usePuzzle(panel, panel.objs[0])); for (const n of keys) { for (let i = 0; i < 40 && !(topScreen() instanceof ChoiceScreen); i++) await wait(2); await wait(3); for (let i = 0; i < n; i++) await key('ArrowDown'); await key('Enter'); await wait(4); } await mash(idle, 40); };
+      await tryCode([0, 0, 0]);
+      const stillLocked = !puzDone('code');
+      await tryCode([1, 2, 0]);
+      ok('Dr. Gizmo hides behind a force field until his code (4, 6, 2) is entered', fieldMsg && stillLocked && puzDone('code') && !G.flags.gizmo); }
     runScript(() => talkTo(gizmo));
     let sawWin = false;
     for (let i = 0; i < 3000 && !(sawWin && idle()); i++) { if (topScreen() instanceof WinScreen) sawWin = true; await key('Enter'); await wait(6); }

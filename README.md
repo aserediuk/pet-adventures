@@ -57,7 +57,7 @@ Press **Space** to begin. A short intro from *When Pets Attack Studio Production
 
 **33 pets**: the Super Hamster, plus 16 babies that each grow up at Lv 10: Buddy (dog), Mittens (cat), Alvin (hamster), Cookie (gerbil), Ziggy (lizard), Kiwi (parrot), Clover (rabbit), Nibbles (mouse), Noodle (ferret), Prickle (hedgehog), Shelly (turtle), Bubbles (goldfish), Ribbit (frog), Daisy (pony), Puddles (duckling) and Truffle (piglet). Water pets hide in the reeds by the pond and the stream.
 
-**Names and dress-up:** you type your name when you start a new game (change it any time in Menu, Your Name). Give pets nicknames, and dress them up with a bow, top hat, crown, flower or party hat in 6 colors (Menu, Pets, pick a pet).
+**Names and dress-up:** when you start a new game you choose to be a boy or a girl, type your name and make your hero your own: hair, skin, hoodie colour and an extra (a cap, beanie, sun hat, glasses, scarf, crown or cape, in six colours). Change any of it, your name included, at any time in Menu, Customize. Give pets nicknames, and dress them up with a bow, top hat, crown, flower or party hat in 6 colors (Menu, Pets, pick a pet).
 
 **Making friends:** offer a tired wild pet a treat it really likes. Treats are not sold in the shop: you find them in treasure chests. Each time you open a chest there is a 67% chance of treats inside, and every chest fills up again when you rest at home or at the Clinic. Pets eat what they like in real life:
 
@@ -73,6 +73,8 @@ Press **Space** to begin. A short intro from *When Pets Attack Studio Production
 Offer the wrong snack and the pet usually turns up its nose. In battle, the Bag marks the wild pet's favorites with a red ♥.
 
 **Bosses:** on the main road, a giant pet waits beyond the gatekeeper of Pebble Canyon (Bramble, Lv 12), Misty Marsh (Gloop, Lv 15) and Frosty Peak (Blizzard, Lv 20). Each is one tough pet with lots of HP. It can't be befriended, and it steps aside once you beat it. Dr. Gizmo's team is Lv 28, and your own pets can train up to Lv 30, so expect to train a full team of six to about Lv 24 before the last fight.
+
+**Trainers and puzzles:** eleven more trainers stand along the roads and challenge you when you walk in front of them. There is a puzzle to find in Pebble Canyon (the Echo Stones), Splash Lake (the Three Lanterns), Parrot Jungle (a parrot's memory game) and Frosty Peak (the Snow Owl's questions), each with a prize, and Dr. Gizmo hides behind a force field until you work out his three-number code from the notes in his lab.
 
 **The Pet Shop** sells Bandages (150 coins), Big Bandages (500 coins) and the Fishing Rod.
 
