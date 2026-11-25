@@ -137,7 +137,7 @@ Some grown-up pets have `machineEvo` (a species marked `machineOnly`) instead of
   - A favorite treat multiplies it by 1.2. A wrong treat multiplies it by 0.3, after a 75% chance of refusal.
 - **Main road:** Pawsville → Meadow Path → Pebble Canyon (gatekeeper Rex, then boss Bramble) → Whisker Woods → Misty Marsh (Fen, then boss Gloop) → Frosty Peak (Bo, then boss Blizzard, then Champion Maple at the summit) → Gizmo's Lab (Bolt, then Dr. Gizmo, then the win screen).
 - **Side areas:** Sunny Farm, Splash Lake, Sunny Dunes and Parrot Jungle each have a ribbon guardian. Maple needs all 4 **Trail Ribbons**.
-- **Starters:** a puppy (Buddy) or a kitten (Mittens) only.
+- **Starters:** a puppy (Scout, a black terrier with a white chest patch; internal key `buddy`) or a kitten (Mittens) only.
 - **Difficulty curve:** a self-test simulates a typical team at the level a player usually has for each big fight. Win rates must stay between **45% and 92%**. Retune trainer levels, not the formulas, if it fails.
 
 ## Audio system (section 4)

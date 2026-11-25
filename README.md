@@ -38,7 +38,7 @@ Press **Space** to begin. A short intro from *When Pets Attack Studio Production
 
 **The road:** Pawsville → Meadow Path → Pebble Canyon → Whisker Woods → Misty Marsh → Frosty Peak → Gizmo's Lab. Gatekeepers block the canyon pass, the marsh bridge and the mountain pass until you beat them, and Champion Maple only battles trainers with all 4 **Trail Ribbons** (won from the guardians of Sunny Farm, Splash Lake, Sunny Dunes and Parrot Jungle).
 
-**The story:** pets are going missing from Pawsville, and someone in a white lab coat was seen sneaking into Whisker Woods. Choose your first pet, a puppy (Buddy) or a kitten (Mittens), then explore. Befriend wild pets with Treats and find the 8 treasure chests. Beat the Pet Champion to learn the truth, then get into Dr. Gizmo's lab and stop him from experimenting on the pets.
+**The story:** pets are going missing from Pawsville, and someone in a white lab coat was seen sneaking into Whisker Woods. Choose your first pet, a puppy (Scout) or a kitten (Mittens), then explore. Befriend wild pets with Treats and find the 8 treasure chests. Beat the Pet Champion to learn the truth, then get into Dr. Gizmo's lab and stop him from experimenting on the pets.
 
 **Places to explore.** Each pet lives where it would in real life:
 
@@ -55,7 +55,7 @@ Press **Space** to begin. A short intro from *When Pets Attack Studio Production
 | Frosty Peak | north of Misty Marsh | snow bunnies, mice, ferrets, dogs and cats, plus the Champion at the summit |
 | Parrot Jungle | east of Whisker Woods | parrots, lizards and frogs |
 
-**33 pets**: the Super Hamster, plus 16 babies that each grow up at Lv 10: Buddy (dog), Mittens (cat), Alvin (hamster), Cookie (gerbil), Ziggy (lizard), Kiwi (parrot), Clover (rabbit), Nibbles (mouse), Noodle (ferret), Prickle (hedgehog), Shelly (turtle), Bubbles (goldfish), Ribbit (frog), Daisy (pony), Puddles (duckling) and Truffle (piglet). Water pets hide in the reeds by the pond and the stream.
+**33 pets**: the Super Hamster, plus 16 babies that each grow up at Lv 10: Scout (a black terrier pup), Mittens (cat), Alvin (hamster), Cookie (gerbil), Ziggy (lizard), Kiwi (parrot), Clover (rabbit), Nibbles (mouse), Noodle (ferret), Prickle (hedgehog), Shelly (turtle), Bubbles (goldfish), Ribbit (frog), Daisy (pony), Puddles (duckling) and Truffle (piglet). Water pets hide in the reeds by the pond and the stream.
 
 **Names and dress-up:** when you start a new game you choose to be a boy or a girl, type your name and make your hero your own: hair, skin, hoodie colour and an extra (a cap, beanie, sun hat, glasses, scarf, crown or cape, in six colours). Change any of it, your name included, at any time in Menu, Customize. Give pets nicknames, and dress them up with a bow, top hat, crown, flower or party hat in 6 colors (Menu, Pets, pick a pet).
 
