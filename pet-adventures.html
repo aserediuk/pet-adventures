@@ -4284,7 +4284,7 @@ const ITEMS = {
   carrot:  { name: 'Carrot',      pl: 'Carrots',     price: 20, treat: true, flavor: 'A crunchy carrot.' },
   apple:   { name: 'Apple',       pl: 'Apples',      price: 20, treat: true, flavor: 'A juicy apple.' },
   lettuce: { name: 'Lettuce',     pl: 'Lettuce',     price: 20, treat: true, flavor: 'Fresh leafy greens.' },
-  rod:     { name: 'Fishing Rod', pl: 'Fishing Rods', price: 350, rod: true, desc: 'Catches wild fish. It never runs out.' },
+  rod:     { name: 'Fishing Rod', pl: 'Fishing Rods', price: 350, rod: true, desc: 'Cast it into water to catch fish. It never runs out.' },
   bandage: { name: 'Bandage',     pl: 'Bandages',    price: 150, heal: 20, desc: 'Heals a pet by 20 HP.' },
   big:     { name: 'Big Bandage', pl: 'Big Bandages', price: 500, heal: 9999, desc: 'Heals a pet all the way.' },
 };
@@ -4298,8 +4298,6 @@ const TREAT_LIKES = {
 };
 const TYPE_PLURAL = { Dog: 'dogs', Cat: 'cats', Hamster: 'hamsters', Gerbil: 'gerbils', Lizard: 'lizards', Parrot: 'parrots', Rabbit: 'rabbits',
   Mouse: 'mice', Ferret: 'ferrets', Hedgehog: 'hedgehogs', Turtle: 'turtles', Fish: 'fish', Frog: 'frogs', Pony: 'ponies', Duck: 'ducks', Pig: 'pigs', Snake: 'snakes' };
-function needsRod(p) { return petType(p) === 'Fish'; }
-function rodChance(p) { return Math.min(0.95, catchChance(p) * 1.2); }   // as good as a favourite treat
 function likesTreat(p, key) { return (TREAT_LIKES[petType(p)] || []).includes(key); }
 function favoriteTreats(p) { return (TREAT_LIKES[petType(p)] || []).map(k => ITEMS[k].name); }
 for (const k of TREAT_KEYS) {
@@ -4727,8 +4725,8 @@ MAPS.lake = {
     { id: 'sal', look: 'fisher', name: 'Paddler Sal', x: 28, y: 12, dir: 'down', sight: 5,
       lines: ['Splash! My pets love the water. Do yours?'], after: ['Nice one! The lake is all yours.'], trainer: { team: [['puddles', 8], ['shelly', 9]] } },
     { id: 'finn', look: 'fisher', name: 'Fisher Finn', x: 27, y: 10, dir: 'left', lines: [
-      'Ahoy, {name}! Splash Lake is home to turtles, goldfish, frogs and ducks. They hide in the reeds by the water.',
-      'Goldfish only come to a Fishing Rod. The Pet Shop sells one for 350 coins.',
+      'Ahoy, {name}! Splash Lake is home to turtles, frogs and ducks in the reeds, and goldfish in the water.',
+      'Goldfish only come to a Fishing Rod. Buy one at the Pet Shop for 350 coins, then cast it into the water!',
       'Turtles munch Lettuce and Bugs, and ducks like Lettuce or Seeds.',
       'See that little island? I bet there\'s treasure on it. Try the bridge on the south shore!'] },
     { id: 'coral', look: 'fisher', name: 'Captain Coral', x: 25, y: 18, dir: 'left', ribbon: 'Lake Ribbon', onWin: 'ribbon',
@@ -5083,8 +5081,10 @@ function wildTable(map, x, y) {
   if (map.pond && nearWater(map, x, y)) return map.pond;     // water pets live in the reeds
   return map.wild;
 }
-function rollWild(map, x, y) {
-  const tab = wildTable(map, x, y); if (!tab) return null;
+function rollWild(map, x, y) { return rollWildTable(wildTable(map, x, y)); }
+function rollWildTable(table) {
+  const tab = (table || []).filter(e => SPECIES[e.sp].type !== 'Fish');   // fish are caught by fishing, never met in the grass
+  if (!tab.length) return null;
   let total = 0; for (const e of tab) total += e.w;
   let r = Math.random() * total;
   for (const e of tab) { r -= e.w; if (r <= 0) return createPet(e.sp, rint(e.min, e.max)); }
@@ -6080,6 +6080,75 @@ function interact() {
   const pz = puzzleObjAt(world.map, fx, fy);
   if (pz) { runScript(() => usePuzzle(pz.p, pz.o)); return; }
   if (world.map.lab && (world.map.rows[fy] || '')[fx] === 'Z') { runScript(useMachine); return; }
+  if (tileAt(world.map, fx, fy) === '~') { runScript(() => goFishing(fx, fy)); return; }
+}
+// ---- Fishing: face water and press Talk. The line goes out, a fish bites after a little while, and then a marker
+// slides along a bar: press when it is in the green and the fish is yours. Fish never appear in battles.
+function fishTable(map) {
+  const t = (map.pond || []).filter(e => SPECIES[e.sp].type === 'Fish');
+  if (t.length) return t;
+  const lv = (map.pond || map.wild || [{ min: 3, max: 6 }])[0];   // water with no fish of its own still has little goldfish
+  return [{ sp: 'bubbles', min: lv.min, max: lv.max, w: 1 }];
+}
+const FISH_BAR = { w: 96, zone: 28, speed: 1.25, passes: 4 };
+class FishingScreen {
+  constructor(fx, fy, resolve) { const [dx, dy] = DIRS[G.dir], far = tileAt(world.map, fx + dx, fy + dy) === '~';   // the float lands a tile out when the water is wide enough
+    this.fx = far ? fx + dx : fx; this.fy = far ? fy + dy : fy; this.resolve = resolve; this.t = 0; this.phase = 'cast'; this.biteAt = 24 + rint(60, 170); this.bt = 0; this.zone = rint(10, FISH_BAR.w - FISH_BAR.zone - 10); }
+  marker() { const x = (this.bt * FISH_BAR.speed) % (FISH_BAR.w * 2); return x > FISH_BAR.w ? FISH_BAR.w * 2 - x : x; }
+  finish(res) { pop(this); this.resolve(res); }
+  update(inp) {
+    this.t++;
+    if (this.phase === 'cast' && this.t >= 24) { this.phase = 'wait'; sfx('grass'); }
+    else if (this.phase === 'wait' && this.t >= this.biteAt) { this.phase = 'bite'; this.bt = 0; sfx('wiggle'); }
+    else if (this.phase === 'bite') { this.bt++; if (this.bt % 24 === 0) sfx('wiggle'); if (this.bt * FISH_BAR.speed >= FISH_BAR.w * FISH_BAR.passes) return this.finish('slow'); }
+    for (const a of inp) {
+      if (a === 'back') { sfx('cancel'); return this.finish('quit'); }
+      if (a === 'ok' && this.phase === 'bite') { const m = this.marker(); return this.finish(m >= this.zone && m <= this.zone + FISH_BAR.zone ? 'catch' : 'miss'); }
+    }
+  }
+  draw() {
+    const cx = Math.round(world.camX), cy = Math.round(world.camY), bite = this.phase === 'bite';
+    const px = G.x * TS - cx + 8 + DIRS[G.dir][0] * 5, py = G.y * TS - cy + 2;                      // the rod tip
+    const k = Math.min(1, this.t / 24), tx = this.fx * TS - cx + 8, ty = this.fy * TS - cy + 9;
+    const bx = Math.round(px + (tx - px) * k), by = Math.round(py + (ty - py) * k - Math.sin(k * Math.PI) * 14 + (k < 1 ? 0 : bite ? (this.bt % 12 < 6 ? 2 : 0) : (Math.floor(this.t / 20) % 2)));
+    ctx.fillStyle = '#fffbe9';
+    for (let i = 0; i <= 12; i++) { const u = i / 12; ctx.fillRect(Math.round(px + (bx - px) * u), Math.round(py + (by - py) * u + Math.sin(u * Math.PI) * 3), 1, 1); }   // the line, with a little sag
+    if (k >= 1) { ctx.fillStyle = '#e3eefc'; const rw = bite ? 6 + (this.bt % 12 < 6 ? 2 : 0) : 5 + (Math.floor(this.t / 20) % 2) * 2; ctx.fillRect(bx - rw, ty + 3, rw * 2 + 1, 1); }   // a ripple
+    ctx.fillStyle = '#232a4a'; ctx.fillRect(bx - 2, by - 3, 5, 6);
+    ctx.fillStyle = '#e8493f'; ctx.fillRect(bx - 1, by - 2, 3, 2);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(bx - 1, by, 3, 2);
+    if (!bite) return;
+    drawTextC('!', bx + 1, by - 14 - (this.bt % 12 < 6 ? 1 : 0), '#ffd94a', 1, '#232a4a');
+    const w = FISH_BAR.w, x0 = clamp(Math.round(tx - w / 2), 6, W - w - 6), y0 = Math.min(ty, py) < 60 ? Math.round(Math.max(ty, py) + 22) : Math.round(Math.min(ty, py) - 34);   // the timing bar, clear of the bobber and the hero
+    ctx.fillStyle = '#232a4a'; ctx.fillRect(x0 - 3, y0 - 3, w + 6, 14);
+    ctx.fillStyle = '#fffbe9'; ctx.fillRect(x0 - 2, y0 - 2, w + 4, 12);
+    ctx.fillStyle = '#4bcbe2'; ctx.fillRect(x0, y0, w, 8);
+    ctx.fillStyle = '#5cad4d'; ctx.fillRect(x0 + this.zone, y0, FISH_BAR.zone, 8);
+    ctx.fillStyle = '#b9dd58'; ctx.fillRect(x0 + this.zone, y0, FISH_BAR.zone, 2);
+    const m = x0 + Math.round(this.marker());
+    ctx.fillStyle = '#232a4a'; ctx.fillRect(m - 2, y0 - 4, 5, 16);
+    ctx.fillStyle = '#ffd94a'; ctx.fillRect(m - 1, y0 - 3, 3, 14);
+  }
+  tap() { inputQueue.push('ok'); }
+  hint() { const A = touchUI ? 'A' : 'Enter/E'; return (this.phase === 'bite' ? 'A bite! Press ' + A + ' in the green!' : 'Waiting for a bite...') + '   ' + hintKeys() + ': stop'; }
+}
+async function goFishing(fx, fy) {
+  if (!G.bag.rod) { await say('Fish are swimming in the water! To catch one you need a Fishing Rod. The Pet Shop sells one for ' + ITEMS.rod.price + ' coins.'); return; }
+  sfx('throw');
+  const res = await new Promise(r => push(new FishingScreen(fx, fy, r)));
+  if (res === 'quit') return;
+  if (res !== 'catch') { sfx('catchFail'); await say(res === 'slow' ? 'Too slow! The fish let go and swam away. Cast again!' : 'Oops, not in the green! The fish slipped off the line. Cast again!'); return; }
+  const tab = fishTable(world.map); let total = 0; for (const e of tab) total += e.w;
+  let r = Math.random() * total, got = tab[tab.length - 1];
+  for (const e of tab) { r -= e.w; if (r <= 0) { got = e; break; } }
+  const fish = createPet(got.sp, rint(got.min, got.max));
+  fish.pending = [];
+  sfx('catchOk');
+  G.stats.caught++;
+  await say('Splash! You reeled in a ' + petName(fish) + ' (Lv ' + fish.lv + ')! It became your friend!');
+  await nicknamePet(fish);
+  if (G.party.length < PARTY_MAX) G.party.push(fish);
+  else { healPet(fish); G.pen.push(fish); await say('Your party is full, so ' + petName(fish) + ' went to rest in the Pet Pen at the Clinic.'); }
 }
 // Dr. Gizmo's Mega-Zapper. Once he's beaten, he rewires it into the Super Growth Machine.
 function machinePets(list) { return list.filter(q => SPECIES[q.sp].machineEvo); }
@@ -6550,11 +6619,12 @@ async function petsMenu() {
 }
 function bagOptions(battle) {
   const wild = battle && battle.wild ? battle.enemy : null;
-  return ITEM_ORDER.map(k => ({ label: (wild && (ITEMS[k].rod ? needsRod(wild) : ITEMS[k].treat && likesTreat(wild, k)) ? '\u2665 ' : '  ') + ITEMS[k].name, right: ITEMS[k].rod ? (G.bag[k] ? 'Yes' : 'No') : '\u00D7' + G.bag[k] }));
+  return ITEM_ORDER.map(k => ({ label: (wild && ITEMS[k].treat && likesTreat(wild, k) ? '\u2665 ' : '  ') + ITEMS[k].name, right: ITEMS[k].rod ? (G.bag[k] ? 'Yes' : 'No') : '\u00D7' + G.bag[k] }));
 }
 // The big fights (bosses, Trail Ribbon guardians, the Champion and Dr. Gizmo) allow no Bandages (user's rule).
 function noBandages(npc) { return !!npc && !!(npc.boss || npc.ribbon || npc.champion || npc.id === 'gizmo'); }
 const NO_BANDAGE_TEXT = 'No Bandages in this big battle! Your pets must win on their own.';
+const FISH_HOW = 'To fish, stand at the edge of some water, face it and press the Talk button. Then wait for a bite!';
 // Returns true if an item was used (in battle this uses the turn).
 async function bagMenu(inBattle, battle) {
   for (;;) {
@@ -6562,7 +6632,7 @@ async function bagMenu(inBattle, battle) {
     const wild = inBattle && battle.wild ? battle.enemy : null;
     const i = await choose(bagOptions(battle).concat([{ label: '  Back' }]), {
       cancel: n, start: bagMenu.last || 0, x: W - 160, y: 22, minW: 150, title: 'Bag',
-      info: k => k >= n ? 'Close the bag.' : ITEMS[ITEM_ORDER[k]].heal && inBattle && noBandages(battle.o.trainer) ? NO_BANDAGE_TEXT : (wild && needsRod(wild) && !ITEMS[ITEM_ORDER[k]].heal ? (ITEMS[ITEM_ORDER[k]].rod ? '\u2665 Just the thing for a wild ' + petName(wild) + '! ' + ITEMS.rod.desc : 'Fish don\'t take treats. A wild ' + petName(wild) + ' needs a Fishing Rod.')
+      info: k => k >= n ? 'Close the bag.' : ITEMS[ITEM_ORDER[k]].heal && inBattle && noBandages(battle.o.trainer) ? NO_BANDAGE_TEXT : (ITEMS[ITEM_ORDER[k]].rod ? ITEMS.rod.desc
         : wild && ITEMS[ITEM_ORDER[k]].treat
         ? (likesTreat(wild, ITEM_ORDER[k]) ? '\u2665 The wild ' + petName(wild) + ' loves this! ' : 'The wild ' + petName(wild) + ' likes ' + favoriteTreats(wild).join(' or ') + '. ') + ITEMS[ITEM_ORDER[k]].desc
         : ITEMS[ITEM_ORDER[k]].desc),
@@ -6572,13 +6642,9 @@ async function bagMenu(inBattle, battle) {
     const key = ITEM_ORDER[i];
     if (ITEMS[key].rod) {
       if (G.bag[key] <= 0) { await say('You don\'t have a Fishing Rod. The Pet Shop sells one for ' + ITEMS.rod.price + ' coins.'); continue; }
-      if (!inBattle) { await say('The Fishing Rod catches wild fish. Use it in a battle with one!'); continue; }
-      if (!battle.wild) { await say('You can\'t fish for another trainer\'s pet!'); continue; }
-      if (!needsRod(battle.enemy)) { await say('The Fishing Rod only works on fish. Offer ' + petName(battle.enemy) + ' a treat instead!'); continue; }
-      return { rod: true };
+      await say(FISH_HOW); continue;
     }
     if (G.bag[key] <= 0) { await say('You don\'t have any ' + ITEMS[key].pl + '.'); continue; }
-    if (ITEMS[key].treat && inBattle && battle.wild && needsRod(battle.enemy)) { await say('Fish don\'t take treats! You need a Fishing Rod to catch ' + petName(battle.enemy) + '.' + (G.bag.rod ? '' : ' The Pet Shop sells one.')); continue; }
     if (ITEMS[key].treat) {
       if (!inBattle) { await say('Treats are for making friends with wild pets. Offer one in a wild battle!'); continue; }
       if (!battle.wild) { await say(battle.enemy.boss ? petName(battle.enemy) + ' is a boss. It won\'t take treats!' : 'You can\'t give Treats to another trainer\'s pet!'); continue; }
@@ -6748,7 +6814,7 @@ async function shopScript() {
     if (G.coins < ITEMS[k].price) { sfx('bump'); await say('Oops, you need ' + ITEMS[k].price + ' coins for that. Win battles to earn more!', 'Shopkeeper Ben'); continue; }
     G.coins -= ITEMS[k].price; G.bag[k]++;
     sfx('coin'); bg.flash = 0;
-    await say(ITEMS[k].rod ? 'You bought the Fishing Rod! Use it from your Bag in a battle with a wild fish.' : 'You bought a ' + ITEMS[k].name + '! (You have ' + G.bag[k] + ' now.)');
+    await say(ITEMS[k].rod ? 'You bought the Fishing Rod! ' + FISH_HOW : 'You bought a ' + ITEMS[k].name + '! (You have ' + G.bag[k] + ' now.)');
   }
 }
 
@@ -7529,7 +7595,6 @@ async function chooseAction(B) {
       const r = await bagMenu(true, B);
       if (!r) continue;
       if (r.treat) return { kind: 'treat', key: r.treat };
-      if (r.rod) return { kind: 'rod' };
       return { kind: 'item' };
     }
     if (a === 2) {
@@ -7643,7 +7708,7 @@ async function throwTreat(B, key) {
   await bsay(petName(e) + ' finished the snack, but isn\'t ready to be friends yet!');
   return false;
 }
-// The wild pet joins you (after a treat or a catch with the Fishing Rod).
+// The wild pet joins you (after a treat).
 async function befriend(B) {
   const e = B.enemy;
   sfx('catchOk');
@@ -7656,21 +7721,6 @@ async function befriend(B) {
   if (G.party.length < PARTY_MAX) G.party.push(e);
   else { healPet(e); G.pen.push(e); await bsay('Your party is full, so ' + petName(e) + ' went to rest in the Pet Pen at the Clinic.'); }
   return true;
-}
-// Fish are caught with the Fishing Rod (bought once at the Pet Shop, never used up). The more tired the fish, the better the odds.
-async function castRod(B) {
-  const e = B.enemy;
-  sfx('throw');
-  B.cast = { t: 0 };
-  await wait(30);
-  await bsay('You cast your Fishing Rod toward the wild ' + petName(e) + '!');
-  const ok = Math.random() < rodChance(e);
-  for (let k = 0; k < 3; k++) { sfx('wiggle'); B.wiggle = 16; B.cast.tug = 10; await wait(26); if (!ok && k === 1 && Math.random() < 0.5) break; }
-  B.cast = null;
-  if (ok) { await bsay('A bite! You gently reel ' + petName(e) + ' in...'); return befriend(B); }
-  sfx('catchFail');
-  await bsay(petName(e) + ' wriggled off the line! Tire it out a little more and try again.');
-  return false;
 }
 async function battleTurn(B) {
   const act = await chooseAction(B);
@@ -7690,10 +7740,6 @@ async function battleTurn(B) {
     const r = await enemyTurn(B); return r === 'lose' ? 'lose' : null;
   }
   if (act.kind === 'item') { B.dispP = B.player.hp; const r = await enemyTurn(B); return r === 'lose' ? 'lose' : null; }
-  if (act.kind === 'rod') {
-    if (await castRod(B)) return 'caught';
-    const r = await enemyTurn(B); return r === 'lose' ? 'lose' : null;
-  }
   if (act.kind === 'treat') {
     if (await throwTreat(B, act.key)) return 'caught';
     const r = await enemyTurn(B); return r === 'lose' ? 'lose' : null;
@@ -8477,12 +8523,13 @@ function runSelfTest() {
   if (HERO_ROWS.some(l => textW(l) > 100) || [HERO_HAIR, HERO_TOP, HERO_ACC, HERO_ACC_COL].some(list => list.some(([l]) => textW(l) > 110))) uErr.push('hero screen label too long');
   texts.push(CHEST_EMPTY, 'It\'s empty. Chests fill up again when you rest at home or at the Clinic.', 'You found 300 coins and 2 Fish Flakes!', 'You found 2 Big Bandages and 2 Lettuce!', 'Looking for treats? I don\'t sell those. You find them in treasure chests, and the chests fill up again whenever you rest!',
     'Squeakerss is a boss. It won\'t take treats!', 'You backed away. Blizzard is still blocking the way.', 'Boss Blizzard wants to battle!');
-  texts.push('\u2665 Just the thing for a wild Squeakers! ' + ITEMS.rod.desc, 'Fish don\'t take treats. A wild Squeakers needs a Fishing Rod.', ITEMS.rod.desc + '  You only need one.',
-    'You don\'t have a Fishing Rod. The Pet Shop sells one for 350 coins.', 'The Fishing Rod only works on fish. Offer Squeakers a treat instead!', 'Fish don\'t take treats! You need a Fishing Rod to catch Squeakers. The Pet Shop sells one.',
-    'You already have a Fishing Rod, and one is all you need. It never runs out!', 'You bought the Fishing Rod! Use it from your Bag in a battle with a wild fish.', 'You cast your Fishing Rod toward the wild Squeakers!',
-    'Squeakers wriggled off the line! Tire it out a little more and try again.', 'A bite! You gently reel Squeakers in...');
+  texts.push(ITEMS.rod.desc, ITEMS.rod.desc + '  You only need one.', 'You don\'t have a Fishing Rod. The Pet Shop sells one for 350 coins.', FISH_HOW,
+    'You already have a Fishing Rod, and one is all you need. It never runs out!', 'You bought the Fishing Rod! ' + FISH_HOW,
+    'Fish are swimming in the water! To catch one you need a Fishing Rod. The Pet Shop sells one for 350 coins.', 'Too slow! The fish let go and swam away. Cast again!',
+    'Oops, not in the green! The fish slipped off the line. Cast again!', 'Splash! You reeled in a Squeakers (Lv 10)! It became your friend!');
   if (toNext(5) !== 300 || toNext(10) !== 1200) uErr.push('levelling up should take 12 x level x level XP (20% more than the first versions)');
-  { const f = createPet('bubbles', 8); f.hp = 1; if (!needsRod(f) || rodChance(f) <= catchChance(f) || TREAT_KEYS.some(k => likesTreat(f, k)) || needsRod(createPet('buddy', 5)) || ITEMS.flakes) uErr.push('fish are caught with the Fishing Rod only'); }
+  { const f = createPet('bubbles', 8); let met = false; for (const k in MAPS) for (let i = 0; i < 40; i++) { const w = MAPS[k].pond && rollWildTable(MAPS[k].pond); if (w && petType(w) === 'Fish') met = true; }
+    if (met || TREAT_KEYS.some(k => likesTreat(f, k)) || ITEMS.flakes || !Object.values(MAPS).every(mm => fishTable(mm).every(e => SPECIES[e.sp].type === 'Fish'))) uErr.push('fish are caught by fishing only, never met in battle'); }
   for (const k in MAPS) for (const c of MAPS[k].chests) texts.push('You found ' + chestLabel(c) + '!');
   for (const k in SPECIES) texts.push((SPECIES[k].desc || ''), 'Champion Maple\'s ' + SPECIES[k].name + ' used Whisker Swipe!', SPECIES[k].name + ' wants to learn Pouch Cannon! But a pet can only know 4 moves.');
   texts.push('Your party is full, so ' + longName + ' went to rest in the Pet Pen at the Clinic.');
@@ -8798,6 +8845,12 @@ function devView(v) {
   else if (v === 'win') { const s = push(new WinScreen(() => {})); s.t = 100; }
   else if (v === 'evolve') { const s = push(new EvolveScreen('cookie', 'cream')); s.t = 25; }
   else if (v === 'superbattle') { G.party[0] = createPet('superham', 20); const e = createPet('superham', 20); e.hp = 30; const B = battleWith(e); push(new ActionMenu(B, () => {})); }
+  else if (v === 'fishing') {   // #view=fishing[&wait] : the fishing minigame at Splash Lake, with a bite on the line
+    const lake = MAPS.lake; let spot = null;
+    for (let y = 1; y < lake.rows.length - 1 && !spot; y++) for (let x = 1; x < lake.rows[y].length - 1 && !spot; x++) if (tileAt(lake, x, y) === '~' && isWalkable(lake, x, y + 1) && !npcAt(lake, x, y + 1)) spot = { x, y: y + 1 };
+    push(overworld); enterMap('lake', spot.x, spot.y, 'up'); world.banner = 0;
+    const f = push(new FishingScreen(spot.x, spot.y - 1, () => {})); f.t = 40; if (!location.hash.includes('wait')) { f.phase = 'bite'; f.bt = 30; } else { f.phase = 'wait'; f.biteAt = 1e9; }
+  }
   else if (v === 'tiger') { const s = push(new EvolveScreen('shadow', 'tiger')); s.done = true; }
   else if (v === 'superham') { const s = push(new EvolveScreen('nugget', 'superham')); s.done = true; }
   else if (v === 'dialog') { push(overworld); enterMap('pawsville', gx('pawsville', 11), gy('pawsville', 9), 'right'); world.banner = 0; push(new MessageScreen(MAPS.pawsville.npcs[0].lines[1], () => {}, 'Granny Rose')); }
@@ -9161,29 +9214,30 @@ async function runSmoke() {
       ok('Running away from the picky cat works', await mash(idle, 200));
       G.party = [createPet('buddy', 2)];
       bagMenu.last = 0; }
-    // Fish take no treats: they are caught with the Fishing Rod, which is bought once and never used up.
-    { const realRandom = Math.random; Math.random = () => 0.1;
-      const fish = createPet('bubbles', 4); fish.hp = 1;
-      const keepParty = G.party, keepBag = Object.assign({}, G.bag), keepPen = G.pen.slice(), caught0 = G.stats.caught, rodAt = ITEM_ORDER.indexOf('rod');
-      G.party = [createPet('buddy', 9)]; G.bag.rod = 0; G.bag.seeds = 2;
-      runScript(() => startBattle({ wild: true, enemies: [fish] }));
-      await mash(() => topScreen() instanceof ActionMenu, 300);
-      await key('ArrowRight'); await key('Enter'); await wait(5);   // Bag
-      const heart = topScreen() instanceof ChoiceScreen && topScreen().opts[rodAt].label.startsWith('\u2665') && topScreen().opts[rodAt].right === 'No' && !topScreen().opts[2].label.startsWith('\u2665');
-      await key('ArrowDown'); await key('ArrowDown'); await key('Enter'); await wait(6);    // Seeds
-      const told = topScreen() instanceof MessageScreen && topScreen().pages.flat().join(' ').includes('Fishing Rod');
-      ok('A wild fish takes no treats (none is wasted) and the Bag points to the Fishing Rod', heart && told && G.bag.seeds === 2);
-      await mash(() => topScreen() instanceof ChoiceScreen, 40); 
-      for (let i = 2; i < rodAt; i++) await key('ArrowDown');
-      await key('Enter'); await wait(6);                                                   // Fishing Rod, without owning one
+    // Fishing: face water and press Talk; with a rod, a well-timed press on the bar catches a fish.
+    { const keepParty = G.party, keepBag = Object.assign({}, G.bag), keepPen = G.pen.slice(), caught0 = G.stats.caught, flags0 = Object.assign({}, G.flags), lake = MAPS.lake;
+      for (const n of lake.npcs) if (n.sight) G.flags[n.id] = true;
+      let spot = null;
+      for (let y = 1; y < lake.rows.length - 1 && !spot; y++) for (let x = 1; x < lake.rows[y].length - 1 && !spot; x++) if (tileAt(lake, x, y) === '~' && isWalkable(lake, x, y + 1) && !npcAt(lake, x, y + 1)) spot = { x, y: y + 1 };
+      G.party = [createPet('buddy', 9)]; G.bag.rod = 0;
+      enterMap('lake', spot.x, spot.y, 'up'); await wait(5);
+      await key('Enter'); await wait(6);
       const need = topScreen() instanceof MessageScreen && topScreen().pages.flat().join(' ').includes('350 coins');
-      await mash(() => topScreen() instanceof ChoiceScreen, 40);
+      await mash(idle, 40);
       G.bag.rod = 1;
-      await key('Enter');                                                                  // Fishing Rod again, now owned
-      await mash(idle, 800);
-      Math.random = realRandom;
-      ok('Without a rod you are sent to the shop; with one, a tired fish is caught and the rod is kept', need && G.party.includes(fish) && G.bag.rod === 1 && G.stats.caught === caught0 + 1);
-      G.party = keepParty; G.bag = keepBag; G.pen = keepPen; G.stats.caught = caught0; bagMenu.last = 0; }
+      const cast = async () => { await key('Enter'); await wait(4); const f = topScreen(); if (!(f instanceof FishingScreen)) return null; f.biteAt = 30; for (let i = 0; i < 60 && f.phase !== 'bite'; i++) await wait(2); return f; };
+      let f = await cast(); const waited = !!f && f.phase === 'bite' && G.party.length === 1;
+      if (f) { f.zone = f.marker() > 48 ? 4 : 64; await key('Enter'); }                       // press outside the green
+      await wait(6); const missed = topScreen() instanceof MessageScreen && G.party.length === 1 && G.stats.caught === caught0;
+      await mash(idle, 40);
+      f = await cast();
+      if (f) { f.zone = clamp(Math.round(f.marker()) - 14, 0, FISH_BAR.w - FISH_BAR.zone); await key('Enter'); }   // press inside it
+      await wait(6);
+      for (let i = 0; i < 40 && !(topScreen() instanceof ChoiceScreen); i++) { await key('Enter'); await wait(4); }
+      await key('ArrowDown'); await key('Enter');                                           // no nickname
+      await mash(idle, 60);
+      ok('Fishing: no rod sends you to the shop; a miss loses the fish; a press in the green catches one', need && waited && missed && G.party.length === 2 && petType(G.party[1]) === 'Fish' && G.bag.rod === 1 && G.stats.caught === caught0 + 1);
+      G.flags = flags0; G.party = keepParty; G.bag = keepBag; G.pen = keepPen; G.stats.caught = caught0; }
     enterMap('peak', gx('peak', 19), gy('peak', 3), 'up');
     runScript(() => talkTo(champ));
     await mash(() => topScreen() instanceof ActionMenu, 300);

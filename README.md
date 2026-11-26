@@ -44,14 +44,14 @@ Press **Space** to begin. A short intro from *When Pets Attack Studio Production
 
 | Area | Where | Pets |
 | --- | --- | --- |
-| Pawsville | your town | ducks, frogs, turtles and goldfish in the pond reeds |
+| Pawsville | your town | ducks, frogs and turtles in the pond reeds; goldfish by fishing |
 | Sunny Farm | east of town | puppies, kittens, ponies, bunnies and mice in the wheat; piglets in the mud; ducklings by the pond |
-| Splash Lake | west of town | turtles, goldfish, frogs and ducks in the reeds |
+| Splash Lake | west of town | turtles, frogs and ducks in the reeds; goldfish by fishing |
 | Meadow Path | north of town | bunnies, mice, hedgehogs (and water pets by the stream) |
 | Sunny Dunes | east of Meadow Path | gerbils, hamsters, lizards and desert hedgehogs in the dry brush |
 | Pebble Canyon | north of Meadow Path | lizards, hedgehogs, ferrets, mice, gerbils |
 | Whisker Woods | north of Pebble Canyon | ferrets, hedgehogs, mice, bunnies and frogs |
-| Misty Marsh | north of Whisker Woods | frogs, ducks, turtles, goldfish in the reeds; piglets in the mud |
+| Misty Marsh | north of Whisker Woods | frogs, ducks and turtles in the reeds; goldfish by fishing; piglets in the mud |
 | Frosty Peak | north of Misty Marsh | snow bunnies, mice, ferrets, dogs and cats, plus the Champion at the summit |
 | Parrot Jungle | east of Whisker Woods | parrots, lizards and frogs |
 
@@ -78,7 +78,7 @@ Offer the wrong snack and the pet usually turns up its nose. In battle, the Bag 
 
 **The Pet Shop** sells Bandages (150 coins), Big Bandages (500 coins) and the Fishing Rod. Bandages cannot be used in the big battles: bosses, Trail Ribbon guardians, the Champion and Dr. Gizmo.
 
-**Fish are different:** they take no treats. Buy the **Fishing Rod** at the Pet Shop for 350 coins, then use it from your Bag in a battle with a wild fish. You only need one, and it never runs out.
+**Fishing:** fish take no treats and never appear in battles. Buy the **Fishing Rod** at the Pet Shop for 350 coins (you only need one, and it never runs out). Stand at the edge of any water, face it and press Talk to cast. Wait for a bite, then press again while the sliding marker is in the green part of the bar, and the fish joins you.
 
 Types come in loops (1.5× damage forward, 0.67× backward): **Dog > Cat > Hamster > Gerbil > Dog**, **Cat > Parrot > Lizard > Cat**, **Cat > Mouse**, **Ferret > Mouse > Pony > Pig > Hedgehog > Ferret** and **Duck > Frog > Fish > Turtle > Rabbit > Duck**. A pet's Summary shows what it's strong and weak against.
 
