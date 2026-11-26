@@ -85,6 +85,7 @@ A top-down, turn-based pet-collecting RPG for kids. The whole game is **one self
 - **Puzzles (section 7c2, `PUZZLES`, `usePuzzle`):** objects stand on the map, block their tile and are used with A. State is in `G.puz[id]`. Echo Stones in Pebble Canyon (touch in `STONE_ORDER`), Three Lanterns at Splash Lake (each flips its neighbours), the parrot's colour memory game in Parrot Jungle, the Snow Owl's three questions on Frosty Peak (`OWL_QUIZ`, all true of the game: keep them true), and Dr. Gizmo's code lock in the lab (`GIZMO_CODE`, clues on three notes). Gizmo cannot be battled until the code is entered (`puzDone('code')`). Puzzles use their own dice (`puzRand`).
 - **Bosses:** an NPC with `boss: '<species>'`, `hp: <multiplier>` and a one-pet `trainer.team` is a big wild pet, drawn with the 32 px sprite. It stands two tiles beyond a gatekeeper in a one-tile corridor, fights as a trainer battle (no treats, running works, it stays put), has its HP multiplied (`maxHp` uses `pet.boss`), and steps aside with `moveTo` when beaten. Levels are the user's (raised once to make the game harder): Bramble (Pebble Canyon) Lv 12, Gloop (Misty Marsh) Lv 15, Blizzard (Frosty Peak) Lv 20; Dr. Gizmo's team is Lv 28. Champion Maple's four pets and Lab Helper Bolt's two are Lv 22 (also the user's numbers); the difficulty-curve self-test assumes four pets at Lv 21 for Maple. Tune a boss with its `hp`, not its level; the difficulty-curve self-test includes them.
 - **Jungle boss:** Rumble, a Lv 15 Tiger (`boss_jungle`, `hp: 1.1`), stands on the one-tile bridge in Parrot Jungle, so the Jungle Ribbon is behind it. The Tiger species is still only obtainable from the lab machine.
+- **Dunes boss:** Coil, a Lv 15 Anaconda (`boss_dunes`, `hp: 1`), stands in a rock corridor in front of Ranger Sandy, so the Dunes Ribbon is behind it. `snake` → `anaconda` at Lv 15 (`evoLv: 15`, user's number; every other pet grows up at 10). Both are drawn by `ANIMALS.snake` with blue eyes. Wild snakes live in Sunny Dunes.
 - **Fishing Rod:** fish take no treats (`TREAT_LIKES.Fish` is empty, `needsRod`). `ITEMS.rod` costs 350 coins at the Pet Shop, is bought once (`G.bag.rod` is 0 or 1) and is never used up. In a wild battle with a fish, Bag → Fishing Rod runs `castRod` with `rodChance` (the same odds as a favourite treat). Offering a fish a treat is refused without using the treat or the turn. Old saves get 20 coins back per Fish Flakes.
 
 ## Graphics system (sections 3b–3j, marked `// >>> GFX:name` … `// <<< GFX:name`)
@@ -118,7 +119,7 @@ Some grown-up pets have `machineEvo` (a species marked `machineOnly`) instead of
 
 ## Game design numbers
 
-- **Types:** 16 types in loops.
+- **Types:** 17 types: 16 in loops, plus Snake (beats Mouse and Frog, loses to Hedgehog).
 
   | Loop | Order |
   | --- | --- |
