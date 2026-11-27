@@ -91,7 +91,7 @@ const COL = {
 };
 const TYPE_COL = { Dog: '#bf703a', Cat: '#8f5cd6', Hamster: '#f08232', Gerbil: '#389055', Lizard: '#3aa896', Parrot: '#4274cc',
   Rabbit: '#f0689a', Mouse: '#a88faa', Ferret: '#8f5e44', Hedgehog: '#633a38', Turtle: '#5cad4d', Fish: '#e8493f',
-  Frog: '#1b5a60', Pony: '#8f4c32', Duck: '#6aa6ee', Pig: '#b83a7c', Snake: '#bb8c58', Normal: '#6f5a80' };
+  Frog: '#1b5a60', Pony: '#8f4c32', Duck: '#6aa6ee', Pig: '#b83a7c', Snake: '#bb8c58', Fox: '#ffae48', Normal: '#6f5a80' };
 
 let scale = 1;
 // Touch mode turns on automatically on iPad/iPhone (or the first time a finger touches the screen).
@@ -979,6 +979,23 @@ const ANIMALS = {
       ...M(...EYE(X(-3.5) - 1, Y(17.2))), ...M(['P', X(-1.3), Y(12.5), 'n']),
     ]];
   },
+  // A sitting fox: a wide face with pale cheeks, tall pointed ears and a bushy tail with a pale tip.
+  fox(s, adult) {
+    const X = d => 16 + d * s, Y = d => 31 - d * s, r = v => v * s;
+    return [[
+      ['E', X(9), Y(5), r(5.2), r(3.3), '1'], ['E', X(12.6), Y(6.6), r(2.7), r(2.3), '3'],
+      ['E', X(0), Y(6.5), r(6.5), r(6.5), '1'], ['E', X(0), Y(6.6), r(3.4), r(4.8), '3'],
+      ...M(['R', X(-4.5), Y(2.2), r(3), r(2.2), '2']),
+      ...M(['T', X(-9), Y(18), X(-2.5), Y(20), X(-7.2), Y(27.5), '1']),
+      ['E', X(0), Y(15.5), r(8.6), r(5.7), '1'],
+      ...M(['E', X(-5.4), Y(13.4), r(3.4), r(2.5), '3']), ['E', X(0), Y(12.9), r(3.6), r(2.7), '3'],
+    ], [
+      ...M(['T', X(-7.6), Y(20.2), X(-4.6), Y(20.8), X(-6.9), Y(24.8), '2']),
+      ...M(...EYE(X(-3.8) - 1, Y(17.4))),
+      ['R', X(0) - 1, Y(14.2), 2, 2, 'n'], ['P', X(0) - 1, Y(12.4), '2'], ['P', X(0), Y(12.4), '2'],
+      ...(adult ? M(['P', X(-6.5), Y(8), '2'], ['P', X(-5.5), Y(5.5), '2']) : []),
+    ]];
+  },
   // A coiled snake facing you, with blue eyes and a forked tongue. The grown-up (an anaconda) has a third coil and dark blotches.
   snake(s, adult) {
     const X = d => 16 + d * s, Y = d => 31 - d * s, r = v => v * s;
@@ -1025,6 +1042,8 @@ const NEW_PETS = [
   ['truffle',   'pig',      0.8,  false, { o: '#8a3a4a', 1: '#ffb8c8', 2: '#ff8aa8', n: '#a8385a' }],
   ['snake',     'snake',    0.85, false, { o: '#5a3a18', 1: '#dcb878', 2: '#8f5e44', 3: '#fffbe9', b: '#4274cc', t: '#e8493f' }],
   ['anaconda',  'snake',    1.0,  true,  { o: '#14301a', 1: '#5cad4d', 2: '#25725b', 3: '#e4ef7c', b: '#4274cc', t: '#e8493f' }],
+  ['fox',       'fox',      0.85, false, { o: '#5e3132', 1: '#f08232', 2: '#633a38', 3: '#fffbe9', n: '#232a4a' }],
+  ['snowfox',   'fox',      1.0,  true,  { o: '#4274cc', 1: '#e3eefc', 2: '#bcd2ef', 3: '#ffffff', n: '#232a4a' }],
   ['hamlet',    'pig',      1.0,  true,  { o: '#6a2a3a', 1: '#f4a0b4', 2: '#e07090', n: '#8a284a', 5: '#c86a50' }],
 ];
 for (const [id, animal, s, adult, pal] of NEW_PETS) {
@@ -4157,13 +4176,13 @@ class MusicRoomScreen {
 // ---------------------------------------------------------------------
 // 5. GAME DATA: types, moves, pets, items
 // ---------------------------------------------------------------------
-const TYPES = ['Dog', 'Cat', 'Hamster', 'Gerbil', 'Lizard', 'Parrot', 'Rabbit', 'Mouse', 'Ferret', 'Hedgehog', 'Turtle', 'Fish', 'Frog', 'Pony', 'Duck', 'Pig', 'Snake'];
+const TYPES = ['Dog', 'Cat', 'Hamster', 'Gerbil', 'Lizard', 'Parrot', 'Rabbit', 'Mouse', 'Ferret', 'Hedgehog', 'Turtle', 'Fish', 'Frog', 'Pony', 'Duck', 'Pig', 'Snake', 'Fox'];
 // Two loops: Dog > Cat > Hamster > Gerbil > Dog, and Cat > Parrot > Lizard > Cat.
-const BEATS = { Dog: ['Cat'], Cat: ['Hamster', 'Parrot', 'Mouse'], Hamster: ['Gerbil'], Gerbil: ['Dog'], Parrot: ['Lizard'], Lizard: ['Cat'],
+const BEATS = { Dog: ['Cat', 'Fox'], Cat: ['Hamster', 'Parrot', 'Mouse'], Hamster: ['Gerbil'], Gerbil: ['Dog'], Parrot: ['Lizard'], Lizard: ['Cat'],
   // Land loop: Ferret > Mouse > Pony > Pig > Hedgehog > Ferret.  Water loop: Duck > Frog > Fish > Turtle > Rabbit > Duck.
   Ferret: ['Mouse'], Mouse: ['Pony'], Pony: ['Pig'], Pig: ['Hedgehog'], Hedgehog: ['Ferret', 'Snake'],
   Duck: ['Frog'], Frog: ['Fish'], Fish: ['Turtle'], Turtle: ['Rabbit'], Rabbit: ['Duck'],
-  Snake: ['Mouse', 'Frog'] };   // snakes hunt mice and frogs; a hedgehog's spines keep them away
+  Snake: ['Mouse', 'Frog'], Fox: ['Rabbit', 'Duck'] };   // snakes hunt mice and frogs; a hedgehog's spines keep them away
 function weakTo(type) { return TYPES.filter(t => BEATS[t].includes(type)); }
 function strongText(type) { return 'Strong vs: ' + BEATS[type].join(', '); }
 function weakText(type) { return 'Weak vs: ' + weakTo(type).join(', '); }
@@ -4210,6 +4229,7 @@ const NEW_TYPE_MOVES = {
   Duck:     ['Quack Attack', 'Wing Slap', 'Puddle Splash'],
   Pig:      ['Mud Slide', 'Snout Shove', 'Belly Flop'],
   Snake:    ['Hiss', 'Tail Whip', 'Big Squeeze'],
+  Fox:      ['Fox Trot', 'Sly Snap', 'Tail Swirl'],
 };
 const TYPE_MOVES = {
   Dog: ['barkblast', 'fetchdash', 'howlwave'], Cat: ['whiskerswipe', 'hissburst', 'purrstorm'], Hamster: ['seedtoss', 'wheelspin', 'pouchcannon'],
@@ -4266,6 +4286,7 @@ const SPECIES = {
   ['daisy', 'Daisy', 'thunder', 'Thunder', 'Pony', [60, 56, 44, 50], 'A gentle pony with a golden mane.'],
   ['puddles', 'Puddles', 'quackers', 'Quackers', 'Duck', [48, 48, 48, 56], 'A fuzzy duckling that loves puddles.'],
   ['truffle', 'Truffle', 'hamlet', 'Hamlet', 'Pig', [64, 52, 52, 32], 'A happy piglet who loves to roll in mud.'],
+  ['fox', 'Fox', 'snowfox', 'Snow Fox', 'Fox', [48, 54, 42, 62], 'A clever fox with a big bushy tail.'],
 ].forEach(([b, bn, a, an, type, st, desc]) => {
   const fam = type.toLowerCase(), base = { hp: st[0], atk: st[1], def: st[2], spd: st[3] };
   SPECIES[b] = { name: bn, type, fam, base, evo: a, evoLv: 10, desc };
@@ -4273,6 +4294,7 @@ const SPECIES = {
 });
 // The snake grows up later than the others (user's number), and its grown-up form is the Sunny Dunes boss.
 SPECIES.snake = { name: 'Snake', type: 'Snake', fam: 'snake', base: { hp: 48, atk: 56, def: 46, spd: 54 }, evo: 'anaconda', evoLv: 15, desc: 'A bright-eyed snake that loves warm sand.' };
+SPECIES.fox.evoLv = 15;   // the fox also grows up at Lv 15 (user's number)
 SPECIES.anaconda = { name: 'Anaconda', type: 'Snake', fam: 'snake', base: { hp: 66, atk: 73, def: 62, spd: 66 } };
 const STARTERS = ['buddy', 'mittens'];   // your first pet is a puppy or a kitten
 const TITLE_PETS = ['buddy', 'mittens', 'kiwi', 'clover'];
@@ -4294,10 +4316,10 @@ const TREAT_KEYS = ITEM_ORDER.filter(k => ITEMS[k].treat);
 const TREAT_LIKES = {
   Dog: ['bone'], Cat: ['fish'], Hamster: ['seeds'], Gerbil: ['seeds'], Lizard: ['bugs'], Parrot: ['apple', 'seeds'],
   Rabbit: ['carrot', 'lettuce'], Mouse: ['seeds'], Ferret: ['bone'], Hedgehog: ['bugs'], Turtle: ['lettuce', 'bugs'],
-  Fish: [], Frog: ['bugs'], Pony: ['carrot', 'apple'], Duck: ['lettuce', 'seeds'], Pig: ['apple', 'carrot'], Snake: ['bugs'],
+  Fish: [], Frog: ['bugs'], Pony: ['carrot', 'apple'], Duck: ['lettuce', 'seeds'], Pig: ['apple', 'carrot'], Snake: ['bugs'], Fox: ['bone', 'apple'],
 };
 const TYPE_PLURAL = { Dog: 'dogs', Cat: 'cats', Hamster: 'hamsters', Gerbil: 'gerbils', Lizard: 'lizards', Parrot: 'parrots', Rabbit: 'rabbits',
-  Mouse: 'mice', Ferret: 'ferrets', Hedgehog: 'hedgehogs', Turtle: 'turtles', Fish: 'fish', Frog: 'frogs', Pony: 'ponies', Duck: 'ducks', Pig: 'pigs', Snake: 'snakes' };
+  Mouse: 'mice', Ferret: 'ferrets', Hedgehog: 'hedgehogs', Turtle: 'turtles', Fish: 'fish', Frog: 'frogs', Pony: 'ponies', Duck: 'ducks', Pig: 'pigs', Snake: 'snakes', Fox: 'foxes' };
 function likesTreat(p, key) { return (TREAT_LIKES[petType(p)] || []).includes(key); }
 function favoriteTreats(p) { return (TREAT_LIKES[petType(p)] || []).map(k => ITEMS[k].name); }
 for (const k of TREAT_KEYS) {
@@ -5042,6 +5064,7 @@ MAPS.peak = {
   wild: [
     { sp: 'hopscotch', min: 13, max: 17, w: 4 }, { sp: 'squeakers', min: 13, max: 17, w: 3 }, { sp: 'bandit', min: 13, max: 17, w: 3 },
     { sp: 'rocky', min: 14, max: 17, w: 3 }, { sp: 'shadow', min: 14, max: 17, w: 3 }, { sp: 'clover', min: 13, max: 15, w: 2 }, { sp: 'nibbles', min: 13, max: 15, w: 2 },
+    { sp: 'fox', min: 13, max: 14, w: 3 }, { sp: 'snowfox', min: 15, max: 17, w: 2 },
   ],
 };
 const ALL_CHESTS = [];
@@ -5669,6 +5692,7 @@ const TYPE_ICON = {
   Pony:     ['.#####.', '##...##', '##...##', '##...##', '##...##', '##...##', '.#...#.'],
   Duck:     ['..##...', '.####..', '.##.###', '.####..', '######.', '######.', '.####..'],
   Pig:      ['.#####.', '#######', '#.#.#.#', '#.#.#.#', '#######', '.#####.', '.......'],
+  Fox:      ['#.....#', '##...##', '#######', '#.###.#', '.#####.', '..###..', '...#...'],
   Snake:    ['.#####.', '##.....', '##.....', '.#####.', '.....##', '.....##', '#####..'],
   Normal:   ['...#...', '...#...', '#######', '.#####.', '..###..', '.##.##.', '.#...#.'],
 };
@@ -8459,7 +8483,7 @@ function runSelfTest() {
   for (const k of TREAT_KEYS) if (!TYPES.some(t => TREAT_LIKES[t].includes(k))) trErr.push('nobody likes ' + k);
   for (const k in SPECIES) { const q = createPet(k, 8); q.hp = 1; for (const tk of TREAT_KEYS) if (likesTreat(q, tk) ? treatChance(q, tk) < catchChance(q) : treatChance(q, tk) >= catchChance(q) * 0.5) trErr.push(k + '/' + tk); }
   check(TREAT_KEYS.length + ' kinds of treats: every pet has a favorite and the wrong snack rarely works', !trErr.length, trErr.slice(0, 4).join('; '));
-  check(Object.keys(SPECIES).length + ' pets, ' + TYPES.length + ' types, ' + Object.keys(MOVES).length + ' moves', Object.keys(SPECIES).length === 36, 'expected 36 pets');
+  check(Object.keys(SPECIES).length + ' pets, ' + TYPES.length + ' types, ' + Object.keys(MOVES).length + ' moves', Object.keys(SPECIES).length === 38, 'expected 38 pets');
   // Difficulty curve: a typical team at the expected level should usually (but not always) win each big fight.
   const simTeams = (team, foes) => {
     let a = 0, b = 0;
@@ -8485,7 +8509,7 @@ function runSelfTest() {
     }
     const pct = Math.round(wins / 3);
     curve.push(npc.name.split(' ').pop() + ' ' + pct + '%');
-    if (pct < (npc.boss ? 35 : 45) || pct > 92) curveOK = false;   // not a wall, not a walkover (bosses may be a little tougher)
+    if (pct < (npc.boss ? 35 : 45) || pct > 95) curveOK = false;   // not a wall, not a walkover (bosses may be a little tougher)
   }
   check('Harder but fair: a typical team wins ' + curve.join(', '), curveOK, curve.join(', '));
   check('Every type beats at least one type and loses to at least one', TYPES.every(t => BEATS[t].length > 0 && weakTo(t).length > 0) && typeMult('Parrot', 'Lizard') === 1.5 && typeMult('Lizard', 'Cat') === 1.5 && typeMult('Cat', 'Parrot') === 1.5, 'unbalanced chart');

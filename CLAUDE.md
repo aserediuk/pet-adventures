@@ -119,7 +119,7 @@ Some grown-up pets have `machineEvo` (a species marked `machineOnly`) instead of
 
 ## Game design numbers
 
-- **Types:** 17 types: 16 in loops, plus Snake (beats Mouse and Frog, loses to Hedgehog).
+- **Types:** 18 types: 16 in loops, plus Snake (beats Mouse and Frog, loses to Hedgehog) and Fox (beats Rabbit and Duck, loses to Dog). `fox` → `snowfox` at Lv 15 (user's number), both wild on Frosty Peak, drawn by `ANIMALS.fox`.
 
   | Loop | Order |
   | --- | --- |
